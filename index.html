@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Pollepel — Digitaal Kookboek</title>
+  <meta name="description" content="Digitaal kookboek met voorraadbeheer en automatische boodschappenlijst." />
+  <meta name="theme-color" content="#1F3F66" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" href="/icons/icon-32.png" sizes="32x32" type="image/png" />
+  <link rel="icon" href="/icons/icon-16.png" sizes="16x16" type="image/png" />
+  <link rel="apple-touch-icon" href="/icons/icon-180.png" />
+
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18.3.1",
+      "react-dom": "https://esm.sh/react-dom@18.3.1",
+      "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+      "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+      "lucide-react": "https://esm.sh/lucide-react@0.383.0?external=react",
+      "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+    }
+  }
+  </script>
+
+  <style>
+    html, body { margin: 0; padding: 0; background: #EAE7DC; font-family: 'Work Sans', sans-serif; }
+    #root { min-height: 100vh; }
+    * { box-sizing: border-box; }
+    input, button { font-family: inherit; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="module">
+    import React, { useState, useEffect } from "react";
+    import { createRoot } from "react-dom/client";
+    import { createClient } from "@supabase/supabase-js";
+    import App from "/app.js";
+
+    const SUPABASE_URL = "https://ucevkzircawpapsrywfv.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_t0F12XeC1bPLzmZgvLWUeQ_CPat-lMn";
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const C = { blue: "#1F3F66", blueDeep: "#152C48", ceramic: "#EAE7DC", mustard: "#D9A441", brick: "#B5533C", ink: "#1C1D1B", inkSoft: "#5B5C57" };
+    const inputStyle = { width: "100%", boxSizing: "border-box", border: "1.5px solid rgba(31,63,102,0.25)", borderRadius: 12, padding: "11px 12px", fontSize: 16, marginBottom: 10 };
+    const btnStyle = { width: "100%", background: C.blue, color: "#fff", border: "none", borderRadius: 14, padding: "12px", fontSize: 15, fontWeight: 600, cursor: "pointer" };
+    const ghostBtnStyle = { width: "100%", background: "none", color: C.blue, border: `1.5px solid ${C.blue}`, borderRadius: 14, padding: "10px", fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 8 };
+
+    function Shell({ children }) {
+      return React.createElement("div", {
+        style: { minHeight: "100vh", background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }
+      }, React.createElement("div", {
+        style: { width: "100%", maxWidth: 380, background: "#fff", borderRadius: 24, padding: 26, boxShadow: "0 10px 30px rgba(31,63,102,0.12)" }
+      }, children));
+    }
+
+    function AuthScreen({ onAuthed }) {
+      const [mode, setMode] = useState("login"); // login | signup
+      const [email, setEmail] = useState("");
+      const [password, setPassword] = useState("");
+      const [error, setError] = useState("");
+      const [info, setInfo] = useState("");
+      const [loading, setLoading] = useState(false);
+
+      const submit = async () => {
+        setError(""); setInfo(""); setLoading(true);
+        try {
+          if (mode === "signup") {
+            const { data, error } = await supabase.auth.signUp({ email, password });
+            if (error) throw error;
+            if (!data.session) {
+              setError("");
+              setInfo("Bijna klaar! Check je e-mail (" + email + ") en klik op de bevestigingslink. Log daarna hieronder in.");
+              setMode("login");
+              setLoading(false);
+              return;
+            }
+          } else {
+            const { error } = await supabase.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+          }
+          onAuthed();
+        } catch (e) {
+          setError(e.message || "Er ging iets mis. Probeer het opnieuw.");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return React.createElement(Shell, null,
+        React.createElement("h1", { style: { fontSize: 22, fontWeight: 700, color: C.blueDeep, margin: "0 0 4px" } }, "Pollepel"),
+        React.createElement("p", { style: { fontSize: 13, color: C.inkSoft, margin: "0 0 18px" } }, mode === "login" ? "Log in bij jouw huishouden." : "Maak een account aan."),
+        React.createElement("input", { style: inputStyle, type: "email", placeholder: "E-mailadres", value: email, onChange: (e) => setEmail(e.target.value) }),
+        React.createElement("input", { style: inputStyle, type: "password", placeholder: "Wachtwoord (min. 6 tekens)", value: password, onChange: (e) => setPassword(e.target.value) }),
+        info && React.createElement("p", { style: { color: C.blue, fontSize: 12.5, margin: "0 0 10px", background: "#EAF1F8", padding: "8px 10px", borderRadius: 10 } }, info),
+        error && React.createElement("p", { style: { color: C.brick, fontSize: 12.5, margin: "0 0 10px" } }, error),
+        React.createElement("button", { style: { ...btnStyle, opacity: loading ? 0.6 : 1 }, disabled: loading, onClick: submit }, loading ? "Bezig…" : mode === "login" ? "Inloggen" : "Account aanmaken"),
+        React.createElement("button", { style: ghostBtnStyle, onClick: () => setMode(mode === "login" ? "signup" : "login") },
+          mode === "login" ? "Nog geen account? Registreren" : "Al een account? Inloggen")
+      );
+    }
+
+    function HouseholdScreen({ onReady }) {
+      const [mode, setMode] = useState("create"); // create | join
+      const [name, setName] = useState("Ons huishouden");
+      const [code, setCode] = useState("");
+      const [error, setError] = useState("");
+      const [loading, setLoading] = useState(false);
+
+      const submit = async () => {
+        setError(""); setLoading(true);
+        try {
+          if (mode === "create") {
+            const { data, error } = await supabase.rpc("create_household", { hh_name: name || "Ons huishouden" });
+            if (error) throw error;
+            onReady(data.id);
+          } else {
+            const { data, error } = await supabase.rpc("join_household", { code: code.trim() });
+            if (error) throw error;
+            onReady(data.id);
+          }
+        } catch (e) {
+          setError(e.message || "Er ging iets mis. Probeer het opnieuw.");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return React.createElement(Shell, null,
+        React.createElement("h1", { style: { fontSize: 20, fontWeight: 700, color: C.blueDeep, margin: "0 0 4px" } }, "Welkom bij Pollepel"),
+        React.createElement("p", { style: { fontSize: 13, color: C.inkSoft, margin: "0 0 18px" } }, "Begin een nieuw huishouden, of sluit aan bij je huisgenoten."),
+        React.createElement("div", { style: { display: "flex", gap: 6, marginBottom: 14 } },
+          React.createElement("button", {
+            style: { flex: 1, padding: "8px", borderRadius: 10, border: `1.5px solid ${mode === "create" ? C.blue : "#ddd"}`, background: mode === "create" ? C.blue : "#fff", color: mode === "create" ? "#fff" : C.ink, fontWeight: 600, fontSize: 13, cursor: "pointer" },
+            onClick: () => setMode("create"),
+          }, "Nieuw huishouden"),
+          React.createElement("button", {
+            style: { flex: 1, padding: "8px", borderRadius: 10, border: `1.5px solid ${mode === "join" ? C.blue : "#ddd"}`, background: mode === "join" ? C.blue : "#fff", color: mode === "join" ? "#fff" : C.ink, fontWeight: 600, fontSize: 13, cursor: "pointer" },
+            onClick: () => setMode("join"),
+          }, "Aansluiten")
+        ),
+        mode === "create"
+          ? React.createElement("input", { style: inputStyle, placeholder: "Naam huishouden", value: name, onChange: (e) => setName(e.target.value) })
+          : React.createElement("input", { style: inputStyle, placeholder: "Uitnodigingscode", value: code, onChange: (e) => setCode(e.target.value) }),
+        mode === "create" && React.createElement("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: -6, marginBottom: 10 } }, "Je krijgt automatisch de startbibliotheek met 31 recepten."),
+        error && React.createElement("p", { style: { color: C.brick, fontSize: 12.5, margin: "0 0 10px" } }, error),
+        React.createElement("button", { style: { ...btnStyle, opacity: loading ? 0.6 : 1 }, disabled: loading, onClick: submit }, loading ? "Bezig…" : mode === "create" ? "Huishouden aanmaken" : "Aansluiten")
+      );
+    }
+
+    function setupBackend(householdId) {
+      window.storage = {
+        async get(key) {
+          const { data, error } = await supabase.from("household_kv").select("value").eq("household_id", householdId).eq("key", key).maybeSingle();
+          if (error || !data) throw new Error("not found");
+          return { key, value: data.value, shared: true };
+        },
+        async set(key, value) {
+          const { error } = await supabase.from("household_kv").upsert({ household_id: householdId, key, value, updated_at: new Date().toISOString() });
+          if (error) return null;
+          return { key, value, shared: true };
+        },
+        async delete(key) {
+          const { error } = await supabase.from("household_kv").delete().eq("household_id", householdId).eq("key", key);
+          return { key, deleted: !error, shared: true };
+        },
+        async list(prefix) {
+          const { data } = await supabase.from("household_kv").select("key").eq("household_id", householdId);
+          const keys = (data || []).map((r) => r.key).filter((k) => !prefix || k.startsWith(prefix));
+          return { keys, prefix, shared: true };
+        },
+      };
+
+      window.communityStore = {
+        async list() {
+          const { data, error } = await supabase.from("community_recipes").select("recipe_id, recipe").order("created_at", { ascending: false });
+          if (error) return [];
+          return (data || []).map((row) => ({ ...row.recipe, id: row.recipe_id, community: true }));
+        },
+        async publish(recipe) {
+          const { error } = await supabase.from("community_recipes").upsert({
+            household_id: householdId,
+            recipe_id: recipe.id,
+            recipe,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "household_id,recipe_id" });
+          if (error) throw error;
+        },
+        async unpublish(recipeId) {
+          await supabase.from("community_recipes").delete().eq("household_id", householdId).eq("recipe_id", recipeId);
+        },
+      };
+    }
+
+    function Root() {
+      const [phase, setPhase] = useState("loading"); // loading | auth | household | ready
+      const [householdId, setHouseholdId] = useState(null);
+
+      const checkHousehold = async () => {
+        const { data, error } = await supabase.from("household_members").select("household_id").limit(1).maybeSingle();
+        if (error || !data) { setPhase("household"); return; }
+        setupBackend(data.household_id);
+        setHouseholdId(data.household_id);
+        setPhase("ready");
+      };
+
+      useEffect(() => {
+        supabase.auth.getSession().then(({ data }) => {
+          if (data.session) checkHousehold();
+          else setPhase("auth");
+        });
+        const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+          if (session && phase === "auth") checkHousehold();
+        });
+        return () => sub.subscription.unsubscribe();
+      }, []);
+
+      if (phase === "loading") return React.createElement(Shell, null, React.createElement("p", { style: { textAlign: "center", color: C.inkSoft } }, "Laden…"));
+      if (phase === "auth") return React.createElement(AuthScreen, { onAuthed: checkHousehold });
+      if (phase === "household") return React.createElement(HouseholdScreen, { onReady: (id) => { setupBackend(id); setHouseholdId(id); setPhase("ready"); } });
+      return React.createElement(App);
+    }
+
+    createRoot(document.getElementById("root")).render(React.createElement(Root));
+
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js").catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>

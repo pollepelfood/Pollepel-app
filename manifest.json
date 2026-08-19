@@ -1,0 +1,18 @@
+{
+  "name": "Pollepel — Digitaal Kookboek",
+  "short_name": "Pollepel",
+  "description": "Digitaal kookboek met voorraadbeheer en automatische boodschappenlijst.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#EAE7DC",
+  "theme_color": "#1F3F66",
+  "lang": "nl",
+  "icons": [
+    { "src": "/icons/icon-96.png", "sizes": "96x96", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
