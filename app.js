@@ -1688,16 +1688,29 @@ Regels:
     const checkedItems = shoppingList.filter((s) => s.checked);
     if (!checkedItems.length) return;
     const nextInventory = inventory.map((i) => ({ ...i }));
+    let createdCount = 0;
     checkedItems.forEach((s) => {
       const idx = nextInventory.findIndex((i) => norm(i.name) === norm(s.name) && i.unit === s.unit);
       if (idx > -1) {
         const item = nextInventory[idx];
         nextInventory[idx] = { ...item, current: round2(Math.min(item.max, item.current + Number(s.amount || 0))) };
+      } else {
+        const amount = Number(s.amount || 0) || 1;
+        nextInventory.push({
+          id: uid(),
+          name: s.name,
+          category: s.category || "Overig",
+          unit: s.unit,
+          current: amount,
+          min: round2(Math.max(amount * 0.4, 0.5)),
+          max: amount
+        });
+        createdCount += 1;
       }
     });
     persist("inventory", nextInventory, setInventory);
     persist("shoppingList", shoppingList.filter((s) => !s.checked), setShoppingList);
-    showToast(`${checkedItems.length} artikel${checkedItems.length > 1 ? "en" : ""} afgevinkt en voorraad bijgewerkt.`);
+    showToast(createdCount ? `${checkedItems.length} artikel${checkedItems.length > 1 ? "en" : ""} afgevinkt, voorraad bijgewerkt (${createdCount} nieuw toegevoegd \u2014 check zelf even het minimum/maximum).` : `${checkedItems.length} artikel${checkedItems.length > 1 ? "en" : ""} afgevinkt en voorraad bijgewerkt.`);
   };
   const setDayRecipe = (day, recipeId) => {
     const next = { ...weekmenu, [day]: recipeId };
