@@ -7,9 +7,8 @@
   <meta name="description" content="Digitaal kookboek met voorraadbeheer en automatische boodschappenlijst." />
   <meta name="theme-color" content="#1F3F66" />
   <link rel="manifest" href="/manifest.json" />
-  <link rel="icon" href="/icons/icon-32.png" sizes="32x32" type="image/png" />
-  <link rel="icon" href="/icons/icon-16.png" sizes="16x16" type="image/png" />
-  <link rel="apple-touch-icon" href="/icons/icon-180.png" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
 
   <script type="importmap">
   {
@@ -193,11 +192,59 @@
           await supabase.from("community_recipes").delete().eq("household_id", householdId).eq("recipe_id", recipeId);
         },
       };
+
+      window.householdAPI = {
+        householdId,
+        async getInfo() {
+          const { data, error } = await supabase.from("households").select("name, invite_code").eq("id", householdId).maybeSingle();
+          if (error || !data) throw new Error("kon huishouden niet ophalen");
+          return data;
+        },
+        async updateName(name) {
+          const { error } = await supabase.from("households").update({ name }).eq("id", householdId);
+          if (error) throw error;
+        },
+        async getMembers() {
+          const { data: memberRows, error: memberErr } = await supabase.from("household_members").select("user_id, role, created_at").eq("household_id", householdId);
+          if (memberErr || !memberRows) return [];
+          const userIds = memberRows.map((m) => m.user_id);
+          const { data: profileRows } = await supabase.from("profiles").select("id, email, display_name").in("id", userIds);
+          const profileMap = {};
+          (profileRows || []).forEach((p) => { profileMap[p.id] = p; });
+          return memberRows.map((m) => ({
+            userId: m.user_id,
+            role: m.role,
+            email: profileMap[m.user_id] ? profileMap[m.user_id].email : "",
+            displayName: profileMap[m.user_id] ? profileMap[m.user_id].display_name : "",
+          }));
+        },
+        async getCurrentUserEmail() {
+          const { data } = await supabase.auth.getUser();
+          return data && data.user ? data.user.email : "";
+        },
+        async signOut() {
+          await supabase.auth.signOut();
+          window.location.reload();
+        },
+      };
     }
 
     function Root() {
       const [phase, setPhase] = useState("loading"); // loading | auth | household | ready
       const [householdId, setHouseholdId] = useState(null);
+      const [household, setHousehold] = useState(null);
+      const [members, setMembers] = useState([]);
+
+      const loadHouseholdMeta = async () => {
+        try {
+          const info = await window.householdAPI.getInfo();
+          setHousehold(info);
+        } catch (e) { /* stil negeren */ }
+        try {
+          const m = await window.householdAPI.getMembers();
+          setMembers(m);
+        } catch (e) { /* stil negeren */ }
+      };
 
       const checkHousehold = async () => {
         const { data, error } = await supabase.from("household_members").select("household_id").limit(1).maybeSingle();
@@ -218,10 +265,24 @@
         return () => sub.subscription.unsubscribe();
       }, []);
 
+      useEffect(() => {
+        if (phase === "ready" && householdId) loadHouseholdMeta();
+      }, [phase, householdId]);
+
+      const handleRename = async (newName) => {
+        await window.householdAPI.updateName(newName);
+        setHousehold((prev) => ({ ...prev, name: newName }));
+      };
+
       if (phase === "loading") return React.createElement(Shell, null, React.createElement("p", { style: { textAlign: "center", color: C.inkSoft } }, "Laden…"));
       if (phase === "auth") return React.createElement(AuthScreen, { onAuthed: checkHousehold });
       if (phase === "household") return React.createElement(HouseholdScreen, { onReady: (id) => { setupBackend(id); setHouseholdId(id); setPhase("ready"); } });
-      return React.createElement(App);
+      return React.createElement(App, {
+        household,
+        members,
+        onRenameHousehold: handleRename,
+        onLogout: () => window.householdAPI.signOut(),
+      });
     }
 
     createRoot(document.getElementById("root")).render(React.createElement(Root));
