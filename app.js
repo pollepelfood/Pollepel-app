@@ -3057,11 +3057,11 @@ function InventoryForm({ initial, onCancel, onSave }) {
       setSearching(true);
       setSearchError("");
       try {
-        const res = await fetch(`https://search.openfoodfacts.org/search?q=${encodeURIComponent(name.trim())}&page_size=6&langs=nl&fields=product_name,product_name_nl,brands,code,categories_tags`);
+        const res = await fetch(`https://search.openfoodfacts.org/search?q=${encodeURIComponent(name.trim())}&page_size=6&langs=nl&fields=product_name,product_name_nl,brands,code`);
         if (!res.ok) throw new Error("zoek-fout");
         const data = await res.json();
         const hits = data.hits || data.products || [];
-        const items = hits.map((p) => ({ product_name: p.product_name || p.product_name_nl || p.generic_name || "", brands: p.brands || "", code: p.code || p._id || "", categories_tags: p.categories_tags || [] })).filter((p) => p.product_name).slice(0, 6);
+        const items = hits.map((p) => ({ product_name: p.product_name || p.product_name_nl || p.generic_name || "", brands: p.brands || "", code: p.code || p._id || "" })).filter((p) => p.product_name).slice(0, 6);
         setSuggestions(items);
         setShowSuggestions(true);
         if (!items.length) setSearchError("Geen producten gevonden voor deze zoekterm.");
@@ -3074,10 +3074,20 @@ function InventoryForm({ initial, onCancel, onSave }) {
     }, 450);
     return () => clearTimeout(handle);
   }, [name, initial.id]);
-  const pickSuggestion = (p) => {
+  const pickSuggestion = async (p) => {
     setName(p.product_name);
-    if (p.code) setBarcode(p.code);
-    setCategory(categoryFromOffTags(p.categories_tags) || guessCategory(p.product_name));
+    setCategory(guessCategory(p.product_name));
+    if (p.code) {
+      setBarcode(p.code);
+      try {
+        const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${p.code}.json?fields=categories_tags`);
+        const data = await res.json();
+        const tags = data && data.product && data.product.categories_tags || [];
+        const offCategory = categoryFromOffTags(tags);
+        if (offCategory) setCategory(offCategory);
+      } catch (e) {
+      }
+    }
     setShowSuggestions(false);
     setSuggestions([]);
   };
