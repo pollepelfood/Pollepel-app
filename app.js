@@ -37,7 +37,11 @@ import {
   Copy,
   LogOut,
   Printer,
-  UserPlus
+  UserPlus,
+  Shuffle,
+  WifiOff,
+  CalendarClock,
+  StickyNote
 } from "lucide-react";
 const UNITS = ["stuks", "g", "kg", "ml", "l", "eetlepel", "theelepel", "snufje"];
 const WEEK_DAYS = [
@@ -160,6 +164,16 @@ const TILE_GRADIENTS = [
 const uid = () => Math.random().toString(36).slice(2, 10);
 const round2 = (n) => Math.round(n * 100) / 100;
 const norm = (s) => (s || "").trim().toLowerCase();
+function namesMatch(a, b) {
+  const na = norm(a);
+  const nb = norm(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const stripSuffix = (s) => s.replace(/('s|s|en)$/, "");
+  if (stripSuffix(na) === stripSuffix(nb)) return true;
+  if (na.length >= 4 && nb.length >= 4 && (na.includes(nb) || nb.includes(na))) return true;
+  return false;
+}
 const EMOJI_KEYWORDS = [
   [["spaghetti", "pasta", "macaroni", "lasagne", "penne", "tagliatelle"], "\u{1F35D}"],
   [["soep", "bouillon"], "\u{1F372}"],
@@ -414,7 +428,7 @@ function recipeReadiness(recipe, inventory, scale = 1) {
   let have = 0;
   const missing = [];
   recipe.ingredients.forEach((ing) => {
-    const item = inventory.find((i) => norm(i.name) === norm(ing.name) && i.unit === ing.unit);
+    const item = inventory.find((i) => namesMatch(i.name, ing.name) && i.unit === ing.unit);
     if (!item) return;
     tracked += 1;
     if (item.current >= Number(ing.amount || 0) * scale) have += 1;
@@ -452,7 +466,7 @@ function resizeImageFile(file, maxDim = 1280, quality = 0.85) {
 function pushLowStockToShopping(shoppingArr, item, newCurrent) {
   if (newCurrent >= item.min) return { list: shoppingArr, added: false };
   const needed = round2(Math.max(item.max - newCurrent, item.min - newCurrent));
-  const idx = shoppingArr.findIndex((s) => norm(s.name) === norm(item.name) && s.unit === item.unit);
+  const idx = shoppingArr.findIndex((s) => namesMatch(s.name, item.name) && s.unit === item.unit);
   const entry = {
     id: idx > -1 ? shoppingArr[idx].id : uid(),
     name: item.name,
@@ -472,7 +486,7 @@ function reconcileShoppingForItem(shoppingArr, item) {
     const { list, added } = pushLowStockToShopping(shoppingArr, item, item.current);
     return { list, changed: added };
   }
-  const idx = shoppingArr.findIndex((s) => s.auto && norm(s.name) === norm(item.name) && s.unit === item.unit);
+  const idx = shoppingArr.findIndex((s) => s.auto && namesMatch(s.name, item.name) && s.unit === item.unit);
   if (idx === -1) return { list: shoppingArr, changed: false };
   return { list: shoppingArr.filter((_, i) => i !== idx), changed: true };
 }
@@ -1560,6 +1574,17 @@ function LogoMark({ size = 26 }) {
 }
 function App({ household = null, members = [], onLogout = null, onRenameHousehold = null } = {}) {
   const [loading, setLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
+  useEffect(() => {
+    const goOffline = () => setIsOffline(true);
+    const goOnline = () => setIsOffline(false);
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+    return () => {
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
+    };
+  }, []);
   const [saving, setSaving] = useState(false);
   const [recipes, setRecipes] = useState([]);
   const [inventory, setInventory] = useState([]);
@@ -1851,7 +1876,7 @@ Regels:
     const added = [];
     recipe.ingredients.forEach((ing) => {
       const idx = nextInventory.findIndex(
-        (i) => norm(i.name) === norm(ing.name) && i.unit === ing.unit
+        (i) => namesMatch(i.name, ing.name) && i.unit === ing.unit
       );
       if (idx === -1) return;
       const item = nextInventory[idx];
@@ -1924,7 +1949,7 @@ Regels:
     const nextInventory = inventory.map((i) => ({ ...i }));
     let createdCount = 0;
     checkedItems.forEach((s) => {
-      const idx = nextInventory.findIndex((i) => norm(i.name) === norm(s.name) && i.unit === s.unit);
+      const idx = nextInventory.findIndex((i) => namesMatch(i.name, s.name) && i.unit === s.unit);
       if (idx > -1) {
         const item = nextInventory[idx];
         nextInventory[idx] = { ...item, current: round2(Math.min(item.max, item.current + Number(s.amount || 0))) };
@@ -1970,6 +1995,38 @@ Regels:
   const removeCook = (name) => {
     persist("cooks", cooks.filter((c) => c !== name), setCooks);
   };
+  const duplicateWeekmenu = () => {
+    persist("weekmenuTemplate", weekmenu, () => {
+    });
+    showToast("Dit weekmenu is opgeslagen als sjabloon. Gebruik 'Vorig weekmenu' om het later opnieuw toe te passen.");
+  };
+  const applyWeekmenuTemplate = async () => {
+    const template = await loadKey("weekmenuTemplate", () => null);
+    if (!template || !Object.keys(template).length) {
+      showToast("Er is nog geen opgeslagen weekmenu-sjabloon.");
+      return;
+    }
+    persist("weekmenu", template, setWeekmenu);
+    showToast("Vorig weekmenu opnieuw toegepast.");
+  };
+  const shuffleWeekmenu = () => {
+    const filledDays = WEEK_DAYS.filter((d) => dayEntry(d.key)?.recipeId);
+    if (filledDays.length < 2) {
+      showToast("Vul minstens twee dagen in om te kunnen shuffelen.");
+      return;
+    }
+    const entries = filledDays.map((d) => dayEntry(d.key));
+    for (let i = entries.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [entries[i], entries[j]] = [entries[j], entries[i]];
+    }
+    const next = { ...weekmenu };
+    filledDays.forEach((d, idx) => {
+      next[d.key] = entries[idx];
+    });
+    persist("weekmenu", next, setWeekmenu);
+    showToast("Weekmenu geshuffeld!");
+  };
   const clearDay = (day) => {
     const next = { ...weekmenu };
     delete next[day];
@@ -1992,12 +2049,12 @@ Regels:
     let nextShopping = shoppingList.map((s) => ({ ...s }));
     let addedCount = 0;
     totals.forEach((need) => {
-      const item = inventory.find((i) => norm(i.name) === norm(need.name) && i.unit === need.unit);
+      const item = inventory.find((i) => namesMatch(i.name, need.name) && i.unit === need.unit);
       const inStock = item ? item.current : 0;
       const shortfall = round2(need.amount - inStock);
       if (shortfall <= 0) return;
       const category = item ? item.category : guessCategory(need.name);
-      const idx = nextShopping.findIndex((s) => norm(s.name) === norm(need.name) && s.unit === need.unit);
+      const idx = nextShopping.findIndex((s) => namesMatch(s.name, need.name) && s.unit === need.unit);
       const entry = {
         id: idx > -1 ? nextShopping[idx].id : uid(),
         name: need.name,
@@ -2107,14 +2164,27 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         /* @__PURE__ */ jsx(
           "button",
           {
+            onClick: exportBackup,
+            title: "Backup downloaden",
+            style: { marginLeft: saving ? 8 : "auto", background: "rgba(255,255,255,0.14)", border: "none", borderRadius: 10, padding: 6, cursor: "pointer", display: "flex" },
+            children: /* @__PURE__ */ jsx(Download, { size: 15, color: "#fff" })
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
             onClick: () => setSettingsOpen(true),
             title: "Instellingen",
-            style: { marginLeft: saving ? 8 : "auto", background: "rgba(255,255,255,0.14)", border: "none", borderRadius: 10, padding: 6, cursor: "pointer", display: "flex" },
+            style: { marginLeft: 8, background: "rgba(255,255,255,0.14)", border: "none", borderRadius: 10, padding: 6, cursor: "pointer", display: "flex" },
             children: /* @__PURE__ */ jsx(Settings, { size: 15, color: "#fff" })
           }
         )
       ] }),
       /* @__PURE__ */ jsx("div", { style: { fontSize: 12.5, color: "rgba(255,255,255,0.75)", marginTop: 4, position: "relative" }, children: "Jullie digitale kookboek \xB7 voorraad & boodschappen automatisch bijgewerkt" })
+    ] }),
+    isOffline && /* @__PURE__ */ jsxs("div", { style: { background: C.brick, color: "#fff", textAlign: "center", padding: "6px 10px", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }, children: [
+      /* @__PURE__ */ jsx(WifiOff, { size: 13 }),
+      " Geen internetverbinding \u2014 wijzigingen worden pas opgeslagen zodra je weer online bent."
     ] }),
     /* @__PURE__ */ jsx("div", { style: { display: "flex", justifyContent: "center", gap: 7, padding: "9px 0 3px" }, children: Array.from({ length: 11 }).map((_, i) => /* @__PURE__ */ jsx("div", { style: {
       width: 5,
@@ -2182,10 +2252,15 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         VoorraadView,
         {
           inventory,
+          recipes,
           onEdit: setEditingItem,
           onNew: () => setEditingItem({}),
           onDelete: deleteInventoryItem,
-          onScan: () => setScanOpen(true)
+          onScan: () => setScanOpen(true),
+          onOpenRecipe: (id) => {
+            setOpenRecipeId(id);
+            setTab("kookboek");
+          }
         }
       ),
       tab === "boodschappen" && /* @__PURE__ */ jsx(
@@ -2211,7 +2286,10 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           onAIGenerate: () => {
             setAiWeekError("");
             setAiWeekOpen(true);
-          }
+          },
+          onDuplicate: duplicateWeekmenu,
+          onApplyTemplate: applyWeekmenuTemplate,
+          onShuffle: shuffleWeekmenu
         }
       )
     ] }),
@@ -2616,6 +2694,13 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_MONO, color: C.mustardDeep, fontWeight: 600, flexShrink: 0 }, children: String(idx + 1).padStart(2, "0") }),
       /* @__PURE__ */ jsx("span", { children: s })
     ] }, idx)) }),
+    recipe.notes && /* @__PURE__ */ jsxs("div", { style: { background: "#FBF3E3", border: `1px solid ${C.mustard}`, borderRadius: 14, padding: 12, marginBottom: 18, display: "flex", gap: 8 }, children: [
+      /* @__PURE__ */ jsx(StickyNote, { size: 16, color: C.mustardDeep, style: { flexShrink: 0, marginTop: 1 } }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("div", { style: { fontSize: 11, fontWeight: 600, color: C.mustardDeep, marginBottom: 2 }, children: "Jouw notitie" }),
+        /* @__PURE__ */ jsx("div", { style: { fontSize: 13, color: C.ink, whiteSpace: "pre-wrap" }, children: recipe.notes })
+      ] })
+    ] }),
     isMine && (!confirmCook ? /* @__PURE__ */ jsxs(PrimaryButton, { tone: "sage", full: true, onClick: () => setConfirmCook(true), children: [
       /* @__PURE__ */ jsx(Flame, { size: 16 }),
       " Ik heb dit gekookt"
@@ -2667,6 +2752,7 @@ function RecipeForm({ initial, inventoryNames, onCancel, onSave }) {
   const [servings, setServings] = useState(initial.servings || 4);
   const [ingredients, setIngredients] = useState(initial.ingredients?.length ? initial.ingredients : [{ name: "", amount: "", unit: "stuks" }]);
   const [steps, setSteps] = useState(initial.steps?.length ? initial.steps : [""]);
+  const [notes, setNotes] = useState(initial.notes || "");
   useEffect(() => {
     if (!emojiTouched) setEmoji(suggestEmoji(name));
   }, [name, emojiTouched]);
@@ -2687,7 +2773,8 @@ function RecipeForm({ initial, inventoryNames, onCancel, onSave }) {
       cookTime: Number(cookTime) || 0,
       servings: Number(servings) || 1,
       ingredients: ingredients.filter((i) => i.name.trim() && i.amount !== "").map((i) => ({ ...i, amount: Number(i.amount) })),
-      steps: steps.filter((s) => s.trim())
+      steps: steps.filter((s) => s.trim()),
+      notes: notes.trim()
     });
   };
   return /* @__PURE__ */ jsxs(Modal, { title: initial.id ? "Recept bewerken" : "Nieuw recept", onClose: onCancel, wide: true, children: [
@@ -2722,6 +2809,16 @@ function RecipeForm({ initial, inventoryNames, onCancel, onSave }) {
       /* @__PURE__ */ jsx(Plus, { size: 14 }),
       " Stap"
     ] }),
+    /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "16px 0 6px" }, children: "Eigen notities (optioneel)" }),
+    /* @__PURE__ */ jsx(
+      "textarea",
+      {
+        style: { ...inputStyle, minHeight: 60, resize: "vertical" },
+        placeholder: "Bijv. 'volgende keer iets minder zout' of 'kids vonden dit top'",
+        value: notes,
+        onChange: (e) => setNotes(e.target.value)
+      }
+    ),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginTop: 18 }, children: [
       /* @__PURE__ */ jsxs(PrimaryButton, { disabled: !canSave, onClick: handleSave, children: [
         /* @__PURE__ */ jsx(Check, { size: 16 }),
@@ -2731,7 +2828,7 @@ function RecipeForm({ initial, inventoryNames, onCancel, onSave }) {
     ] })
   ] });
 }
-function WeekmenuView({ weekmenu, recipes, cooks, onPickDay, onPickCook, onClearDay, onGenerate, onAIGenerate }) {
+function WeekmenuView({ weekmenu, recipes, cooks, onPickDay, onPickCook, onClearDay, onGenerate, onAIGenerate, onDuplicate, onApplyTemplate, onShuffle }) {
   const findRecipe = (id) => recipes.find((r) => r.id === id);
   const dayEntry = (day) => {
     const raw = weekmenu[day];
@@ -2746,6 +2843,25 @@ function WeekmenuView({ weekmenu, recipes, cooks, onPickDay, onPickCook, onClear
       /* @__PURE__ */ jsx(Wand2, { size: 16 }),
       " AI: genereer weekmenu"
     ] }) }),
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginBottom: 14 }, children: [
+      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(GhostButton, { onClick: onDuplicate, children: [
+        /* @__PURE__ */ jsx(Copy, { size: 13 }),
+        " Dupliceer"
+      ] }) }),
+      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(GhostButton, { onClick: onApplyTemplate, children: [
+        /* @__PURE__ */ jsx(CalendarDays, { size: 13 }),
+        " Vorig weekmenu"
+      ] }) }),
+      /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: onShuffle,
+          title: "Shuffel de geplande gerechten door de dagen",
+          style: { width: 42, background: "#fff", border: `1.5px solid ${C.blue}`, borderRadius: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
+          children: /* @__PURE__ */ jsx(Shuffle, { size: 15, color: C.blue })
+        }
+      )
+    ] }),
     /* @__PURE__ */ jsx("div", { style: { background: "#fff", borderRadius: 16, border: `1.5px solid rgba(31,63,102,0.16)`, marginBottom: 16 }, children: WEEK_DAYS.map((day, idx) => {
       const entry = dayEntry(day.key);
       const recipe = entry?.recipeId ? findRecipe(entry.recipeId) : null;
@@ -2975,7 +3091,21 @@ function RecipePickerModal({ recipes, onPick, onClose }) {
     ] })
   ] });
 }
-function VoorraadView({ inventory, onEdit, onNew, onDelete, onScan }) {
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const today = /* @__PURE__ */ new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = /* @__PURE__ */ new Date(dateStr + "T00:00:00");
+  return Math.round((target - today) / 864e5);
+}
+function getExpirySuggestions(inventory, recipes) {
+  return inventory.filter((item) => item.expiryDate).map((item) => ({ item, daysLeft: daysUntil(item.expiryDate) })).filter(({ daysLeft }) => daysLeft !== null && daysLeft <= 3).map(({ item, daysLeft }) => ({
+    item,
+    daysLeft,
+    recipes: recipes.filter((r) => r.ingredients.some((ing) => namesMatch(ing.name, item.name) && ing.unit === item.unit))
+  })).sort((a, b) => a.daysLeft - b.daysLeft);
+}
+function VoorraadView({ inventory, recipes, onEdit, onNew, onDelete, onScan, onOpenRecipe }) {
   const byCategory = useMemo(() => {
     const map = {};
     CATEGORIES.forEach((c) => map[c] = []);
@@ -2984,8 +3114,42 @@ function VoorraadView({ inventory, onEdit, onNew, onDelete, onScan }) {
     });
     return map;
   }, [inventory]);
+  const expirySuggestions = useMemo(() => getExpirySuggestions(inventory, recipes), [inventory, recipes]);
   return /* @__PURE__ */ jsxs("div", { children: [
     /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.inkSoft, marginTop: 0 }, children: "Stel per ingredi\xEBnt een minimum en maximum in. Zodra de voorraad onder het minimum komt, verschijnt het automatisch op de boodschappenlijst." }),
+    expirySuggestions.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: "#FBF3E3", border: `1.5px solid ${C.mustard}`, borderRadius: 16, padding: 12, marginBottom: 16 }, children: [
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }, children: [
+        /* @__PURE__ */ jsx(CalendarClock, { size: 15, color: C.mustardDeep }),
+        /* @__PURE__ */ jsx("span", { style: { fontSize: 12.5, fontWeight: 700, color: C.mustardDeep }, children: "Bijna over de datum" })
+      ] }),
+      expirySuggestions.map(({ item, daysLeft, recipes: matches }) => /* @__PURE__ */ jsxs("div", { style: { marginBottom: 8 }, children: [
+        /* @__PURE__ */ jsxs("div", { style: { fontSize: 13, color: C.ink }, children: [
+          /* @__PURE__ */ jsx("strong", { children: item.name }),
+          " ",
+          daysLeft < 0 ? "is al verlopen" : daysLeft === 0 ? "is vandaag over de datum" : `is over ${daysLeft} dag${daysLeft > 1 ? "en" : ""} over de datum`
+        ] }),
+        matches.length > 0 ? /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }, children: [
+          /* @__PURE__ */ jsxs("span", { style: { fontSize: 11.5, color: C.inkSoft }, children: [
+            "Maak ",
+            daysLeft <= 0 ? "vandaag" : "op tijd",
+            ":"
+          ] }),
+          matches.slice(0, 3).map((r) => /* @__PURE__ */ jsxs(
+            "button",
+            {
+              onClick: () => onOpenRecipe && onOpenRecipe(r.id),
+              style: { background: "#fff", border: `1px solid ${C.mustard}`, borderRadius: 20, padding: "3px 10px", fontSize: 11.5, color: C.mustardDeep, fontWeight: 600, cursor: "pointer" },
+              children: [
+                r.emoji || "\u{1F37D}\uFE0F",
+                " ",
+                r.name
+              ]
+            },
+            r.id
+          ))
+        ] }) : /* @__PURE__ */ jsx("div", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: 2 }, children: "Geen recept in je kookboek met dit ingredi\xEBnt." })
+      ] }, item.id))
+    ] }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginBottom: 16 }, children: [
       /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(PrimaryButton, { tone: "mustard", full: true, compact: true, onClick: onScan, children: [
         /* @__PURE__ */ jsx(Camera, { size: 15 }),
@@ -3003,12 +3167,13 @@ function VoorraadView({ inventory, onEdit, onNew, onDelete, onScan }) {
         /* @__PURE__ */ jsx("div", { style: { fontFamily: FONT_MONO, fontSize: 11, letterSpacing: 0.5, color: C.blueSoft, marginBottom: 6, textTransform: "uppercase" }, children: cat }),
         /* @__PURE__ */ jsx("div", { style: { background: "#fff", borderRadius: 16, border: `1.5px solid rgba(31,63,102,0.16)` }, children: items.map((item, idx) => {
           const low = item.current < item.min;
+          const expDays = item.expiryDate ? daysUntil(item.expiryDate) : null;
           return /* @__PURE__ */ jsxs("div", { onClick: () => onEdit(item), style: { padding: "10px 12px", borderBottom: idx < items.length - 1 ? `1px solid ${C.ceramic}` : "none", cursor: "pointer" }, children: [
             /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" }, children: [
               /* @__PURE__ */ jsx("span", { style: { fontSize: 13.5, color: C.ink, fontWeight: 500 }, children: item.name }),
               low && /* @__PURE__ */ jsx(AlertTriangle, { size: 14, color: C.brick })
             ] }),
-            /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }, children: [
+            /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4, flexWrap: "wrap", gap: 4 }, children: [
               /* @__PURE__ */ jsxs("span", { style: { fontFamily: FONT_MONO, fontSize: 11.5, color: low ? C.brick : C.inkSoft }, children: [
                 item.current,
                 " ",
@@ -3022,10 +3187,17 @@ function VoorraadView({ inventory, onEdit, onNew, onDelete, onScan }) {
                   ")"
                 ] })
               ] }),
-              /* @__PURE__ */ jsx("button", { onClick: (e) => {
-                e.stopPropagation();
-                onDelete(item.id);
-              }, style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(Trash2, { size: 13, color: C.inkSoft }) })
+              /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
+                expDays !== null && expDays <= 5 && /* @__PURE__ */ jsxs(Pill, { tone: expDays <= 0 ? "warn" : "auto", children: [
+                  /* @__PURE__ */ jsx(CalendarClock, { size: 10 }),
+                  " ",
+                  expDays < 0 ? "verlopen" : expDays === 0 ? "vandaag" : `${expDays}d`
+                ] }),
+                /* @__PURE__ */ jsx("button", { onClick: (e) => {
+                  e.stopPropagation();
+                  onDelete(item.id);
+                }, style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(Trash2, { size: 13, color: C.inkSoft }) })
+              ] })
             ] })
           ] }, item.id);
         }) })
@@ -3041,6 +3213,7 @@ function InventoryForm({ initial, onCancel, onSave }) {
   const [min, setMin] = useState(initial.min ?? "");
   const [max, setMax] = useState(initial.max ?? "");
   const [barcode, setBarcode] = useState(initial.barcode || "");
+  const [expiryDate, setExpiryDate] = useState(initial.expiryDate || "");
   const [suggestions, setSuggestions] = useState([]);
   const [searching, setSearching] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -3132,12 +3305,13 @@ function InventoryForm({ initial, onCancel, onSave }) {
       /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Maximum", children: /* @__PURE__ */ jsx("input", { type: "number", style: inputStyle, value: max, onChange: (e) => setMax(e.target.value) }) }) })
     ] }),
     /* @__PURE__ */ jsx(Field, { label: "Barcode (optioneel, voor scannen)", children: /* @__PURE__ */ jsx("input", { style: inputStyle, value: barcode, onChange: (e) => setBarcode(e.target.value), placeholder: "Bijv. 8710400123456" }) }),
+    /* @__PURE__ */ jsx(Field, { label: "Houdbaar tot (THT, optioneel)", children: /* @__PURE__ */ jsx("input", { type: "date", style: inputStyle, value: expiryDate, onChange: (e) => setExpiryDate(e.target.value) }) }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginTop: 8 }, children: [
       /* @__PURE__ */ jsxs(
         PrimaryButton,
         {
           disabled: !canSave,
-          onClick: () => onSave({ ...initial, name: name.trim(), category, unit, current: Number(current), min: Number(min), max: Number(max), barcode: barcode.trim() }),
+          onClick: () => onSave({ ...initial, name: name.trim(), category, unit, current: Number(current), min: Number(min), max: Number(max), barcode: barcode.trim(), expiryDate }),
           children: [
             /* @__PURE__ */ jsx(Check, { size: 16 }),
             " Opslaan"
