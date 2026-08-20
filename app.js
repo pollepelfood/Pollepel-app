@@ -204,6 +204,7 @@ const CATEGORY_KEYWORDS = [
     "appel",
     "banaan",
     "citroen",
+    "limoen",
     "avocado",
     "champignon",
     "spinazie",
@@ -217,8 +218,11 @@ const CATEGORY_KEYWORDS = [
     "aubergine",
     "framboos",
     "druif",
+    "druiven",
     "peer",
+    "peren",
     "sinaasappel",
+    "mandarijn",
     "gember",
     "koriander",
     "basilicum",
@@ -226,7 +230,23 @@ const CATEGORY_KEYWORDS = [
     "bieslook",
     "venkel",
     "rabarber",
-    "spruit"
+    "spruit",
+    "aardbei",
+    "kers",
+    "kersen",
+    "meloen",
+    "kiwi",
+    "mango",
+    "ananas",
+    "perzik",
+    "abrikoos",
+    "bosbes",
+    "bramen",
+    "bes",
+    "granaatappel",
+    "groente",
+    "fruit",
+    "salade"
   ], "Groente & Fruit"],
   [[
     "melk",
@@ -236,14 +256,19 @@ const CATEGORY_KEYWORDS = [
     "kwark",
     "kookroom",
     "slagroom",
-    "cr\xE8me fra\xEEche",
+    "room",
+    "cr\xE8mefra\xEEche",
     "roomkaas",
     "mozzarella",
     "feta",
     "margarine",
     "ei",
     "eieren",
-    "parmezaan"
+    "parmezaan",
+    "zuivel",
+    "vla",
+    "pudding",
+    "chocomel"
   ], "Zuivel"],
   [[
     "kip",
@@ -262,8 +287,18 @@ const CATEGORY_KEYWORDS = [
     "rund",
     "varkens",
     "kalkoen",
-    "spare rib",
-    "gehaktbal"
+    "spareribs",
+    "gehaktbal",
+    "vlees",
+    "bacon",
+    "filet",
+    "schnitzel",
+    "hamburger",
+    "kroket",
+    "frikandel",
+    "makreel",
+    "haring",
+    "mosselen"
   ], "Vlees & Vis"],
   [[
     "brood",
@@ -281,7 +316,16 @@ const CATEGORY_KEYWORDS = [
     "havermout",
     "beschuit",
     "cracker",
-    "risottorijst"
+    "risottorijst",
+    "lasagne",
+    "tortilla",
+    "muesli",
+    "graan",
+    "granen",
+    "toast",
+    "croissant",
+    "bagel",
+    "quinoa"
   ], "Bakkerij & Granen"],
   [[
     "zout",
@@ -310,18 +354,60 @@ const CATEGORY_KEYWORDS = [
     "pindakaas",
     "pesto",
     "specerij",
-    "kruiden"
+    "kruiden",
+    "kruidenmix",
+    "sambal",
+    "knoflookpasta",
+    "gemberpasta",
+    "saus",
+    "dressing",
+    "marinade"
   ], "Kruiden & Specerijen"],
-  [["diepvries", "vriezer", "ijs "], "Diepvries"],
-  [["cola", "sap", "bier", "wijn", "koffie", "thee", "frisdrank", "water", "limonade", "sinas"], "Drank"]
+  [["diepvries", "vriezer", "ijsje", "ijstaart", "diepvries"], "Diepvries"],
+  [[
+    "cola",
+    "sap",
+    "bier",
+    "wijn",
+    "koffie",
+    "thee",
+    "frisdrank",
+    "water",
+    "limonade",
+    "sinas",
+    "energiedrank",
+    "smoothie",
+    "drank"
+  ], "Drank"]
+];
+const OFF_CATEGORY_RULES = [
+  [["fruit", "vegetable", "potato", "tomato", "onion", "fresh-produce", "salad", "herb-fresh"], "Groente & Fruit"],
+  [["dairies", "dairy", "milk", "cheese", "yogurt", "yoghurt", "cream", "butter", "egg"], "Zuivel"],
+  [["meat", "poultry", "fish", "seafood", "sausage", "ham", "beef", "pork", "chicken", "cold-cuts"], "Vlees & Vis"],
+  [["bread", "pasta", "cereal", "rice", "flour", "noodle", "bakery"], "Bakkerij & Granen"],
+  [["spice", "condiment", "sauce", "herb", "oil", "vinegar", "seasoning", "dressing"], "Kruiden & Specerijen"],
+  [["frozen"], "Diepvries"],
+  [["beverage", "drink", "juice", "soda", "water", "beer", "wine", "coffee", "tea"], "Drank"]
 ];
 function guessCategory(name) {
   const n = norm(name);
   if (!n) return "Overig";
+  const tokens = n.split(/[^a-zà-öø-ÿ]+/).filter(Boolean);
   for (const [keywords, category] of CATEGORY_KEYWORDS) {
-    if (keywords.some((k) => n.includes(k))) return category;
+    const matched = keywords.some(
+      (k) => k.length <= 3 ? tokens.some((t) => t.startsWith(k)) : n.includes(k)
+    );
+    if (matched) return category;
   }
   return "Overig";
+}
+function categoryFromOffTags(tags) {
+  if (!tags || !tags.length) return null;
+  const joined = tags.join(" ").toLowerCase();
+  for (const [words, category] of OFF_CATEGORY_RULES) {
+    if (words.some((w) => joined.includes(w))) return category;
+  }
+  return null;
 }
 function recipeReadiness(recipe, inventory, scale = 1) {
   let tracked = 0;
@@ -2971,11 +3057,11 @@ function InventoryForm({ initial, onCancel, onSave }) {
       setSearching(true);
       setSearchError("");
       try {
-        const res = await fetch(`https://search.openfoodfacts.org/search?q=${encodeURIComponent(name.trim())}&page_size=6&langs=nl`);
+        const res = await fetch(`https://search.openfoodfacts.org/search?q=${encodeURIComponent(name.trim())}&page_size=6&langs=nl&fields=product_name,product_name_nl,brands,code,categories_tags`);
         if (!res.ok) throw new Error("zoek-fout");
         const data = await res.json();
         const hits = data.hits || data.products || [];
-        const items = hits.map((p) => ({ product_name: p.product_name || p.product_name_nl || p.generic_name || "", brands: p.brands || "", code: p.code || p._id || "" })).filter((p) => p.product_name).slice(0, 6);
+        const items = hits.map((p) => ({ product_name: p.product_name || p.product_name_nl || p.generic_name || "", brands: p.brands || "", code: p.code || p._id || "", categories_tags: p.categories_tags || [] })).filter((p) => p.product_name).slice(0, 6);
         setSuggestions(items);
         setShowSuggestions(true);
         if (!items.length) setSearchError("Geen producten gevonden voor deze zoekterm.");
@@ -2991,6 +3077,7 @@ function InventoryForm({ initial, onCancel, onSave }) {
   const pickSuggestion = (p) => {
     setName(p.product_name);
     if (p.code) setBarcode(p.code);
+    setCategory(categoryFromOffTags(p.categories_tags) || guessCategory(p.product_name));
     setShowSuggestions(false);
     setSuggestions([]);
   };
@@ -3483,13 +3570,15 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
     setLookupLoading(true);
     setOffName("");
     try {
-      const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${c}.json?fields=product_name,product_name_nl`);
+      const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${c}.json?fields=product_name,product_name_nl,categories_tags`);
       const data = await res.json();
       const name = data && data.product && (data.product.product_name_nl || data.product.product_name) || "";
+      const tags = data && data.product && data.product.categories_tags || [];
       setOffName(name);
       if (name) {
         setNewName(name);
-        setNewCategory(guessCategory(name));
+        setNewCategory(categoryFromOffTags(tags) || guessCategory(name));
+        setCategoryTouched(true);
       }
     } catch (e) {
       setOffName("");
