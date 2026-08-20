@@ -41,7 +41,8 @@ import {
   Shuffle,
   WifiOff,
   CalendarClock,
-  StickyNote
+  StickyNote,
+  Sun
 } from "lucide-react";
 const UNITS = ["stuks", "g", "kg", "ml", "l", "eetlepel", "theelepel", "snufje"];
 const WEEK_DAYS = [
@@ -2289,7 +2290,11 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           },
           onDuplicate: duplicateWeekmenu,
           onApplyTemplate: applyWeekmenuTemplate,
-          onShuffle: shuffleWeekmenu
+          onShuffle: shuffleWeekmenu,
+          onOpenRecipe: (id) => {
+            setOpenRecipeId(id);
+            setTab("kookboek");
+          }
         }
       )
     ] }),
@@ -2628,13 +2633,73 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
   const [confirmCook, setConfirmCook] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [servings, setServings] = useState(recipe.servings);
+  const [screenAwake, setScreenAwake] = useState(false);
+  const wakeLockRef = React.useRef(null);
+  const wakeLockSupported = typeof navigator !== "undefined" && "wakeLock" in navigator;
+  const requestWakeLock = async () => {
+    if (!wakeLockSupported) return;
+    try {
+      wakeLockRef.current = await navigator.wakeLock.request("screen");
+      setScreenAwake(true);
+      wakeLockRef.current.addEventListener("release", () => setScreenAwake(false));
+    } catch (e) {
+      setScreenAwake(false);
+    }
+  };
+  const releaseWakeLock = async () => {
+    if (wakeLockRef.current) {
+      try {
+        await wakeLockRef.current.release();
+      } catch (e) {
+      }
+      wakeLockRef.current = null;
+    }
+    setScreenAwake(false);
+  };
+  const toggleScreenAwake = () => {
+    screenAwake ? releaseWakeLock() : requestWakeLock();
+  };
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (screenAwake && document.visibilityState === "visible" && !wakeLockRef.current) requestWakeLock();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      releaseWakeLock();
+    };
+  }, [screenAwake]);
   const scale = servings / recipe.servings;
   const scaledIngredients = recipe.ingredients.map((ing) => ({ ...ing, scaledAmount: round2(ing.amount * scale) }));
   const readiness = recipeReadiness(recipe, inventory, scale);
   return /* @__PURE__ */ jsxs("div", { children: [
-    /* @__PURE__ */ jsxs("button", { onClick: onBack, style: { background: "none", border: "none", display: "flex", alignItems: "center", gap: 4, color: C.blue, cursor: "pointer", padding: 0, marginBottom: 10, fontWeight: 600, fontSize: 13 }, children: [
-      /* @__PURE__ */ jsx(ChevronLeft, { size: 16 }),
-      " Terug"
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }, children: [
+      /* @__PURE__ */ jsxs("button", { onClick: onBack, style: { background: "none", border: "none", display: "flex", alignItems: "center", gap: 4, color: C.blue, cursor: "pointer", padding: 0, fontWeight: 600, fontSize: 13 }, children: [
+        /* @__PURE__ */ jsx(ChevronLeft, { size: 16 }),
+        " Terug"
+      ] }),
+      wakeLockSupported && /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: toggleScreenAwake,
+          title: screenAwake ? "Scherm blijft aan (keukenmodus)" : "Scherm aan houden tijdens koken",
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "5px 10px",
+            borderRadius: 20,
+            cursor: "pointer",
+            border: `1.5px solid ${screenAwake ? C.mustard : "rgba(31,63,102,0.22)"}`,
+            background: screenAwake ? C.mustard : "#fff",
+            color: screenAwake ? "#fff" : C.inkSoft
+          },
+          children: [
+            /* @__PURE__ */ jsx(Sun, { size: 13 }),
+            /* @__PURE__ */ jsx("span", { style: { fontSize: 11.5, fontWeight: 600 }, children: screenAwake ? "Scherm blijft aan" : "Keukenmodus" })
+          ]
+        }
+      )
     ] }),
     !isMine && /* @__PURE__ */ jsxs("div", { style: { background: "#fff", border: `1.5px solid rgba(31,63,102,0.2)`, borderRadius: 12, padding: "8px 10px", marginBottom: 10, fontSize: 12, color: C.inkSoft, display: "flex", alignItems: "center", gap: 6 }, children: [
       /* @__PURE__ */ jsx(Users, { size: 13, color: C.blue }),
@@ -2828,7 +2893,7 @@ function RecipeForm({ initial, inventoryNames, onCancel, onSave }) {
     ] })
   ] });
 }
-function WeekmenuView({ weekmenu, recipes, cooks, onPickDay, onPickCook, onClearDay, onGenerate, onAIGenerate, onDuplicate, onApplyTemplate, onShuffle }) {
+function WeekmenuView({ weekmenu, recipes, cooks, onPickDay, onPickCook, onClearDay, onGenerate, onAIGenerate, onDuplicate, onApplyTemplate, onShuffle, onOpenRecipe }) {
   const findRecipe = (id) => recipes.find((r) => r.id === id);
   const dayEntry = (day) => {
     const raw = weekmenu[day];
@@ -2873,8 +2938,17 @@ function WeekmenuView({ weekmenu, recipes, cooks, onPickDay, onPickCook, onClear
             /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
               /* @__PURE__ */ jsx("div", { style: { width: 66, fontSize: 12, fontFamily: FONT_MONO, color: C.blueSoft, flexShrink: 0 }, children: day.label }),
               recipe ? /* @__PURE__ */ jsxs(Fragment, { children: [
-                /* @__PURE__ */ jsx("div", { style: { width: 30, height: 30, borderRadius: 9, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }, children: recipe.emoji || "\u{1F37D}\uFE0F" }),
-                /* @__PURE__ */ jsx("div", { style: { flex: 1, fontSize: 13.5, color: C.ink, cursor: "pointer" }, onClick: () => onPickDay(day.key), children: recipe.name }),
+                /* @__PURE__ */ jsx(
+                  "div",
+                  {
+                    onClick: () => onOpenRecipe(recipe.id),
+                    title: "Open dit recept",
+                    style: { width: 30, height: 30, borderRadius: 9, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0, cursor: "pointer" },
+                    children: recipe.emoji || "\u{1F37D}\uFE0F"
+                  }
+                ),
+                /* @__PURE__ */ jsx("div", { style: { flex: 1, fontSize: 13.5, color: C.ink, cursor: "pointer" }, onClick: () => onOpenRecipe(recipe.id), children: recipe.name }),
+                /* @__PURE__ */ jsx("button", { onClick: () => onPickDay(day.key), title: "Ander recept kiezen", style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(Pencil, { size: 13, color: C.inkSoft }) }),
                 /* @__PURE__ */ jsx("button", { onClick: () => onClearDay(day.key), style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(X, { size: 15, color: C.inkSoft }) })
               ] }) : /* @__PURE__ */ jsxs("button", { onClick: () => onPickDay(day.key), style: { flex: 1, display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: C.inkSoft, fontSize: 13, cursor: "pointer", padding: "4px 0" }, children: [
                 /* @__PURE__ */ jsx(Plus, { size: 14 }),
