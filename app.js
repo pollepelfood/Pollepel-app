@@ -2159,26 +2159,15 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         /* @__PURE__ */ jsx(LogoMark, { size: 22 }),
         /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 19, flexShrink: 0, whiteSpace: "nowrap" }, children: "Pollepel" }),
         saving && /* @__PURE__ */ jsx(Loader2, { className: "animate-spin", size: 14, style: { marginLeft: 6, flexShrink: 0 } }),
-        /* @__PURE__ */ jsxs("div", { style: { marginLeft: "auto", display: "flex", gap: 8, flexShrink: 0 }, children: [
-          /* @__PURE__ */ jsx(
-            "button",
-            {
-              onClick: exportBackup,
-              title: "Backup downloaden",
-              style: { background: "rgba(255,255,255,0.14)", border: "none", borderRadius: 10, padding: 6, cursor: "pointer", display: "flex" },
-              children: /* @__PURE__ */ jsx(Download, { size: 15, color: "#fff" })
-            }
-          ),
-          /* @__PURE__ */ jsx(
-            "button",
-            {
-              onClick: () => setSettingsOpen(true),
-              title: "Instellingen",
-              style: { background: "rgba(255,255,255,0.14)", border: "none", borderRadius: 10, padding: 6, cursor: "pointer", display: "flex" },
-              children: /* @__PURE__ */ jsx(Settings, { size: 15, color: "#fff" })
-            }
-          )
-        ] })
+        /* @__PURE__ */ jsx("div", { style: { marginLeft: "auto", display: "flex", gap: 8, flexShrink: 0 }, children: /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: () => setSettingsOpen(true),
+            title: "Instellingen",
+            style: { background: "rgba(255,255,255,0.14)", border: "none", borderRadius: 10, padding: 6, cursor: "pointer", display: "flex" },
+            children: /* @__PURE__ */ jsx(Settings, { size: 15, color: "#fff" })
+          }
+        ) })
       ] }),
       household?.name ? /* @__PURE__ */ jsx("div", { style: {
         fontSize: 13,
@@ -2359,6 +2348,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           setSettingsOpen(false);
           setPrintCardOpen(true);
         },
+        onExportBackup: exportBackup,
         onClose: () => setSettingsOpen(false)
       }
     ),
@@ -3040,7 +3030,7 @@ function CookPickerModal({ cooks, current, onPick, onAddCook, onRemoveCook, onCl
     ] })
   ] });
 }
-function SettingsModal({ household, members, onRename, onLogout, onOpenMagnet, onClose }) {
+function SettingsModal({ household, members, onRename, onLogout, onOpenMagnet, onExportBackup, onClose }) {
   const [name, setName] = useState(household?.name || "");
   const [savingName, setSavingName] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -3085,9 +3075,29 @@ function SettingsModal({ household, members, onRename, onLogout, onOpenMagnet, o
         m.role === "owner" && /* @__PURE__ */ jsx(Pill, { children: "eigenaar" })
       ] }, m.userId || idx)) })
     ] }),
-    /* @__PURE__ */ jsxs(GhostButton, { onClick: onOpenMagnet, children: [
-      /* @__PURE__ */ jsx(Printer, { size: 14 }),
-      " Koelkastmagneet printen"
+    /* @__PURE__ */ jsxs("div", { style: { background: "#fff", borderRadius: 14, border: `1.5px solid rgba(31,63,102,0.16)`, marginBottom: 16, overflow: "hidden" }, children: [
+      /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: onOpenMagnet,
+          style: { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 12px", background: "none", border: "none", borderBottom: `1px solid ${C.ceramic}`, cursor: "pointer", textAlign: "left" },
+          children: [
+            /* @__PURE__ */ jsx(Printer, { size: 16, color: C.blueDeep }),
+            /* @__PURE__ */ jsx("span", { style: { fontSize: 13.5, color: C.ink }, children: "Koelkastmagneet printen" })
+          ]
+        }
+      ),
+      /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: onExportBackup,
+          style: { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 12px", background: "none", border: "none", cursor: "pointer", textAlign: "left" },
+          children: [
+            /* @__PURE__ */ jsx(Download, { size: 16, color: C.blueDeep }),
+            /* @__PURE__ */ jsx("span", { style: { fontSize: 13.5, color: C.ink }, children: "Backup downloaden" })
+          ]
+        }
+      )
     ] }),
     /* @__PURE__ */ jsx("div", { style: { marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.ceramic}` }, children: !confirmLogout ? /* @__PURE__ */ jsxs(GhostButton, { danger: true, onClick: () => setConfirmLogout(true), children: [
       /* @__PURE__ */ jsx(LogOut, { size: 14 }),
