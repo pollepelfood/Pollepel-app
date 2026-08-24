@@ -173,7 +173,10 @@ const LIGHT_PALETTE = {
   ink: "#1C1D1B",
   inkSoft: "#5B5C57",
   cardBg: "#ffffff",
-  borderTint: "rgba(31,63,102,0.16)"
+  borderTint: "rgba(31,63,102,0.16)",
+  warnBg: "#F1DCC9",
+  successBg: "#EEF3EC",
+  noteBg: "#FBF3E3"
 };
 const DARK_PALETTE = {
   blue: "#4A7BAE",
@@ -189,11 +192,19 @@ const DARK_PALETTE = {
   ink: "#F0EEE6",
   inkSoft: "#A8A69C",
   cardBg: "#242832",
-  borderTint: "rgba(143,169,196,0.22)"
+  borderTint: "rgba(143,169,196,0.22)",
+  warnBg: "#3D2B22",
+  successBg: "#1F2B22",
+  noteBg: "#332A18"
 };
 let C = { ...LIGHT_PALETTE };
 function applyTheme(dark) {
   Object.assign(C, dark ? DARK_PALETTE : LIGHT_PALETTE);
+  if (typeof document !== "undefined") {
+    const bg = dark ? DARK_PALETTE.ceramic : LIGHT_PALETTE.ceramic;
+    document.documentElement.style.background = bg;
+    document.body.style.background = bg;
+  }
 }
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
@@ -1450,7 +1461,7 @@ function TileThumb({ recipe, size = "normal" }) {
 function Pill({ children, tone = "default" }) {
   const tones = {
     default: { bg: C.ceramicDark, fg: C.inkSoft },
-    warn: { bg: "#F1DCC9", fg: C.brick },
+    warn: { bg: C.warnBg, fg: C.brick },
     ok: { bg: "#DCE7DD", fg: C.sage },
     auto: { bg: "#E4D9C3", fg: C.mustardDeep }
   };
@@ -2655,7 +2666,7 @@ function SeasonalAndSurpriseBar({ recipes, inventory, onOpen }) {
         ]
       }
     ),
-    seasonal.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: "#EEF3EC", border: `1.5px solid ${C.sage}`, borderRadius: 16, padding: 12 }, children: [
+    seasonal.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.successBg, border: `1.5px solid ${C.sage}`, borderRadius: 16, padding: 12 }, children: [
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }, children: [
         /* @__PURE__ */ jsx("span", { style: { fontSize: 14 }, children: "\u{1F331}" }),
         /* @__PURE__ */ jsxs("span", { style: { fontSize: 12.5, fontWeight: 700, color: C.sage }, children: [
@@ -2699,7 +2710,7 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
             borderRadius: 12,
             cursor: "pointer",
             border: `1.5px solid ${bookMode === "mine" ? C.blue : C.borderTint}`,
-            background: bookMode === "mine" ? C.blue : "#fff",
+            background: bookMode === "mine" ? C.blue : C.cardBg,
             color: bookMode === "mine" ? "#fff" : C.ink,
             fontWeight: 600,
             fontSize: 12,
@@ -2724,7 +2735,7 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
             borderRadius: 12,
             cursor: "pointer",
             border: `1.5px solid ${bookMode === "community" ? C.blue : C.borderTint}`,
-            background: bookMode === "community" ? C.blue : "#fff",
+            background: bookMode === "community" ? C.blue : C.cardBg,
             color: bookMode === "community" ? "#fff" : C.ink,
             fontWeight: 600,
             fontSize: 12,
@@ -2749,7 +2760,7 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
             borderRadius: 12,
             cursor: "pointer",
             border: `1.5px solid ${bookMode === "history" ? C.blue : C.borderTint}`,
-            background: bookMode === "history" ? C.blue : "#fff",
+            background: bookMode === "history" ? C.blue : C.cardBg,
             color: bookMode === "history" ? "#fff" : C.ink,
             fontWeight: 600,
             fontSize: 12,
@@ -2788,7 +2799,7 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
             title: "Alleen favorieten",
             style: {
               border: `1.5px solid ${favOnly ? C.mustard : C.borderTint}`,
-              background: favOnly ? C.mustard : "#fff",
+              background: favOnly ? C.mustard : C.cardBg,
               borderRadius: 12,
               width: 42,
               display: "flex",
@@ -2806,7 +2817,7 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
             title: "Alleen wat ik kan maken",
             style: {
               border: `1.5px solid ${makeOnly ? C.sage : C.borderTint}`,
-              background: makeOnly ? C.sage : "#fff",
+              background: makeOnly ? C.sage : C.cardBg,
               borderRadius: 12,
               width: 42,
               display: "flex",
@@ -2824,7 +2835,7 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
             title: `Past bij: ${activeDietTags.join(", ")}`,
             style: {
               border: `1.5px solid ${dietOnly ? C.sage : C.borderTint}`,
-              background: dietOnly ? C.sage : "#fff",
+              background: dietOnly ? C.sage : C.cardBg,
               borderRadius: 12,
               width: 42,
               display: "flex",
@@ -3017,7 +3028,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
             borderRadius: 20,
             cursor: "pointer",
             border: `1.5px solid ${screenAwake ? C.mustard : C.borderTint}`,
-            background: screenAwake ? C.mustard : "#fff",
+            background: screenAwake ? C.mustard : C.cardBg,
             color: screenAwake ? "#fff" : C.inkSoft
           },
           children: [
@@ -3085,7 +3096,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_MONO, color: C.mustardDeep, fontWeight: 600, flexShrink: 0 }, children: String(idx + 1).padStart(2, "0") }),
       /* @__PURE__ */ jsx("span", { children: s })
     ] }, idx)) }),
-    recipe.notes && /* @__PURE__ */ jsxs("div", { style: { background: "#FBF3E3", border: `1px solid ${C.mustard}`, borderRadius: 14, padding: 12, marginBottom: 18, display: "flex", gap: 8 }, children: [
+    recipe.notes && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: `1px solid ${C.mustard}`, borderRadius: 14, padding: 12, marginBottom: 18, display: "flex", gap: 8 }, children: [
       /* @__PURE__ */ jsx(StickyNote, { size: 16, color: C.mustardDeep, style: { flexShrink: 0, marginTop: 1 } }),
       /* @__PURE__ */ jsxs("div", { children: [
         /* @__PURE__ */ jsx("div", { style: { fontSize: 11, fontWeight: 600, color: C.mustardDeep, marginBottom: 2 }, children: "Jouw notitie" }),
@@ -3233,7 +3244,7 @@ function RecipeForm({ initial, inventoryNames, onCancel, onSave }) {
           fontSize: 12,
           cursor: "pointer",
           border: `1.5px solid ${diets.includes(tag) ? C.sage : C.borderTint}`,
-          background: diets.includes(tag) ? C.sage : "#fff",
+          background: diets.includes(tag) ? C.sage : C.cardBg,
           color: diets.includes(tag) ? "#fff" : C.inkSoft
         },
         children: tag
@@ -3380,7 +3391,7 @@ function CookPickerModal({ cooks, current, onPick, onAddCook, onRemoveCook, onCl
             fontSize: 13,
             fontWeight: 600,
             border: `1.5px solid ${current === name ? C.blue : C.borderTint}`,
-            background: current === name ? C.blue : "#fff",
+            background: current === name ? C.blue : C.cardBg,
             color: current === name ? "#fff" : C.ink
           },
           children: name
@@ -3424,7 +3435,7 @@ function CookDietRow({ name, preferences, onUpdate }) {
           fontSize: 11,
           cursor: "pointer",
           border: `1.5px solid ${active.includes(tag) ? C.sage : C.borderTint}`,
-          background: active.includes(tag) ? C.sage : "#fff",
+          background: active.includes(tag) ? C.sage : C.cardBg,
           color: active.includes(tag) ? "#fff" : C.inkSoft
         },
         children: tag
@@ -3860,7 +3871,7 @@ function VoorraadView({ inventory, recipes, categories, onEdit, onNew, onDelete,
   const expirySuggestions = useMemo(() => getExpirySuggestions(inventory, recipes), [inventory, recipes]);
   return /* @__PURE__ */ jsxs("div", { children: [
     /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.inkSoft, marginTop: 0 }, children: "Stel per ingredi\xEBnt een minimum en maximum in. Zodra de voorraad onder het minimum komt, verschijnt het automatisch op de boodschappenlijst." }),
-    expirySuggestions.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: "#FBF3E3", border: `1.5px solid ${C.mustard}`, borderRadius: 16, padding: 12, marginBottom: 16 }, children: [
+    expirySuggestions.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 16, padding: 12, marginBottom: 16 }, children: [
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }, children: [
         /* @__PURE__ */ jsx(CalendarClock, { size: 15, color: C.mustardDeep }),
         /* @__PURE__ */ jsx("span", { style: { fontSize: 12.5, fontWeight: 700, color: C.mustardDeep }, children: "Bijna over de datum" })
@@ -4064,7 +4075,7 @@ function InventoryForm({ initial, onCancel, onSave }) {
           width: "100%",
           padding: "10px 12px",
           marginBottom: 8,
-          background: onSale ? "#FBF3E3" : "#fff",
+          background: onSale ? C.noteBg : C.cardBg,
           border: `1.5px solid ${onSale ? C.mustard : C.borderTint}`,
           borderRadius: 12,
           cursor: "pointer"
@@ -4248,7 +4259,7 @@ function ImportModal({ importing, error, onCancel, onImportText, onImportUrl, on
             borderRadius: 12,
             cursor: "pointer",
             border: `1.5px solid ${mode === "url" ? C.blue : C.ceramicDark}`,
-            background: mode === "url" ? C.blue : "#fff",
+            background: mode === "url" ? C.blue : C.cardBg,
             color: mode === "url" ? "#fff" : C.ink,
             fontWeight: 600,
             fontSize: 12.5,
@@ -4273,7 +4284,7 @@ function ImportModal({ importing, error, onCancel, onImportText, onImportUrl, on
             borderRadius: 12,
             cursor: "pointer",
             border: `1.5px solid ${mode === "text" ? C.blue : C.ceramicDark}`,
-            background: mode === "text" ? C.blue : "#fff",
+            background: mode === "text" ? C.blue : C.cardBg,
             color: mode === "text" ? "#fff" : C.ink,
             fontWeight: 600,
             fontSize: 12.5,
@@ -4298,7 +4309,7 @@ function ImportModal({ importing, error, onCancel, onImportText, onImportUrl, on
             borderRadius: 12,
             cursor: "pointer",
             border: `1.5px solid ${mode === "photo" ? C.blue : C.ceramicDark}`,
-            background: mode === "photo" ? C.blue : "#fff",
+            background: mode === "photo" ? C.blue : C.cardBg,
             color: mode === "photo" ? "#fff" : C.ink,
             fontWeight: 600,
             fontSize: 12.5,
@@ -4349,7 +4360,7 @@ function ImportModal({ importing, error, onCancel, onImportText, onImportUrl, on
       /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: -2 }, children: "Zorg dat de tekst scherp en volledig in beeld is \u2014 bijv. een kookboekpagina, uitprint of handgeschreven kaart." })
     ] }),
     mode === "url" && /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: -6 }, children: 'Sommige sites blokkeren automatisch ophalen \u2014 lukt het niet, kopieer dan de tekst en gebruik "Tekst".' }),
-    error && /* @__PURE__ */ jsxs("div", { style: { background: "#F1DCC9", border: `1px solid ${C.brick}`, borderRadius: 12, padding: "8px 10px", fontSize: 12.5, color: C.brick, marginBottom: 10, display: "flex", gap: 6, alignItems: "flex-start" }, children: [
+    error && /* @__PURE__ */ jsxs("div", { style: { background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 12, padding: "8px 10px", fontSize: 12.5, color: C.brick, marginBottom: 10, display: "flex", gap: 6, alignItems: "flex-start" }, children: [
       /* @__PURE__ */ jsx(AlertTriangle, { size: 14, style: { flexShrink: 0, marginTop: 1 } }),
       /* @__PURE__ */ jsx("span", { children: error })
     ] }),
@@ -4378,7 +4389,7 @@ function AIWeekmenuModal({ generating, progress, error, onCancel, onGenerate }) 
           borderRadius: 14,
           cursor: "pointer",
           border: `1.5px solid ${styleId === s.id ? C.blue : C.borderTint}`,
-          background: styleId === s.id ? C.blue : "#fff",
+          background: styleId === s.id ? C.blue : C.cardBg,
           color: styleId === s.id ? "#fff" : C.ink
         },
         children: [
@@ -4402,7 +4413,7 @@ function AIWeekmenuModal({ generating, progress, error, onCancel, onGenerate }) 
             fontSize: 12.5,
             fontWeight: 600,
             border: `1.5px solid ${scope === "empty" ? C.blue : C.borderTint}`,
-            background: scope === "empty" ? C.blue : "#fff",
+            background: scope === "empty" ? C.blue : C.cardBg,
             color: scope === "empty" ? "#fff" : C.ink
           },
           children: "Alleen lege dagen"
@@ -4420,7 +4431,7 @@ function AIWeekmenuModal({ generating, progress, error, onCancel, onGenerate }) 
             fontSize: 12.5,
             fontWeight: 600,
             border: `1.5px solid ${scope === "all" ? C.blue : C.borderTint}`,
-            background: scope === "all" ? C.blue : "#fff",
+            background: scope === "all" ? C.blue : C.cardBg,
             color: scope === "all" ? "#fff" : C.ink
           },
           children: "Hele week (overschrijven)"
@@ -4431,7 +4442,7 @@ function AIWeekmenuModal({ generating, progress, error, onCancel, onGenerate }) 
       /* @__PURE__ */ jsx(Loader2, { className: "animate-spin", size: 16, color: C.blue }),
       /* @__PURE__ */ jsx("span", { style: { fontSize: 12.5, color: C.ink }, children: progress || "Bezig\u2026" })
     ] }),
-    error && !generating && /* @__PURE__ */ jsxs("div", { style: { background: "#F1DCC9", border: `1px solid ${C.brick}`, borderRadius: 12, padding: "8px 10px", fontSize: 12.5, color: C.brick, marginBottom: 10, display: "flex", gap: 6, alignItems: "flex-start" }, children: [
+    error && !generating && /* @__PURE__ */ jsxs("div", { style: { background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 12, padding: "8px 10px", fontSize: 12.5, color: C.brick, marginBottom: 10, display: "flex", gap: 6, alignItems: "flex-start" }, children: [
       /* @__PURE__ */ jsx(AlertTriangle, { size: 14, style: { flexShrink: 0, marginTop: 1 } }),
       /* @__PURE__ */ jsx("span", { children: error })
     ] }),
@@ -4576,7 +4587,7 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
       /* @__PURE__ */ jsx(GhostButton, { onClick: () => setPhase("manual"), children: "Terug naar handmatig invoeren" })
     ] }),
     phase === "manual" && /* @__PURE__ */ jsxs("div", { children: [
-      cameraError && /* @__PURE__ */ jsx("div", { style: { background: "#F1DCC9", border: `1px solid ${C.brick}`, borderRadius: 12, padding: "8px 10px", fontSize: 12.5, color: C.brick, marginBottom: 10 }, children: cameraError }),
+      cameraError && /* @__PURE__ */ jsx("div", { style: { background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 12, padding: "8px 10px", fontSize: 12.5, color: C.brick, marginBottom: 10 }, children: cameraError }),
       /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.inkSoft, marginTop: 0 }, children: "Voer de barcode in (de cijfers onder de streepjescode op de verpakking)." }),
       /* @__PURE__ */ jsx(Field, { label: "Barcode", children: /* @__PURE__ */ jsx("input", { style: inputStyle, value: manualCode, onChange: (e) => setManualCode(e.target.value), placeholder: "Bijv. 8710400123456", inputMode: "numeric", autoFocus: true }) }),
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" }, children: [
