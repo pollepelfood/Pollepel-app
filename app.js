@@ -1879,24 +1879,25 @@ Regels:
 - Kies per ingredi\xEBnt de dichtstbijzijnde toegestane eenheid; gebruik "stuks" als er geen duidelijke maateenheid is.
 - Als de foto onduidelijk, onvolledig of geen recept is, antwoord dan met {"error":"onleesbaar"}.
 - Antwoord ALLEEN met de JSON, niets anders.`;
-  const describePhotoError = (code) => {
+  const describePhotoError = (code, detail) => {
+    const detailSuffix = detail ? ` [Detail: ${detail.slice(0, 200)}]` : "";
     if (code && code.startsWith("serverfout-")) {
       const status = Number(code.split("-")[1]);
-      if (status === 413) return "Deze foto is te groot om te versturen. Probeer een foto met minder detail, of een kleiner deel van de pagina.";
-      if (status === 429) return "De AI heeft het op dit moment te druk. Wacht een minuutje en probeer het opnieuw.";
-      if (status === 401 || status === 403) return "Geen toegang tot de AI-dienst op dit moment. Probeer het later opnieuw.";
-      if (status >= 500) return "De AI-dienst heeft zelf een probleem (tijdelijke storing). Probeer het over een paar minuten opnieuw.";
-      return `De AI wees dit verzoek af (foutcode ${status}). Probeer een andere foto.`;
+      if (status === 413) return "Deze foto is te groot om te versturen. Probeer een foto met minder detail, of een kleiner deel van de pagina." + detailSuffix;
+      if (status === 429) return "De AI heeft het op dit moment te druk. Wacht een minuutje en probeer het opnieuw." + detailSuffix;
+      if (status === 401 || status === 403) return "Geen toegang tot de AI-dienst op dit moment. Probeer het later opnieuw." + detailSuffix;
+      if (status >= 500) return "De AI-dienst heeft zelf een probleem (tijdelijke storing). Probeer het over een paar minuten opnieuw." + detailSuffix;
+      return `De AI wees dit verzoek af (foutcode ${status}).${detailSuffix}`;
     }
     const messages = {
       resize: "Kon deze foto niet verwerken op je toestel. Probeer een andere foto, of gebruik 'Uploaden' in plaats van 'Foto maken'.",
-      netwerk: "Kon geen verbinding maken met de AI. Controleer je internetverbinding en probeer het opnieuw.",
+      netwerk: "Kon geen verbinding maken met de AI. Controleer je internetverbinding en probeer het opnieuw." + detailSuffix,
       json: "De AI-respons was te lang en brak af. Probeer het nog eens, of maak een foto van een kleiner deel.",
-      vorm: "De AI gaf een onverwacht antwoord terug. Probeer het nog eens, of typ het over in het tekstveld.",
+      vorm: "De AI gaf een onverwacht antwoord terug. Probeer het nog eens, of typ het over in het tekstveld." + detailSuffix,
       onleesbaar: "De foto is niet goed leesbaar. Zorg dat de tekst scherp en volledig in beeld is.",
       leeg: "Kon niets bruikbaars herkennen op deze foto."
     };
-    return messages[code] || "Er ging iets mis bij het verwerken van deze foto. Probeer het nog eens.";
+    return (messages[code] || "Er ging iets mis bij het verwerken van deze foto.") + (messages[code] ? "" : detailSuffix);
   };
   const importFromPhoto = async (file) => {
     setImporting(true);
@@ -1915,6 +1916,7 @@ Regels:
       } catch (e) {
         console.error("AI-aanroep (foto naar recept) mislukt:", e.status, e.body || e.message);
         const err = new Error(e.status ? `serverfout-${e.status}` : "netwerk");
+        err.detail = e.body || e.message;
         throw err;
       }
       let parsed;
@@ -1922,7 +1924,9 @@ Regels:
         parsed = extractJson(raw);
       } catch (e) {
         console.error("Kon AI-antwoord niet als JSON lezen:", raw);
-        throw new Error("json");
+        const err = new Error("json");
+        err.detail = raw;
+        throw err;
       }
       if (parsed.error) throw new Error("onleesbaar");
       let draft;
@@ -1930,13 +1934,15 @@ Regels:
         draft = sanitizeDraft(parsed);
       } catch (e) {
         console.error("Kon AI-antwoord niet omzetten naar recept (onverwachte vorm):", parsed, e);
-        throw new Error("vorm");
+        const err = new Error("vorm");
+        err.detail = e.message;
+        throw err;
       }
       if (!draft.ingredients.length || !draft.steps.length) throw new Error("leeg");
       setImportOpen(false);
       setEditingRecipe(draft);
     } catch (e) {
-      setImportError(describePhotoError(e.message));
+      setImportError(describePhotoError(e.message, e.detail));
     } finally {
       setImporting(false);
     }
@@ -1968,14 +1974,18 @@ Regels:
         raw = await askClaudeVision(base64, mediaType, buildShelfPhotoPrompt());
       } catch (e) {
         console.error("AI-aanroep (kastfoto) mislukt:", e.status, e.body || e.message);
-        throw new Error(e.status ? `serverfout-${e.status}` : "netwerk");
+        const err = new Error(e.status ? `serverfout-${e.status}` : "netwerk");
+        err.detail = e.body || e.message;
+        throw err;
       }
       let parsed;
       try {
         parsed = extractJson(raw);
       } catch (e) {
         console.error("Kon AI-antwoord niet als JSON lezen:", raw);
-        throw new Error("json");
+        const err = new Error("json");
+        err.detail = raw;
+        throw err;
       }
       const items = Array.isArray(parsed.items) ? parsed.items : [];
       if (!items.length) throw new Error("leeg");
@@ -1995,12 +2005,14 @@ Regels:
         }).filter((r) => r.name);
       } catch (e) {
         console.error("Kon AI-antwoord niet omzetten naar producten (onverwachte vorm):", parsed, e);
-        throw new Error("vorm");
+        const err = new Error("vorm");
+        err.detail = e.message;
+        throw err;
       }
       if (!results.length) throw new Error("leeg");
       setShelfScanResults(results);
     } catch (e) {
-      setShelfScanError(describePhotoError(e.message));
+      setShelfScanError(describePhotoError(e.message, e.detail));
     } finally {
       setShelfScanning(false);
     }
