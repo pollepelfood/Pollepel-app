@@ -1862,16 +1862,41 @@ Regels:
     setImporting(true);
     setImportError("");
     try {
-      const { base64, mediaType } = await resizeImageFile(file);
-      const raw = await askClaudeVision(base64, mediaType, buildPhotoExtractionPrompt());
-      const parsed = extractJson(raw);
+      let base64, mediaType;
+      try {
+        ({ base64, mediaType } = await resizeImageFile(file));
+      } catch (e) {
+        console.error("Foto verwerken mislukt:", e);
+        throw new Error("resize");
+      }
+      let raw;
+      try {
+        raw = await askClaudeVision(base64, mediaType, buildPhotoExtractionPrompt());
+      } catch (e) {
+        console.error("AI-aanroep (foto naar recept) mislukt:", e);
+        throw new Error("netwerk");
+      }
+      let parsed;
+      try {
+        parsed = extractJson(raw);
+      } catch (e) {
+        console.error("Kon AI-antwoord niet als JSON lezen:", raw);
+        throw new Error("json");
+      }
       if (parsed.error) throw new Error("onleesbaar");
       const draft = sanitizeDraft(parsed);
       if (!draft.ingredients.length || !draft.steps.length) throw new Error("leeg");
       setImportOpen(false);
       setEditingRecipe(draft);
     } catch (e) {
-      setImportError("Kon geen recept herkennen op deze foto. Zorg dat de tekst scherp en volledig zichtbaar is, of typ het recept over in het tekstveld.");
+      const messages = {
+        resize: "Kon deze foto niet verwerken op je toestel. Probeer een andere foto, of gebruik 'Uploaden' in plaats van 'Foto maken'.",
+        netwerk: "Kon geen verbinding maken met de AI om de foto te herkennen. Controleer je internetverbinding en probeer het opnieuw.",
+        json: "De AI gaf een onverwacht antwoord terug. Probeer het nog eens, of typ het recept over in het tekstveld.",
+        onleesbaar: "De foto is niet goed leesbaar. Zorg dat de tekst scherp en volledig in beeld is.",
+        leeg: "Kon geen volledig recept herkennen op deze foto (ingredi\xEBnten of stappen ontbreken)."
+      };
+      setImportError(messages[e.message] || "Kon geen recept herkennen op deze foto. Zorg dat de tekst scherp en volledig zichtbaar is, of typ het recept over in het tekstveld.");
     } finally {
       setImporting(false);
     }
@@ -1884,33 +1909,65 @@ Antwoord ALLEEN met STRIKT GELDIGE, COMPACTE JSON (\xE9\xE9n regel, geen markdow
 Regels:
 - Alleen duidelijk herkenbare producten, geen gokwerk bij onduidelijke/onleesbare verpakkingen.
 - Voor onduidelijke hoeveelheden: gebruik "stuks" met een redelijke schatting (bijv. 3 appels, 1 pak melk).
-- Maximaal 25 producten.
+- Maximaal 20 producten. Dit moet compact blijven \u2014 belangrijker dan volledigheid.
 - Als er niets herkenbaars op de foto staat, antwoord dan met {"items":[]}.`;
   const scanShelfPhoto = async (file) => {
     setShelfScanning(true);
     setShelfScanError("");
     setShelfScanResults([]);
     try {
-      const { base64, mediaType } = await resizeImageFile(file);
-      const raw = await askClaudeVision(base64, mediaType, buildShelfPhotoPrompt());
-      const parsed = extractJson(raw);
+      let base64, mediaType;
+      try {
+        ({ base64, mediaType } = await resizeImageFile(file));
+      } catch (e) {
+        console.error("Kastfoto verwerken mislukt:", e);
+        throw new Error("resize");
+      }
+      let raw;
+      try {
+        raw = await askClaudeVision(base64, mediaType, buildShelfPhotoPrompt());
+      } catch (e) {
+        console.error("AI-aanroep (kastfoto) mislukt:", e);
+        throw new Error("netwerk");
+      }
+      let parsed;
+      try {
+        parsed = extractJson(raw);
+      } catch (e) {
+        console.error("Kon AI-antwoord niet als JSON lezen:", raw);
+        throw new Error("json");
+      }
       const items = Array.isArray(parsed.items) ? parsed.items : [];
       if (!items.length) throw new Error("leeg");
-      const results = items.slice(0, 25).map((it) => {
-        const existing = inventory.find((i) => namesMatch(i.name, it.name) && i.unit === it.unit);
-        return {
-          tempId: uid(),
-          name: String(it.name || "").slice(0, 60),
-          amount: Number(it.amount) > 0 ? Number(it.amount) : 1,
-          unit: UNITS.includes(it.unit) ? it.unit : "stuks",
-          category: CATEGORIES.includes(it.category) ? it.category : guessCategory(it.name),
-          matchedId: existing ? existing.id : null,
-          include: true
-        };
-      });
+      let results;
+      try {
+        results = items.slice(0, 20).map((it) => {
+          const existing = inventory.find((i) => namesMatch(i.name, it.name) && i.unit === it.unit);
+          return {
+            tempId: uid(),
+            name: String(it.name || "").slice(0, 60),
+            amount: Number(it.amount) > 0 ? Number(it.amount) : 1,
+            unit: UNITS.includes(it.unit) ? it.unit : "stuks",
+            category: CATEGORIES.includes(it.category) ? it.category : guessCategory(it.name),
+            matchedId: existing ? existing.id : null,
+            include: true
+          };
+        }).filter((r) => r.name);
+      } catch (e) {
+        console.error("Kon AI-antwoord niet omzetten naar producten (onverwachte vorm):", parsed, e);
+        throw new Error("vorm");
+      }
+      if (!results.length) throw new Error("leeg");
       setShelfScanResults(results);
     } catch (e) {
-      setShelfScanError("Kon geen producten herkennen op deze foto. Zorg dat de kast/koelkast goed verlicht en scherp in beeld is.");
+      const messages = {
+        resize: "Kon deze foto niet verwerken op je toestel. Probeer een andere foto, of gebruik 'Uploaden' in plaats van 'Foto maken'.",
+        netwerk: "Kon geen verbinding maken met de AI om de foto te herkennen. Controleer je internetverbinding en probeer het opnieuw.",
+        json: "De AI-respons was te lang en brak af. Probeer het nog eens, of maak een foto van een kleiner deel van de kast.",
+        vorm: "De AI gaf een onverwacht antwoord terug. Probeer het nog eens met een scherpere foto.",
+        leeg: "Kon geen producten herkennen op deze foto. Zorg dat de kast/koelkast goed verlicht en scherp in beeld is."
+      };
+      setShelfScanError(messages[e.message] || "Kon geen producten herkennen op deze foto. Zorg dat de kast/koelkast goed verlicht en scherp in beeld is.");
     } finally {
       setShelfScanning(false);
     }
@@ -3909,15 +3966,16 @@ function ShelfPhotoModal({ scanning, error, results, onScan, onToggleInclude, on
     !preview && /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.inkSoft, marginTop: 0 }, children: "Maak een foto van een open kast, koelkast of voorraadplank. Pollepel herkent zoveel mogelijk producten in \xE9\xE9n keer en stelt voor je voorraad bij te werken." }),
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginBottom: 10 }, children: [
-        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(PrimaryButton, { full: true, onClick: () => cameraRef.current && cameraRef.current.click(), children: [
-          /* @__PURE__ */ jsx(Camera, { size: 15 }),
-          " Foto maken"
-        ] }) }),
-        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(GhostButton, { onClick: () => galleryRef.current && galleryRef.current.click(), children: [
+        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(PrimaryButton, { full: true, onClick: () => galleryRef.current && galleryRef.current.click(), children: [
           /* @__PURE__ */ jsx(ImagePlus, { size: 15 }),
-          " Uploaden"
+          " Foto kiezen"
+        ] }) }),
+        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(GhostButton, { onClick: () => cameraRef.current && cameraRef.current.click(), children: [
+          /* @__PURE__ */ jsx(Camera, { size: 15 }),
+          " Direct camera"
         ] }) })
-      ] })
+      ] }),
+      /* @__PURE__ */ jsx("p", { style: { fontSize: 11, color: C.inkSoft, marginTop: -4 }, children: `Lukt "Direct camera" niet (sommige browsers blokkeren dit)? Maak de foto dan eerst met je gewone camera-app, en kies 'm daarna via "Foto kiezen".` })
     ] }),
     preview && /* @__PURE__ */ jsx("img", { src: preview, alt: "Kast", style: { width: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 14, border: `1.5px solid ${C.borderTint}`, background: C.ceramic, marginBottom: 12 } }),
     scanning && /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, justifyContent: "center", padding: 20 }, children: [
@@ -4790,16 +4848,16 @@ function ImportModal({ importing, error, onCancel, onImportText, onImportUrl, on
           " Andere foto kiezen"
         ] }) })
       ] }) : /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginBottom: 10 }, children: [
-        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(PrimaryButton, { full: true, onClick: () => cameraInputRef.current && cameraInputRef.current.click(), children: [
-          /* @__PURE__ */ jsx(Camera, { size: 15 }),
-          " Foto maken"
-        ] }) }),
-        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(GhostButton, { onClick: () => galleryInputRef.current && galleryInputRef.current.click(), children: [
+        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(PrimaryButton, { full: true, onClick: () => galleryInputRef.current && galleryInputRef.current.click(), children: [
           /* @__PURE__ */ jsx(ImagePlus, { size: 15 }),
-          " Uploaden"
+          " Foto kiezen"
+        ] }) }),
+        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(GhostButton, { onClick: () => cameraInputRef.current && cameraInputRef.current.click(), children: [
+          /* @__PURE__ */ jsx(Camera, { size: 15 }),
+          " Direct camera"
         ] }) })
       ] }),
-      /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: -2 }, children: "Zorg dat de tekst scherp en volledig in beeld is \u2014 bijv. een kookboekpagina, uitprint of handgeschreven kaart." })
+      /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: -2 }, children: `Lukt "Direct camera" niet? Maak de foto eerst met je gewone camera-app en kies 'm daarna via "Foto kiezen". Zorg dat de tekst scherp en volledig in beeld is.` })
     ] }),
     mode === "url" && /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: -6 }, children: 'Sommige sites blokkeren automatisch ophalen \u2014 lukt het niet, kopieer dan de tekst en gebruik "Tekst".' }),
     error && /* @__PURE__ */ jsxs("div", { style: { background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 12, padding: "8px 10px", fontSize: 12.5, color: C.brick, marginBottom: 10, display: "flex", gap: 6, alignItems: "flex-start" }, children: [
