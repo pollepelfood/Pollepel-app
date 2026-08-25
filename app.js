@@ -491,7 +491,7 @@ function recipeReadiness(recipe, inventory, scale = 1) {
   });
   return { tracked, have, missing, canMake: tracked > 0 && missing.length === 0, total: recipe.ingredients.length };
 }
-function resizeImageFile(file, maxDim = 1280, quality = 0.85) {
+function resizeImageFile(file, maxDim = 1024, quality = 0.75) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("lezen mislukt"));
@@ -1748,7 +1748,17 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
         }]
       })
     });
-    if (!response.ok) throw new Error("API-fout");
+    if (!response.ok) {
+      let bodyText = "";
+      try {
+        bodyText = (await response.text()).slice(0, 300);
+      } catch (e) {
+      }
+      const err = new Error(`API-fout ${response.status}`);
+      err.status = response.status;
+      err.body = bodyText;
+      throw err;
+    }
     const data = await response.json();
     return (data.content || []).map((b) => b.text || "").join("\n");
   };
@@ -1858,6 +1868,25 @@ Regels:
 - Kies per ingredi\xEBnt de dichtstbijzijnde toegestane eenheid; gebruik "stuks" als er geen duidelijke maateenheid is.
 - Als de foto onduidelijk, onvolledig of geen recept is, antwoord dan met {"error":"onleesbaar"}.
 - Antwoord ALLEEN met de JSON, niets anders.`;
+  const describePhotoError = (code) => {
+    if (code && code.startsWith("serverfout-")) {
+      const status = Number(code.split("-")[1]);
+      if (status === 413) return "Deze foto is te groot om te versturen. Probeer een foto met minder detail, of een kleiner deel van de pagina.";
+      if (status === 429) return "De AI heeft het op dit moment te druk. Wacht een minuutje en probeer het opnieuw.";
+      if (status === 401 || status === 403) return "Geen toegang tot de AI-dienst op dit moment. Probeer het later opnieuw.";
+      if (status >= 500) return "De AI-dienst heeft zelf een probleem (tijdelijke storing). Probeer het over een paar minuten opnieuw.";
+      return `De AI wees dit verzoek af (foutcode ${status}). Probeer een andere foto.`;
+    }
+    const messages = {
+      resize: "Kon deze foto niet verwerken op je toestel. Probeer een andere foto, of gebruik 'Uploaden' in plaats van 'Foto maken'.",
+      netwerk: "Kon geen verbinding maken met de AI. Controleer je internetverbinding en probeer het opnieuw.",
+      json: "De AI-respons was te lang en brak af. Probeer het nog eens, of maak een foto van een kleiner deel.",
+      vorm: "De AI gaf een onverwacht antwoord terug. Probeer het nog eens, of typ het over in het tekstveld.",
+      onleesbaar: "De foto is niet goed leesbaar. Zorg dat de tekst scherp en volledig in beeld is.",
+      leeg: "Kon niets bruikbaars herkennen op deze foto."
+    };
+    return messages[code] || "Er ging iets mis bij het verwerken van deze foto. Probeer het nog eens.";
+  };
   const importFromPhoto = async (file) => {
     setImporting(true);
     setImportError("");
@@ -1873,8 +1902,9 @@ Regels:
       try {
         raw = await askClaudeVision(base64, mediaType, buildPhotoExtractionPrompt());
       } catch (e) {
-        console.error("AI-aanroep (foto naar recept) mislukt:", e);
-        throw new Error("netwerk");
+        console.error("AI-aanroep (foto naar recept) mislukt:", e.status, e.body || e.message);
+        const err = new Error(e.status ? `serverfout-${e.status}` : "netwerk");
+        throw err;
       }
       let parsed;
       try {
@@ -1884,19 +1914,18 @@ Regels:
         throw new Error("json");
       }
       if (parsed.error) throw new Error("onleesbaar");
-      const draft = sanitizeDraft(parsed);
+      let draft;
+      try {
+        draft = sanitizeDraft(parsed);
+      } catch (e) {
+        console.error("Kon AI-antwoord niet omzetten naar recept (onverwachte vorm):", parsed, e);
+        throw new Error("vorm");
+      }
       if (!draft.ingredients.length || !draft.steps.length) throw new Error("leeg");
       setImportOpen(false);
       setEditingRecipe(draft);
     } catch (e) {
-      const messages = {
-        resize: "Kon deze foto niet verwerken op je toestel. Probeer een andere foto, of gebruik 'Uploaden' in plaats van 'Foto maken'.",
-        netwerk: "Kon geen verbinding maken met de AI om de foto te herkennen. Controleer je internetverbinding en probeer het opnieuw.",
-        json: "De AI gaf een onverwacht antwoord terug. Probeer het nog eens, of typ het recept over in het tekstveld.",
-        onleesbaar: "De foto is niet goed leesbaar. Zorg dat de tekst scherp en volledig in beeld is.",
-        leeg: "Kon geen volledig recept herkennen op deze foto (ingredi\xEBnten of stappen ontbreken)."
-      };
-      setImportError(messages[e.message] || "Kon geen recept herkennen op deze foto. Zorg dat de tekst scherp en volledig zichtbaar is, of typ het recept over in het tekstveld.");
+      setImportError(describePhotoError(e.message));
     } finally {
       setImporting(false);
     }
@@ -1927,8 +1956,8 @@ Regels:
       try {
         raw = await askClaudeVision(base64, mediaType, buildShelfPhotoPrompt());
       } catch (e) {
-        console.error("AI-aanroep (kastfoto) mislukt:", e);
-        throw new Error("netwerk");
+        console.error("AI-aanroep (kastfoto) mislukt:", e.status, e.body || e.message);
+        throw new Error(e.status ? `serverfout-${e.status}` : "netwerk");
       }
       let parsed;
       try {
@@ -1960,14 +1989,7 @@ Regels:
       if (!results.length) throw new Error("leeg");
       setShelfScanResults(results);
     } catch (e) {
-      const messages = {
-        resize: "Kon deze foto niet verwerken op je toestel. Probeer een andere foto, of gebruik 'Uploaden' in plaats van 'Foto maken'.",
-        netwerk: "Kon geen verbinding maken met de AI om de foto te herkennen. Controleer je internetverbinding en probeer het opnieuw.",
-        json: "De AI-respons was te lang en brak af. Probeer het nog eens, of maak een foto van een kleiner deel van de kast.",
-        vorm: "De AI gaf een onverwacht antwoord terug. Probeer het nog eens met een scherpere foto.",
-        leeg: "Kon geen producten herkennen op deze foto. Zorg dat de kast/koelkast goed verlicht en scherp in beeld is."
-      };
-      setShelfScanError(messages[e.message] || "Kon geen producten herkennen op deze foto. Zorg dat de kast/koelkast goed verlicht en scherp in beeld is.");
+      setShelfScanError(describePhotoError(e.message));
     } finally {
       setShelfScanning(false);
     }
