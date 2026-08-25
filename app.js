@@ -1718,8 +1718,9 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
     setToast(msg);
     setTimeout(() => setToast(null), 4200);
   };
+  const AI_ENDPOINT = "/api/ask-claude";
   const askClaude = async (prompt) => {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch(AI_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1728,12 +1729,22 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
         messages: [{ role: "user", content: prompt }]
       })
     });
-    if (!response.ok) throw new Error("API-fout");
+    if (!response.ok) {
+      let bodyText = "";
+      try {
+        bodyText = (await response.text()).slice(0, 300);
+      } catch (e) {
+      }
+      const err = new Error(`API-fout ${response.status}`);
+      err.status = response.status;
+      err.body = bodyText;
+      throw err;
+    }
     const data = await response.json();
     return (data.content || []).map((b) => b.text || "").join("\n");
   };
   const askClaudeVision = async (base64, mediaType, prompt) => {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch(AI_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
