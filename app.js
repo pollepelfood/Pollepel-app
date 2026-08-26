@@ -2273,7 +2273,8 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       current: portions,
       min: 0,
       max: portions,
-      expiryDate: expiry.toISOString().slice(0, 10)
+      expiryDate: expiry.toISOString().slice(0, 10),
+      sourceRecipeId: recipe.id
     };
     persist("inventory", [...inventory, newItem], setInventory);
     showToast(`${portions} portie${portions > 1 ? "s" : ""} kliekjes toegevoegd aan je voorraad (THT over 3 dagen).`);
@@ -4610,11 +4611,11 @@ function getDepletionForecast(inventory, consumptionLog) {
   return results.sort((a, b) => a.daysLeft - b.daysLeft).slice(0, 5);
 }
 function getExpirySuggestions(inventory, recipes) {
-  return inventory.filter((item) => item.expiryDate).map((item) => ({ item, daysLeft: daysUntil(item.expiryDate) })).filter(({ daysLeft }) => daysLeft !== null && daysLeft <= 3).map(({ item, daysLeft }) => ({
-    item,
-    daysLeft,
-    recipes: recipes.filter((r) => r.ingredients.some((ing) => namesMatch(ing.name, item.name) && ing.unit === item.unit))
-  })).sort((a, b) => a.daysLeft - b.daysLeft);
+  return inventory.filter((item) => item.expiryDate).map((item) => ({ item, daysLeft: daysUntil(item.expiryDate) })).filter(({ daysLeft }) => daysLeft !== null && daysLeft <= 3).map(({ item, daysLeft }) => {
+    const sourceRecipe = item.sourceRecipeId ? recipes.find((r) => r.id === item.sourceRecipeId) : null;
+    const matchedRecipes = sourceRecipe ? [sourceRecipe] : recipes.filter((r) => r.ingredients.some((ing) => namesMatch(ing.name, item.name) && ing.unit === item.unit));
+    return { item, daysLeft, recipes: matchedRecipes };
+  }).sort((a, b) => a.daysLeft - b.daysLeft);
 }
 function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiumOn, onEdit, onNew, onDelete, onScan, onOpenRecipe, onOpenShelfPhoto }) {
   const cats = categories && categories.length ? categories : CATEGORIES;
