@@ -2802,6 +2802,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
       RecipePickerModal,
       {
         recipes,
+        inventory,
         onPick: (recipeId) => setDayRecipe(pickerDay, recipeId),
         onClose: () => setPickerDay(null)
       }
@@ -4544,13 +4545,44 @@ function FridgeMagnetView({ household, onClose }) {
     ] })
   ] });
 }
-function RecipePickerModal({ recipes, onPick, onClose }) {
+function RecipePickerModal({ recipes, inventory, onPick, onClose }) {
   const [query, setQuery] = useState("");
   const filtered = recipes.filter((r) => r.name.toLowerCase().includes(query.toLowerCase()));
+  const leftovers = useMemo(() => {
+    if (!inventory) return [];
+    return inventory.filter((i) => i.sourceRecipeId && i.current > 0).map((i) => ({ item: i, recipe: recipes.find((r) => r.id === i.sourceRecipeId), daysLeft: daysUntil(i.expiryDate) })).filter((l) => l.recipe);
+  }, [inventory, recipes]);
   return /* @__PURE__ */ jsxs(Modal, { title: "Kies een recept", onClose, children: [
+    leftovers.length > 0 && !query && /* @__PURE__ */ jsxs("div", { style: { marginBottom: 12 }, children: [
+      /* @__PURE__ */ jsx("div", { style: { fontSize: 11.5, fontWeight: 700, color: C.mustardDeep, marginBottom: 6, display: "flex", alignItems: "center", gap: 4 }, children: "\u{1F371} Kliekjes op \u2014 eerst opeten?" }),
+      leftovers.map(({ item, recipe, daysLeft }) => /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: () => onPick(recipe.id),
+          style: { display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: "8px 10px", marginBottom: 8, cursor: "pointer" },
+          children: [
+            /* @__PURE__ */ jsx("div", { style: { width: 32, height: 32, borderRadius: 9, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }, children: recipe.emoji || "\u{1F37D}\uFE0F" }),
+            /* @__PURE__ */ jsxs("div", { style: { flex: 1 }, children: [
+              /* @__PURE__ */ jsx("div", { style: { fontSize: 13.5, color: C.ink, fontWeight: 500 }, children: recipe.name }),
+              /* @__PURE__ */ jsxs("div", { style: { fontSize: 11, color: C.mustardDeep, fontFamily: FONT_MONO }, children: [
+                item.current,
+                " ",
+                item.unit,
+                " restje",
+                item.current > 1 ? "s" : "",
+                " \xB7 ",
+                daysLeft !== null && daysLeft <= 0 ? "vandaag over datum" : daysLeft !== null ? `nog ${daysLeft}d houdbaar` : ""
+              ] })
+            ] })
+          ]
+        },
+        item.id
+      )),
+      /* @__PURE__ */ jsx("div", { style: { height: 1, background: C.ceramic, margin: "4px 0 10px" } })
+    ] }),
     /* @__PURE__ */ jsxs("div", { style: { position: "relative", marginBottom: 10 }, children: [
       /* @__PURE__ */ jsx(Search, { size: 15, color: C.inkSoft, style: { position: "absolute", left: 10, top: 11 } }),
-      /* @__PURE__ */ jsx("input", { style: { ...inputStyle, paddingLeft: 30 }, placeholder: "Zoek een gerecht\u2026", value: query, onChange: (e) => setQuery(e.target.value), autoFocus: true })
+      /* @__PURE__ */ jsx("input", { style: { ...inputStyle, paddingLeft: 30 }, placeholder: "Zoek een gerecht\u2026", value: query, onChange: (e) => setQuery(e.target.value) })
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { maxHeight: 340, overflowY: "auto" }, children: [
       filtered.map((r) => /* @__PURE__ */ jsxs(
