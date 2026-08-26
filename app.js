@@ -46,7 +46,9 @@ import {
   Moon,
   ChevronUp,
   ChevronDown,
-  Tag
+  Tag,
+  Mic,
+  Timer as TimerIcon
 } from "lucide-react";
 const UNITS = ["stuks", "g", "kg", "ml", "l", "eetlepel", "theelepel", "snufje"];
 const WEEK_DAYS = [
@@ -490,6 +492,69 @@ function recipeReadiness(recipe, inventory, scale = 1) {
     else missing.push(item.name);
   });
   return { tracked, have, missing, canMake: tracked > 0 && missing.length === 0, total: recipe.ingredients.length };
+}
+function parseSpokenDurationMinutes(text) {
+  if (!text) return null;
+  const n = text.toLowerCase();
+  let totalMinutes = 0;
+  let found = false;
+  const hourMatch = n.match(/(\d+)\s*(uur|uren)/);
+  if (hourMatch) {
+    totalMinutes += Number(hourMatch[1]) * 60;
+    found = true;
+  }
+  const minMatch = n.match(/(\d+)\s*(minuten|minuut|min)\b/);
+  if (minMatch) {
+    totalMinutes += Number(minMatch[1]);
+    found = true;
+  }
+  return found ? totalMinutes : null;
+}
+function VoiceInputButton({ onResult, title, size = 15 }) {
+  const [listening, setListening] = useState(false);
+  const recognitionRef = React.useRef(null);
+  const supported = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+  if (!supported) return null;
+  const start = () => {
+    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = "nl-NL";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (e) => {
+      const text = e.results && e.results[0] && e.results[0][0] ? e.results[0][0].transcript : "";
+      if (text) onResult(text);
+    };
+    recognition.onerror = () => setListening(false);
+    recognition.onend = () => setListening(false);
+    recognitionRef.current = recognition;
+    setListening(true);
+    recognition.start();
+  };
+  const stop = () => {
+    if (recognitionRef.current) recognitionRef.current.stop();
+    setListening(false);
+  };
+  return /* @__PURE__ */ jsx(
+    "button",
+    {
+      onClick: listening ? stop : start,
+      title: title || "Spreek in",
+      style: {
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        border: `1.5px solid ${listening ? C.brick : C.borderTint}`,
+        background: listening ? C.brick : C.cardBg,
+        flexShrink: 0
+      },
+      children: /* @__PURE__ */ jsx(Mic, { size, color: listening ? "#fff" : C.inkSoft })
+    }
+  );
 }
 function resizeImageFile(file, maxDim = 1024, quality = 0.75) {
   return new Promise((resolve, reject) => {
@@ -2309,6 +2374,16 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     persist("weekmenu", next, setWeekmenu);
     setAttendeesDay(null);
   };
+  const quickPlanExpiring = (recipeId, recipeName) => {
+    const emptyDay = WEEK_DAYS.find((d) => !dayEntry(d.key)?.recipeId);
+    if (!emptyDay) {
+      showToast("Alle dagen zijn al ingepland \u2014 maak eerst een dag leeg om dit te plannen.");
+      return;
+    }
+    const next = { ...weekmenu, [emptyDay.key]: { ...dayEntry(emptyDay.key), recipeId } };
+    persist("weekmenu", next, setWeekmenu);
+    showToast(`${recipeName} ingepland op ${emptyDay.label}.`);
+  };
   const addCook = (name) => {
     const trimmed = name.trim();
     if (!trimmed || cooks.includes(trimmed)) return;
@@ -2612,7 +2687,8 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
             setImportError("");
             setImportOpen(true);
           },
-          onDuplicate: duplicateToMyBook
+          onDuplicate: duplicateToMyBook,
+          showToast
         }
       ),
       tab === "kookboek" && openRecipe && /* @__PURE__ */ jsx(
@@ -2673,6 +2749,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           weekmenu,
           recipes,
           cooks,
+          inventory,
           isPremiumOn,
           onPickDay: setPickerDay,
           onPickCook: setCookDay,
@@ -2690,15 +2767,17 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
             setOpenRecipeId(id);
             setTab("kookboek");
           },
-          onExportCalendar: exportWeekmenuToCalendar
+          onExportCalendar: exportWeekmenuToCalendar,
+          onQuickPlan: quickPlanExpiring
         }
       )
     ] }),
     /* @__PURE__ */ jsxs("div", { style: {
       position: "fixed",
       bottom: 0,
-      left: "50%",
-      transform: "translateX(-50%)",
+      left: 0,
+      right: 0,
+      margin: "0 auto",
       width: "100%",
       maxWidth: 480,
       background: C.cardBg,
@@ -2706,7 +2785,8 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
       display: "flex",
       padding: "8px 4px",
       borderRadius: "22px 22px 0 0",
-      boxShadow: "0 -4px 14px rgba(0,0,0,0.08)"
+      boxShadow: "0 -4px 14px rgba(0,0,0,0.08)",
+      zIndex: 40
     }, children: [
       /* @__PURE__ */ jsx(TabButton, { icon: /* @__PURE__ */ jsx(ChefHat, { size: 18 }), label: "Kookboek", active: tab === "kookboek", onClick: () => {
         setTab("kookboek");
@@ -2882,14 +2962,24 @@ function TabButton({ icon, label, active, onClick, badge, badgeTone = "warn" }) 
     }
   );
 }
-function SeasonalAndSurpriseBar({ recipes, inventory, onOpen }) {
+function SeasonalAndSurpriseBar({ recipes, inventory, onOpen, showToast }) {
   const seasonal = useMemo(() => getSeasonalRecipeSuggestions(recipes).slice(0, 4), [recipes]);
   const monthName = (/* @__PURE__ */ new Date()).toLocaleDateString("nl-NL", { month: "long" });
+  const [lastPickId, setLastPickId] = useState(null);
   const surpriseMe = () => {
     const makeable = recipes.filter((r) => recipeReadiness(r, inventory).canMake);
     const pool = makeable.length ? makeable : recipes;
     if (!pool.length) return;
-    const pick = pool[Math.floor(Math.random() * pool.length)];
+    if (pool.length === 1) {
+      if (showToast) showToast("Dit is nu het enige gerecht dat volledig met je voorraad te maken is \u2014 voeg meer voorraad toe voor meer variatie.");
+      onOpen(pool[0].id);
+      setLastPickId(pool[0].id);
+      return;
+    }
+    const choices = pool.filter((r) => r.id !== lastPickId);
+    const finalPool = choices.length ? choices : pool;
+    const pick = finalPool[Math.floor(Math.random() * finalPool.length)];
+    setLastPickId(pick.id);
     onOpen(pick.id);
   };
   return /* @__PURE__ */ jsxs("div", { style: { marginBottom: 12 }, children: [
@@ -2950,7 +3040,7 @@ function SeasonalAndSurpriseBar({ recipes, inventory, onOpen }) {
     ] })
   ] });
 }
-function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, makeOnly, setMakeOnly, dietOnly, setDietOnly, activeDietTags, bookMode, setBookMode, inventory, onOpen, onToggleFav, onNew, onImport, onDuplicate }) {
+function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, makeOnly, setMakeOnly, dietOnly, setDietOnly, activeDietTags, bookMode, setBookMode, inventory, onOpen, onToggleFav, onNew, onImport, onDuplicate, showToast }) {
   return /* @__PURE__ */ jsxs("div", { children: [
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6, marginBottom: 12 }, children: [
       /* @__PURE__ */ jsxs(
@@ -3030,7 +3120,7 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
       )
     ] }),
     bookMode === "community" && /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: -6, marginBottom: 10 }, children: 'Recepten die huishoudens gedeeld hebben. Tik "voeg toe" om een eigen bewerkbare kopie in je kookboek te zetten.' }),
-    bookMode === "mine" && /* @__PURE__ */ jsx(SeasonalAndSurpriseBar, { recipes, inventory, onOpen }),
+    bookMode === "mine" && /* @__PURE__ */ jsx(SeasonalAndSurpriseBar, { recipes, inventory, onOpen, showToast }),
     bookMode === "history" ? /* @__PURE__ */ jsx(CookHistoryList, { cookLog, onOpen }) : /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginBottom: 12 }, children: [
         /* @__PURE__ */ jsxs("div", { style: { flex: 1, position: "relative" }, children: [
@@ -3281,6 +3371,34 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
   const [servings, setServings] = useState(recipe.servings);
   const [screenAwake, setScreenAwake] = useState(false);
   const [sousChefOpen, setSousChefOpen] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState(null);
+  const [timerLabel, setTimerLabel] = useState("");
+  const timerIntervalRef = React.useRef(null);
+  const startTimer = (minutes, label) => {
+    if (!minutes || minutes <= 0) return;
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    setTimerSeconds(Math.round(minutes * 60));
+    setTimerLabel(label || `${minutes} min`);
+  };
+  const cancelTimer = () => {
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    timerIntervalRef.current = null;
+    setTimerSeconds(null);
+  };
+  useEffect(() => {
+    if (timerSeconds === null) return;
+    if (timerSeconds <= 0) {
+      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      return;
+    }
+    timerIntervalRef.current = setTimeout(() => setTimerSeconds((s) => s - 1), 1e3);
+    return () => clearTimeout(timerIntervalRef.current);
+  }, [timerSeconds]);
+  const handleVoiceTimer = (text) => {
+    const minutes = parseSpokenDurationMinutes(text);
+    if (minutes) startTimer(minutes, text);
+  };
+  const formatTimer = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const wakeLockRef = React.useRef(null);
   const wakeLockSupported = typeof navigator !== "undefined" && "wakeLock" in navigator;
   const requestWakeLock = async () => {
@@ -3415,11 +3533,54 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         ing.unit
       ] })
     ] }, idx)) }),
-    /* @__PURE__ */ jsx("h3", { style: { fontFamily: FONT_DISPLAY, fontSize: 15, margin: "0 0 8px" }, children: "Bereiding" }),
-    /* @__PURE__ */ jsx("ol", { style: { padding: 0, margin: "0 0 18px", listStyle: "none" }, children: recipe.steps.map((s, idx) => /* @__PURE__ */ jsxs("li", { style: { display: "flex", gap: 10, marginBottom: 10, fontSize: 13.5, color: C.ink, lineHeight: 1.4 }, children: [
-      /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_MONO, color: C.mustardDeep, fontWeight: 600, flexShrink: 0 }, children: String(idx + 1).padStart(2, "0") }),
-      /* @__PURE__ */ jsx("span", { children: s })
-    ] }, idx)) }),
+    /* @__PURE__ */ jsxs("h3", { style: { fontFamily: FONT_DISPLAY, fontSize: 15, margin: "0 0 8px", display: "flex", alignItems: "center", gap: 8 }, children: [
+      "Bereiding",
+      /* @__PURE__ */ jsx(VoiceInputButton, { onResult: handleVoiceTimer, title: "Zeg bijv. 'zet een timer van 10 minuten'", size: 13 })
+    ] }),
+    timerSeconds !== null && /* @__PURE__ */ jsxs("div", { style: {
+      position: "sticky",
+      top: 8,
+      zIndex: 5,
+      background: timerSeconds <= 0 ? C.brick : C.blueDeep,
+      color: "#fff",
+      borderRadius: 14,
+      padding: "10px 14px",
+      marginBottom: 12,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between"
+    }, children: [
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
+        /* @__PURE__ */ jsx(TimerIcon, { size: 16 }),
+        /* @__PURE__ */ jsx("span", { style: { fontSize: 13 }, children: timerLabel })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+        /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700 }, children: timerSeconds <= 0 ? "Klaar!" : formatTimer(timerSeconds) }),
+        /* @__PURE__ */ jsx("button", { onClick: cancelTimer, style: { background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 8, padding: 4, cursor: "pointer", display: "flex" }, children: /* @__PURE__ */ jsx(X, { size: 14, color: "#fff" }) })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx("ol", { style: { padding: 0, margin: "0 0 18px", listStyle: "none" }, children: recipe.steps.map((s, idx) => {
+      const minutes = parseSpokenDurationMinutes(s);
+      return /* @__PURE__ */ jsxs("li", { style: { display: "flex", gap: 10, marginBottom: 10, fontSize: 13.5, color: C.ink, lineHeight: 1.4 }, children: [
+        /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_MONO, color: C.mustardDeep, fontWeight: 600, flexShrink: 0 }, children: String(idx + 1).padStart(2, "0") }),
+        /* @__PURE__ */ jsx("span", { style: { flex: 1 }, children: s }),
+        minutes && /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => startTimer(minutes, `Stap ${idx + 1}: ${minutes} min`),
+            title: `Start timer van ${minutes} minuten`,
+            style: { flexShrink: 0, background: C.ceramic, border: "none", borderRadius: 8, padding: "3px 8px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, height: 22 },
+            children: [
+              /* @__PURE__ */ jsx(TimerIcon, { size: 12, color: C.blueDeep }),
+              /* @__PURE__ */ jsxs("span", { style: { fontSize: 10.5, color: C.blueDeep, fontFamily: FONT_MONO }, children: [
+                minutes,
+                "m"
+              ] })
+            ]
+          }
+        )
+      ] }, idx);
+    }) }),
     recipe.notes && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: `1px solid ${C.mustard}`, borderRadius: 14, padding: 12, marginBottom: 18, display: "flex", gap: 8 }, children: [
       /* @__PURE__ */ jsx(StickyNote, { size: 16, color: C.mustardDeep, style: { flexShrink: 0, marginTop: 1 } }),
       /* @__PURE__ */ jsxs("div", { children: [
@@ -3595,7 +3756,7 @@ function RecipeForm({ initial, inventoryNames, onCancel, onSave }) {
     ] })
   ] });
 }
-function WeekmenuView({ weekmenu, recipes, cooks, isPremiumOn, onPickDay, onPickCook, onPickAttendees, onClearDay, onGenerate, onAIGenerate, onDuplicate, onApplyTemplate, onShuffle, onOpenRecipe, onExportCalendar }) {
+function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, onPickDay, onPickCook, onPickAttendees, onClearDay, onGenerate, onAIGenerate, onDuplicate, onApplyTemplate, onShuffle, onOpenRecipe, onExportCalendar, onQuickPlan }) {
   const findRecipe = (id) => recipes.find((r) => r.id === id);
   const dayEntry = (day) => {
     const raw = weekmenu[day];
@@ -3604,8 +3765,41 @@ function WeekmenuView({ weekmenu, recipes, cooks, isPremiumOn, onPickDay, onPick
     return raw;
   };
   const plannedCount = WEEK_DAYS.filter((d) => dayEntry(d.key)?.recipeId).length;
+  const hasEmptyDay = WEEK_DAYS.some((d) => !dayEntry(d.key)?.recipeId);
+  const plannedRecipeIds = WEEK_DAYS.map((d) => dayEntry(d.key)?.recipeId).filter(Boolean);
+  const expiringWithRecipes = useMemo(() => {
+    if (!hasEmptyDay || !inventory) return [];
+    return getExpirySuggestions(inventory, recipes).map((s) => ({ ...s, recipes: s.recipes.filter((r) => !plannedRecipeIds.includes(r.id)) })).filter((s) => s.recipes.length > 0);
+  }, [inventory, recipes, hasEmptyDay, plannedRecipeIds]);
   return /* @__PURE__ */ jsxs("div", { children: [
     /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.inkSoft, marginTop: 0 }, children: "Plan gerechten voor de week, wijs desgewenst iemand aan om te koken, en genereer in \xE9\xE9n keer de boodschappenlijst." }),
+    expiringWithRecipes.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 16, padding: 12, marginBottom: 14 }, children: [
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }, children: [
+        /* @__PURE__ */ jsx(CalendarClock, { size: 15, color: C.mustardDeep }),
+        /* @__PURE__ */ jsx("span", { style: { fontSize: 12.5, fontWeight: 700, color: C.mustardDeep }, children: "Ruim dit op v\xF3\xF3rdat het te laat is" })
+      ] }),
+      expiringWithRecipes.map(({ item, daysLeft, recipes: matches }) => /* @__PURE__ */ jsxs("div", { style: { marginBottom: 8 }, children: [
+        /* @__PURE__ */ jsxs("div", { style: { fontSize: 13, color: C.ink, marginBottom: 4 }, children: [
+          /* @__PURE__ */ jsx("strong", { children: item.name }),
+          " ",
+          daysLeft <= 0 ? "is bijna over de datum" : `is over ${daysLeft} dag${daysLeft > 1 ? "en" : ""} over de datum`,
+          " \u2014 zullen we dat verwerken?"
+        ] }),
+        /* @__PURE__ */ jsx("div", { style: { display: "flex", flexWrap: "wrap", gap: 6 }, children: matches.slice(0, 2).map((r) => /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => onQuickPlan(r.id, r.name),
+            style: { background: C.cardBg, border: `1px solid ${C.mustard}`, borderRadius: 20, padding: "4px 10px", fontSize: 11.5, color: C.mustardDeep, fontWeight: 600, cursor: "pointer" },
+            children: [
+              r.emoji || "\u{1F37D}\uFE0F",
+              " Plan ",
+              r.name
+            ]
+          },
+          r.id
+        )) })
+      ] }, item.id))
+    ] }),
     /* @__PURE__ */ jsx("div", { style: { marginBottom: 14 }, children: /* @__PURE__ */ jsxs(PrimaryButton, { tone: "mustard", full: true, onClick: onAIGenerate, children: [
       /* @__PURE__ */ jsx(Wand2, { size: 16 }),
       " AI: genereer weekmenu"
@@ -3808,7 +4002,7 @@ function CookPickerModal({ cooks, current, onPick, onAddCook, onRemoveCook, onCl
 }
 const DIET_TAGS = ["Vegetarisch", "Veganistisch", "Glutenvrij", "Lactosevrij", "Notenallergie", "Halal", "Suikervrij"];
 const PREMIUM_FEATURES = [
-  { key: "photoInventory", label: "Kastfoto \u2192 voorraad", description: "E\xE9n foto van een kast of koelkast, automatisch omgezet naar voorraaditems.", icon: "\u{1F4F8}" },
+  { key: "photoInventory", label: "Koelkastscanner", description: "E\xE9n foto van een kast of koelkast, automatisch omgezet naar voorraaditems.", icon: "\u{1F4F8}" },
   { key: "predictiveDepletion", label: "Voorspelde uitputting", description: "Slimme inschatting wanneer iets op is, op basis van jullie eigen verbruikspatroon.", icon: "\u{1F4C9}" },
   { key: "householdRSVP", label: '"Wie eet er mee?"', description: "Per dag aangeven wie mee\xEBet \u2014 porties en boodschappen passen zich automatisch aan.", icon: "\u{1F64B}" },
   { key: "sousChef", label: "AI-souschef", description: 'Stel tijdens het koken vragen zoals "kan ik room vervangen door melk?".', icon: "\u{1F468}\u200D\u{1F373}" }
@@ -4005,7 +4199,7 @@ function ShelfPhotoModal({ scanning, error, results, onScan, onToggleInclude, on
     onScan(file);
   };
   const includedCount = results.filter((r) => r.include).length;
-  return /* @__PURE__ */ jsxs(Modal, { title: "Kastfoto \u2192 voorraad", onClose, wide: true, children: [
+  return /* @__PURE__ */ jsxs(Modal, { title: "Koelkastscanner", onClose, wide: true, children: [
     /* @__PURE__ */ jsx("input", { ref: cameraRef, type: "file", accept: "image/*", capture: "environment", onChange: handleFile, style: { display: "none" } }),
     /* @__PURE__ */ jsx("input", { ref: galleryRef, type: "file", accept: "image/*", onChange: handleFile, style: { display: "none" } }),
     !preview && /* @__PURE__ */ jsxs(Fragment, { children: [
@@ -4456,7 +4650,7 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
     ] }),
     isPremiumOn("photoInventory") && /* @__PURE__ */ jsx("div", { style: { marginBottom: 16 }, children: /* @__PURE__ */ jsxs(GhostButton, { onClick: onOpenShelfPhoto, children: [
       /* @__PURE__ */ jsx(ImagePlus, { size: 14 }),
-      " Kastfoto \u2192 hele voorraad bijwerken ",
+      " Koelkastscanner: hele voorraad bijwerken ",
       /* @__PURE__ */ jsx(Pill, { tone: "auto", children: "premium" })
     ] }) }),
     cats.map((cat) => {
@@ -5234,6 +5428,7 @@ function ManualAddForm({ newName, setNewName, newAmount, setNewAmount, newUnit, 
   return /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: 10, marginTop: 8 }, children: [
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6, marginBottom: 6 }, children: [
       /* @__PURE__ */ jsx("input", { style: { ...inputStyle, flex: 1 }, placeholder: "Naam", value: newName, onChange: (e) => setNewName(e.target.value) }),
+      /* @__PURE__ */ jsx(VoiceInputButton, { onResult: (text) => setNewName(text), title: "Naam inspreken" }),
       /* @__PURE__ */ jsx("input", { type: "number", style: { ...inputStyle, width: 64 }, placeholder: "Aantal", value: newAmount, onChange: (e) => setNewAmount(e.target.value) })
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6, marginBottom: 8 }, children: [
