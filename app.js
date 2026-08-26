@@ -2706,7 +2706,8 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           onAddLeftover: addLeftover,
           onAskSousChef: askSousChef,
           isPremiumOn,
-          inventory
+          inventory,
+          showToast
         }
       ),
       tab === "voorraad" && /* @__PURE__ */ jsx(
@@ -3364,36 +3365,74 @@ function SousChefModal({ recipe, onAsk, onClose }) {
     ] })
   ] });
 }
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAskSousChef, isPremiumOn, inventory }) {
+function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAskSousChef, isPremiumOn, inventory, showToast }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [leftoverPortions, setLeftoverPortions] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [servings, setServings] = useState(recipe.servings);
   const [screenAwake, setScreenAwake] = useState(false);
   const [sousChefOpen, setSousChefOpen] = useState(false);
-  const [timerSeconds, setTimerSeconds] = useState(null);
-  const [timerLabel, setTimerLabel] = useState("");
-  const timerIntervalRef = React.useRef(null);
+  const [timers, setTimers] = useState([]);
+  const [timerTick, setTimerTick] = useState(0);
+  const audioCtxRef = React.useRef(null);
+  const ensureAudioContext = () => {
+    if (!audioCtxRef.current) {
+      const Ctx = typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext);
+      if (Ctx) {
+        try {
+          audioCtxRef.current = new Ctx();
+        } catch (e) {
+        }
+      }
+    }
+    if (audioCtxRef.current && audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume().catch(() => {
+      });
+    }
+  };
+  const playTimerSound = () => {
+    try {
+      const ctx = audioCtxRef.current;
+      if (!ctx) return;
+      [0, 0.32, 0.64].forEach((delay) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = 880;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        gain.gain.setValueAtTime(1e-3, ctx.currentTime + delay);
+        gain.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + delay + 0.02);
+        gain.gain.exponentialRampToValueAtTime(1e-3, ctx.currentTime + delay + 0.28);
+        osc.start(ctx.currentTime + delay);
+        osc.stop(ctx.currentTime + delay + 0.3);
+      });
+    } catch (e) {
+      console.error("Timer-geluid afspelen mislukt:", e);
+    }
+  };
   const startTimer = (minutes, label) => {
     if (!minutes || minutes <= 0) return;
-    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-    setTimerSeconds(Math.round(minutes * 60));
-    setTimerLabel(label || `${minutes} min`);
+    ensureAudioContext();
+    setTimers((prev) => [...prev, { id: uid(), label: label || `${minutes} min`, endTime: Date.now() + minutes * 6e4, notified: false }]);
   };
-  const cancelTimer = () => {
-    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-    timerIntervalRef.current = null;
-    setTimerSeconds(null);
+  const cancelTimer = (id) => {
+    setTimers((prev) => prev.filter((t) => t.id !== id));
   };
   useEffect(() => {
-    if (timerSeconds === null) return;
-    if (timerSeconds <= 0) {
-      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate([200, 100, 200]);
-      return;
-    }
-    timerIntervalRef.current = setTimeout(() => setTimerSeconds((s) => s - 1), 1e3);
-    return () => clearTimeout(timerIntervalRef.current);
-  }, [timerSeconds]);
+    if (!timers.length) return;
+    const iv = setInterval(() => setTimerTick((t) => t + 1), 1e3);
+    return () => clearInterval(iv);
+  }, [timers.length]);
+  useEffect(() => {
+    timers.forEach((t) => {
+      const remaining = Math.max(0, Math.round((t.endTime - Date.now()) / 1e3));
+      if (remaining <= 0 && !t.notified) {
+        playTimerSound();
+        if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        setTimers((prev) => prev.map((x) => x.id === t.id ? { ...x, notified: true } : x));
+      }
+    });
+  }, [timerTick]);
   const handleVoiceTimer = (text) => {
     const minutes = parseSpokenDurationMinutes(text);
     if (minutes) startTimer(minutes, text);
@@ -3402,13 +3441,19 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
   const wakeLockRef = React.useRef(null);
   const wakeLockSupported = typeof navigator !== "undefined" && "wakeLock" in navigator;
   const requestWakeLock = async () => {
-    if (!wakeLockSupported) return;
+    if (!wakeLockSupported) {
+      console.error("Wake Lock API niet aanwezig in navigator op dit toestel/deze browser.");
+      if (showToast) showToast("Scherm-aan-houden wordt niet ondersteund door deze browser.");
+      return;
+    }
     try {
       wakeLockRef.current = await navigator.wakeLock.request("screen");
       setScreenAwake(true);
       wakeLockRef.current.addEventListener("release", () => setScreenAwake(false));
     } catch (e) {
+      console.error("Wake Lock-aanvraag mislukt:", e.name, e.message);
       setScreenAwake(false);
+      if (showToast) showToast(`Kon scherm niet aan houden: ${e.message || e.name || "onbekende fout"}.`);
     }
   };
   const releaseWakeLock = async () => {
@@ -3456,7 +3501,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
             ]
           }
         ),
-        wakeLockSupported && /* @__PURE__ */ jsxs(
+        /* @__PURE__ */ jsxs(
           "button",
           {
             onClick: toggleScreenAwake,
@@ -3537,28 +3582,28 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       "Bereiding",
       /* @__PURE__ */ jsx(VoiceInputButton, { onResult: handleVoiceTimer, title: "Zeg bijv. 'zet een timer van 10 minuten'", size: 13 })
     ] }),
-    timerSeconds !== null && /* @__PURE__ */ jsxs("div", { style: {
-      position: "sticky",
-      top: 8,
-      zIndex: 5,
-      background: timerSeconds <= 0 ? C.brick : C.blueDeep,
-      color: "#fff",
-      borderRadius: 14,
-      padding: "10px 14px",
-      marginBottom: 12,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between"
-    }, children: [
-      /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
-        /* @__PURE__ */ jsx(TimerIcon, { size: 16 }),
-        /* @__PURE__ */ jsx("span", { style: { fontSize: 13 }, children: timerLabel })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
-        /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_MONO, fontSize: 18, fontWeight: 700 }, children: timerSeconds <= 0 ? "Klaar!" : formatTimer(timerSeconds) }),
-        /* @__PURE__ */ jsx("button", { onClick: cancelTimer, style: { background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 8, padding: 4, cursor: "pointer", display: "flex" }, children: /* @__PURE__ */ jsx(X, { size: 14, color: "#fff" }) })
-      ] })
-    ] }),
+    timers.length > 0 && /* @__PURE__ */ jsx("div", { style: { position: "sticky", top: 8, zIndex: 5, marginBottom: 12, display: "flex", flexDirection: "column", gap: 6 }, children: timers.map((t) => {
+      const remaining = Math.max(0, Math.round((t.endTime - Date.now()) / 1e3));
+      const done = remaining <= 0;
+      return /* @__PURE__ */ jsxs("div", { style: {
+        background: done ? C.brick : C.blueDeep,
+        color: "#fff",
+        borderRadius: 14,
+        padding: "10px 14px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between"
+      }, children: [
+        /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, minWidth: 0 }, children: [
+          /* @__PURE__ */ jsx(TimerIcon, { size: 16, style: { flexShrink: 0 } }),
+          /* @__PURE__ */ jsx("span", { style: { fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: t.label })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }, children: [
+          /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_MONO, fontSize: 17, fontWeight: 700 }, children: done ? "Klaar!" : formatTimer(remaining) }),
+          /* @__PURE__ */ jsx("button", { onClick: () => cancelTimer(t.id), style: { background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 8, padding: 4, cursor: "pointer", display: "flex" }, children: /* @__PURE__ */ jsx(X, { size: 14, color: "#fff" }) })
+        ] })
+      ] }, t.id);
+    }) }),
     /* @__PURE__ */ jsx("ol", { style: { padding: 0, margin: "0 0 18px", listStyle: "none" }, children: recipe.steps.map((s, idx) => {
       const minutes = parseSpokenDurationMinutes(s);
       return /* @__PURE__ */ jsxs("li", { style: { display: "flex", gap: 10, marginBottom: 10, fontSize: 13.5, color: C.ink, lineHeight: 1.4 }, children: [
