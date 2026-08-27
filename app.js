@@ -1831,7 +1831,7 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
           const newId = await window.dataAPI.shopping.create(item);
           item.id = newId;
         } else if (JSON.stringify(before) !== JSON.stringify(item)) {
-          await window.dataAPI.shopping.patch(item.id, { name: item.name, amount: item.amount, unit: item.unit, category: item.category, checked: !!item.checked });
+          await window.dataAPI.shopping.patch(item.id, { name: item.name, amount: item.amount, unit: item.unit, category: item.category, checked: !!item.checked, auto: !!item.auto });
         }
       }
       return;

@@ -307,11 +307,11 @@
           async list() {
             const { data, error } = await supabase.from("shopping_list_items").select("*").eq("household_id", householdId).order("created_at");
             if (error || !data) return [];
-            return data.map((s) => ({ id: s.id, name: s.name, amount: Number(s.amount), unit: s.unit, category: s.category, checked: s.checked }));
+            return data.map((s) => ({ id: s.id, name: s.name, amount: Number(s.amount), unit: s.unit, category: s.category, checked: s.checked, auto: s.auto }));
           },
           async create(item) {
             const { data, error } = await supabase.from("shopping_list_items").insert({
-              household_id: householdId, name: item.name, amount: item.amount, unit: item.unit, category: item.category, checked: !!item.checked,
+              household_id: householdId, name: item.name, amount: item.amount, unit: item.unit, category: item.category, checked: !!item.checked, auto: !!item.auto,
             }).select().single();
             if (error) throw error;
             return data.id;
