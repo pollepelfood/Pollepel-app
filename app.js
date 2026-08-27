@@ -3796,7 +3796,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       /* @__PURE__ */ jsx(Plus, { size: 16 }),
       " Dupliceer naar mijn kookboek"
     ] }),
-    /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginTop: 12 }, children: [
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }, children: [
       isMine && /* @__PURE__ */ jsxs(GhostButton, { onClick: onEdit, children: [
         /* @__PURE__ */ jsx(Pencil, { size: 14 }),
         " Bewerken"
@@ -4347,7 +4347,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
     /* @__PURE__ */ jsx("div", { style: { marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.ceramic}` }, children: !confirmLogout ? /* @__PURE__ */ jsxs(GhostButton, { danger: true, onClick: () => setConfirmLogout(true), children: [
       /* @__PURE__ */ jsx(LogOut, { size: 14 }),
       " Uitloggen"
-    ] }) : /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+    ] }) : /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexWrap: "wrap", gap: 8 }, children: [
       /* @__PURE__ */ jsx(GhostButton, { danger: true, onClick: onLogout, children: "Zeker weten, uitloggen" }),
       /* @__PURE__ */ jsx(GhostButton, { onClick: () => setConfirmLogout(false), children: "Annuleren" })
     ] }) })
