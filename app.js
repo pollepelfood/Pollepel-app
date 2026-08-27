@@ -2706,7 +2706,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
       /* @__PURE__ */ jsx("span", { style: { marginLeft: 8, color: C.blueDeep }, children: "Kookboek wordt geladen\u2026" })
     ] });
   }
-  return /* @__PURE__ */ jsxs("div", { style: { fontFamily: FONT_BODY, background: C.ceramic, minHeight: 600, maxWidth: 480, margin: "0 auto", position: "relative", paddingBottom: 72 }, children: [
+  return /* @__PURE__ */ jsxs("div", { style: { fontFamily: FONT_BODY, background: C.ceramic, minHeight: "100vh", maxWidth: 480, margin: "0 auto", position: "relative", paddingBottom: 72 }, children: [
     /* @__PURE__ */ jsx("style", { children: `
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap');
         * { box-sizing: border-box; }
@@ -3797,11 +3797,11 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       " Dupliceer naar mijn kookboek"
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }, children: [
-      isMine && /* @__PURE__ */ jsxs(GhostButton, { onClick: onEdit, children: [
+      isMine && !confirmDelete && /* @__PURE__ */ jsxs(GhostButton, { onClick: onEdit, children: [
         /* @__PURE__ */ jsx(Pencil, { size: 14 }),
         " Bewerken"
       ] }),
-      isMine && /* @__PURE__ */ jsxs(GhostButton, { onClick: onDuplicate, children: [
+      isMine && !confirmDelete && /* @__PURE__ */ jsxs(GhostButton, { onClick: onDuplicate, children: [
         /* @__PURE__ */ jsx(Plus, { size: 14 }),
         " Dupliceer"
       ] }),
