@@ -188,6 +188,7 @@
               id: r.id,
               name: r.name,
               emoji: r.emoji,
+              photoUrl: r.photo_url || "",
               cookTime: r.cook_time,
               servings: r.servings,
               favorite: r.favorite,
@@ -200,7 +201,7 @@
           },
           async create(recipe) {
             const { data, error } = await supabase.from("recipes").insert({
-              household_id: householdId, name: recipe.name, emoji: recipe.emoji, cook_time: recipe.cookTime,
+              household_id: householdId, name: recipe.name, emoji: recipe.emoji, photo_url: recipe.photoUrl || null, cook_time: recipe.cookTime,
               servings: recipe.servings, favorite: !!recipe.favorite, community: !!recipe.community,
               notes: recipe.notes || null, diets: recipe.diets || [],
             }).select().single();
@@ -219,7 +220,7 @@
           },
           async update(id, recipe) {
             const { error } = await supabase.from("recipes").update({
-              name: recipe.name, emoji: recipe.emoji, cook_time: recipe.cookTime, servings: recipe.servings,
+              name: recipe.name, emoji: recipe.emoji, photo_url: recipe.photoUrl || null, cook_time: recipe.cookTime, servings: recipe.servings,
               favorite: !!recipe.favorite, community: !!recipe.community, notes: recipe.notes || null,
               diets: recipe.diets || [], updated_at: new Date().toISOString(),
             }).eq("id", id);
@@ -260,7 +261,7 @@
               supabase.from("recipe_steps").select("*").in("recipe_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]).order("step_number"),
             ]);
             return recs.map((r) => ({
-              id: r.id, name: r.name, emoji: r.emoji, cookTime: r.cook_time, servings: r.servings,
+              id: r.id, name: r.name, emoji: r.emoji, photoUrl: r.photo_url || "", cookTime: r.cook_time, servings: r.servings,
               favorite: false, community: true, notes: r.notes || "", diets: r.diets || [],
               ingredients: (ings || []).filter((i) => i.recipe_id === r.id).map((i) => ({ name: i.name, amount: Number(i.amount), unit: i.unit })),
               steps: (steps || []).filter((s) => s.recipe_id === r.id).map((s) => s.content),
