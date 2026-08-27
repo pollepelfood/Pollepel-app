@@ -1577,7 +1577,7 @@ function PrimaryButton({ children, onClick, tone = "blue", disabled, full, compa
     }
   );
 }
-function GhostButton({ children, onClick, danger }) {
+function GhostButton({ children, onClick, danger, full }) {
   return /* @__PURE__ */ jsx(
     "button",
     {
@@ -1593,8 +1593,10 @@ function GhostButton({ children, onClick, danger }) {
         fontSize: 14,
         display: "inline-flex",
         alignItems: "center",
+        justifyContent: "center",
         gap: 6,
-        cursor: "pointer"
+        cursor: "pointer",
+        width: full ? "100%" : void 0
       },
       children
     }
@@ -3797,20 +3799,20 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       " Dupliceer naar mijn kookboek"
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }, children: [
-      isMine && !confirmDelete && /* @__PURE__ */ jsxs(GhostButton, { onClick: onEdit, children: [
+      isMine && !confirmDelete && /* @__PURE__ */ jsx("div", { style: { flex: 1, minWidth: 0 }, children: /* @__PURE__ */ jsxs(GhostButton, { full: true, onClick: onEdit, children: [
         /* @__PURE__ */ jsx(Pencil, { size: 14 }),
         " Bewerken"
-      ] }),
-      isMine && !confirmDelete && /* @__PURE__ */ jsxs(GhostButton, { onClick: onDuplicate, children: [
+      ] }) }),
+      isMine && !confirmDelete && /* @__PURE__ */ jsx("div", { style: { flex: 1, minWidth: 0 }, children: /* @__PURE__ */ jsxs(GhostButton, { full: true, onClick: onDuplicate, children: [
         /* @__PURE__ */ jsx(Plus, { size: 14 }),
         " Dupliceer"
-      ] }),
-      isMine && (!confirmDelete ? /* @__PURE__ */ jsxs(GhostButton, { danger: true, onClick: () => setConfirmDelete(true), children: [
+      ] }) }),
+      isMine && (!confirmDelete ? /* @__PURE__ */ jsx("div", { style: { flex: 1, minWidth: 0 }, children: /* @__PURE__ */ jsxs(GhostButton, { full: true, danger: true, onClick: () => setConfirmDelete(true), children: [
         /* @__PURE__ */ jsx(Trash2, { size: 14 }),
         " Verwijderen"
-      ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
-        /* @__PURE__ */ jsx(GhostButton, { danger: true, onClick: onDelete, children: "Zeker weten" }),
-        /* @__PURE__ */ jsx(GhostButton, { onClick: () => setConfirmDelete(false), children: "Annuleren" })
+      ] }) }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsx("div", { style: { flex: 1, minWidth: 0 }, children: /* @__PURE__ */ jsx(GhostButton, { full: true, danger: true, onClick: onDelete, children: "Zeker weten" }) }),
+        /* @__PURE__ */ jsx("div", { style: { flex: 1, minWidth: 0 }, children: /* @__PURE__ */ jsx(GhostButton, { full: true, onClick: () => setConfirmDelete(false), children: "Annuleren" }) })
       ] }))
     ] }),
     sousChefOpen && /* @__PURE__ */ jsx(SousChefModal, { recipe, onAsk: onAskSousChef, onClose: () => setSousChefOpen(false) })
