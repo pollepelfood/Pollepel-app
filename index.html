@@ -173,6 +173,253 @@
         },
       };
 
+      window.dataAPI = {
+        // ---------- Recepten ----------
+        recipes: {
+          async list() {
+            const { data: recs, error } = await supabase.from("recipes").select("*").eq("household_id", householdId).order("created_at");
+            if (error || !recs) return [];
+            const ids = recs.map((r) => r.id);
+            const [{ data: ings }, { data: steps }] = await Promise.all([
+              supabase.from("recipe_ingredients").select("*").in("recipe_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]).order("sort_order"),
+              supabase.from("recipe_steps").select("*").in("recipe_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]).order("step_number"),
+            ]);
+            return recs.map((r) => ({
+              id: r.id,
+              name: r.name,
+              emoji: r.emoji,
+              cookTime: r.cook_time,
+              servings: r.servings,
+              favorite: r.favorite,
+              community: r.community,
+              notes: r.notes || "",
+              diets: r.diets || [],
+              ingredients: (ings || []).filter((i) => i.recipe_id === r.id).map((i) => ({ name: i.name, amount: Number(i.amount), unit: i.unit })),
+              steps: (steps || []).filter((s) => s.recipe_id === r.id).map((s) => s.content),
+            }));
+          },
+          async create(recipe) {
+            const { data, error } = await supabase.from("recipes").insert({
+              household_id: householdId, name: recipe.name, emoji: recipe.emoji, cook_time: recipe.cookTime,
+              servings: recipe.servings, favorite: !!recipe.favorite, community: !!recipe.community,
+              notes: recipe.notes || null, diets: recipe.diets || [],
+            }).select().single();
+            if (error) throw error;
+            if (recipe.ingredients && recipe.ingredients.length) {
+              await supabase.from("recipe_ingredients").insert(recipe.ingredients.map((ing, idx) => ({
+                recipe_id: data.id, sort_order: idx, name: ing.name, amount: ing.amount, unit: ing.unit,
+              })));
+            }
+            if (recipe.steps && recipe.steps.length) {
+              await supabase.from("recipe_steps").insert(recipe.steps.map((content, idx) => ({
+                recipe_id: data.id, step_number: idx + 1, content,
+              })));
+            }
+            return data.id;
+          },
+          async update(id, recipe) {
+            const { error } = await supabase.from("recipes").update({
+              name: recipe.name, emoji: recipe.emoji, cook_time: recipe.cookTime, servings: recipe.servings,
+              favorite: !!recipe.favorite, community: !!recipe.community, notes: recipe.notes || null,
+              diets: recipe.diets || [], updated_at: new Date().toISOString(),
+            }).eq("id", id);
+            if (error) throw error;
+            if (recipe.ingredients) {
+              await supabase.from("recipe_ingredients").delete().eq("recipe_id", id);
+              if (recipe.ingredients.length) {
+                await supabase.from("recipe_ingredients").insert(recipe.ingredients.map((ing, idx) => ({
+                  recipe_id: id, sort_order: idx, name: ing.name, amount: ing.amount, unit: ing.unit,
+                })));
+              }
+            }
+            if (recipe.steps) {
+              await supabase.from("recipe_steps").delete().eq("recipe_id", id);
+              if (recipe.steps.length) {
+                await supabase.from("recipe_steps").insert(recipe.steps.map((content, idx) => ({
+                  recipe_id: id, step_number: idx + 1, content,
+                })));
+              }
+            }
+          },
+          async patch(id, fields) {
+            const map = { favorite: "favorite", community: "community" };
+            const dbFields = {};
+            Object.keys(fields).forEach((k) => { if (map[k]) dbFields[map[k]] = fields[k]; });
+            const { error } = await supabase.from("recipes").update(dbFields).eq("id", id);
+            if (error) throw error;
+          },
+          async remove(id) {
+            await supabase.from("recipes").delete().eq("id", id);
+          },
+          async listCommunity() {
+            const { data: recs, error } = await supabase.from("recipes").select("*").eq("community", true).order("created_at", { ascending: false });
+            if (error || !recs) return [];
+            const ids = recs.map((r) => r.id);
+            const [{ data: ings }, { data: steps }] = await Promise.all([
+              supabase.from("recipe_ingredients").select("*").in("recipe_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]).order("sort_order"),
+              supabase.from("recipe_steps").select("*").in("recipe_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]).order("step_number"),
+            ]);
+            return recs.map((r) => ({
+              id: r.id, name: r.name, emoji: r.emoji, cookTime: r.cook_time, servings: r.servings,
+              favorite: false, community: true, notes: r.notes || "", diets: r.diets || [],
+              ingredients: (ings || []).filter((i) => i.recipe_id === r.id).map((i) => ({ name: i.name, amount: Number(i.amount), unit: i.unit })),
+              steps: (steps || []).filter((s) => s.recipe_id === r.id).map((s) => s.content),
+            }));
+          },
+        },
+
+        // ---------- Voorraad ----------
+        inventory: {
+          async list() {
+            const { data, error } = await supabase.from("inventory_items").select("*").eq("household_id", householdId).order("created_at");
+            if (error || !data) return [];
+            return data.map((i) => ({
+              id: i.id, name: i.name, category: i.category, unit: i.unit, current: Number(i.current),
+              min: Number(i.min), max: Number(i.max), barcode: i.barcode || "", expiryDate: i.expiry_date || "",
+              onSale: i.on_sale, sourceRecipeId: i.source_recipe_id,
+            }));
+          },
+          async create(item) {
+            const { data, error } = await supabase.from("inventory_items").insert({
+              household_id: householdId, name: item.name, category: item.category, unit: item.unit,
+              current: item.current, min: item.min, max: item.max, barcode: item.barcode || null,
+              expiry_date: item.expiryDate || null, on_sale: !!item.onSale, source_recipe_id: item.sourceRecipeId || null,
+            }).select().single();
+            if (error) throw error;
+            return data.id;
+          },
+          async update(id, item) {
+            const { error } = await supabase.from("inventory_items").update({
+              name: item.name, category: item.category, unit: item.unit, current: item.current,
+              min: item.min, max: item.max, barcode: item.barcode || null, expiry_date: item.expiryDate || null,
+              on_sale: !!item.onSale, updated_at: new Date().toISOString(),
+            }).eq("id", id);
+            if (error) throw error;
+          },
+          async remove(id) {
+            await supabase.from("inventory_items").delete().eq("id", id);
+          },
+        },
+
+        // ---------- Boodschappenlijst ----------
+        shopping: {
+          async list() {
+            const { data, error } = await supabase.from("shopping_list_items").select("*").eq("household_id", householdId).order("created_at");
+            if (error || !data) return [];
+            return data.map((s) => ({ id: s.id, name: s.name, amount: Number(s.amount), unit: s.unit, category: s.category, checked: s.checked }));
+          },
+          async create(item) {
+            const { data, error } = await supabase.from("shopping_list_items").insert({
+              household_id: householdId, name: item.name, amount: item.amount, unit: item.unit, category: item.category, checked: !!item.checked,
+            }).select().single();
+            if (error) throw error;
+            return data.id;
+          },
+          async patch(id, fields) {
+            await supabase.from("shopping_list_items").update(fields).eq("id", id);
+          },
+          async remove(id) {
+            await supabase.from("shopping_list_items").delete().eq("id", id);
+          },
+          async removeMany(ids) {
+            if (!ids.length) return;
+            await supabase.from("shopping_list_items").delete().in("id", ids);
+          },
+        },
+
+        // ---------- Weekmenu ----------
+        weekmenu: {
+          async list(table) {
+            const t = table || "weekmenu_days";
+            const { data, error } = await supabase.from(t).select("*").eq("household_id", householdId);
+            if (error || !data) return {};
+            const obj = {};
+            data.forEach((d) => { obj[d.day_key] = { recipeId: d.recipe_id, cook: d.cook || "", attendees: d.attendees || [] }; });
+            return obj;
+          },
+          async setDay(dayKey, entry, table) {
+            const t = table || "weekmenu_days";
+            const { error } = await supabase.from(t).upsert({
+              household_id: householdId, day_key: dayKey, recipe_id: entry.recipeId || null,
+              cook: entry.cook || null, attendees: entry.attendees || [],
+            }, { onConflict: "household_id,day_key" });
+            if (error) throw error;
+          },
+          async clearDay(dayKey, table) {
+            const t = table || "weekmenu_days";
+            await supabase.from(t).delete().eq("household_id", householdId).eq("day_key", dayKey);
+          },
+          async replaceAll(days, table) {
+            const t = table || "weekmenu_days";
+            await supabase.from(t).delete().eq("household_id", householdId);
+            const rows = Object.entries(days).filter(([, v]) => v && v.recipeId).map(([dayKey, v]) => ({
+              household_id: householdId, day_key: dayKey, recipe_id: v.recipeId, cook: v.cook || null, attendees: v.attendees || [],
+            }));
+            if (rows.length) await supabase.from(t).insert(rows);
+          },
+        },
+
+        // ---------- Koks / huisgenoten-rooster ----------
+        cooks: {
+          async list() {
+            const { data } = await supabase.from("cooks").select("name").eq("household_id", householdId);
+            return (data || []).map((c) => c.name);
+          },
+          async add(name) {
+            await supabase.from("cooks").upsert({ household_id: householdId, name }, { onConflict: "household_id,name" });
+          },
+          async remove(name) {
+            await supabase.from("cooks").delete().eq("household_id", householdId).eq("name", name);
+          },
+        },
+
+        // ---------- Kookgeschiedenis ----------
+        cookLog: {
+          async list(limit) {
+            const { data } = await supabase.from("cook_log").select("*").eq("household_id", householdId).order("cooked_at", { ascending: false }).limit(limit || 200);
+            return (data || []).map((e) => ({ id: e.id, recipeId: e.recipe_id, recipeName: e.recipe_name, emoji: e.emoji, servings: e.servings, date: e.cooked_at }));
+          },
+          async add(entry) {
+            await supabase.from("cook_log").insert({
+              household_id: householdId, recipe_id: entry.recipeId || null, recipe_name: entry.recipeName,
+              emoji: entry.emoji, servings: entry.servings, cooked_at: entry.date || new Date().toISOString(),
+            });
+          },
+        },
+
+        // ---------- Verbruikslog ----------
+        consumptionLog: {
+          async list(limit) {
+            const { data } = await supabase.from("consumption_log").select("*").eq("household_id", householdId).order("logged_at", { ascending: false }).limit(limit || 500);
+            return (data || []).map((e) => ({ name: e.name, unit: e.unit, amount: Number(e.amount), date: e.logged_at }));
+          },
+          async addMany(entries) {
+            if (!entries.length) return;
+            await supabase.from("consumption_log").insert(entries.map((e) => ({
+              household_id: householdId, name: e.name, unit: e.unit, amount: e.amount, logged_at: e.date || new Date().toISOString(),
+            })));
+          },
+        },
+
+        // ---------- Voorkeuren ----------
+        preferences: {
+          async get() {
+            const { data } = await supabase.from("household_preferences").select("*").eq("household_id", householdId).maybeSingle();
+            if (!data) return { darkMode: false, categoryOrder: null, diets: [], premium: { photoInventory: true, predictiveDepletion: true, householdRSVP: true, sousChef: true } };
+            return { darkMode: data.dark_mode, categoryOrder: data.category_order, diets: data.diets || [], premium: data.premium || {} };
+          },
+          async update(patch) {
+            const dbPatch = {};
+            if ("darkMode" in patch) dbPatch.dark_mode = patch.darkMode;
+            if ("categoryOrder" in patch) dbPatch.category_order = patch.categoryOrder;
+            if ("diets" in patch) dbPatch.diets = patch.diets;
+            if ("premium" in patch) dbPatch.premium = patch.premium;
+            const { error } = await supabase.from("household_preferences").upsert({ household_id: householdId, ...dbPatch }, { onConflict: "household_id" });
+            if (error) throw error;
+          },
+        },
+      };
+
       window.communityStore = {
         async list() {
           const { data, error } = await supabase.from("community_recipes").select("recipe_id, recipe").order("created_at", { ascending: false });

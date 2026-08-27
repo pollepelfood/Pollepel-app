@@ -1527,8 +1527,8 @@ function Pill({ children, tone = "default" }) {
   const tones = {
     default: { bg: C.ceramicDark, fg: C.inkSoft },
     warn: { bg: C.warnBg, fg: C.brick },
-    ok: { bg: "#DCE7DD", fg: C.sage },
-    auto: { bg: "#E4D9C3", fg: C.mustardDeep }
+    ok: { bg: C.successBg, fg: C.sage },
+    auto: { bg: C.noteBg, fg: C.mustardDeep }
   };
   const t = tones[tone];
   return /* @__PURE__ */ jsx(
@@ -1724,6 +1724,7 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
   const [bookMode, setBookMode] = useState("mine");
   const [communityRecipes, setCommunityRecipes] = useState([]);
   const hasCommunityBackend = typeof window !== "undefined" && !!window.communityStore;
+  const hasDataAPI = typeof window !== "undefined" && !!window.dataAPI;
   const [makeOnly, setMakeOnly] = useState(false);
   const [openRecipeId, setOpenRecipeId] = useState(null);
   const [editingRecipe, setEditingRecipe] = useState(null);
@@ -1749,22 +1750,35 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
   const [shelfScanResults, setShelfScanResults] = useState([]);
   useEffect(() => {
     (async () => {
-      const [r, i, s, w, c, p, log, cLog, rsvpData] = await Promise.all([
-        loadKey("recipes", seedRecipes),
-        loadKey("inventory", seedInventory),
-        loadKey("shoppingList", () => []),
-        loadKey("weekmenu", () => ({})),
-        loadKey("cooks", () => []),
-        loadKey("preferences", () => ({ darkMode: false, categoryOrder: null, diets: [], premium: { photoInventory: true, predictiveDepletion: true, householdRSVP: true, sousChef: true } })),
-        loadKey("cookLog", () => []),
-        loadKey("consumptionLog", () => []),
-        loadKey("rsvp", () => ({}))
-      ]);
+      let r, i, s, w, c, p, log, cLog;
+      if (hasDataAPI) {
+        [r, i, s, w, c, p, log, cLog] = await Promise.all([
+          window.dataAPI.recipes.list(),
+          window.dataAPI.inventory.list(),
+          window.dataAPI.shopping.list(),
+          window.dataAPI.weekmenu.list(),
+          window.dataAPI.cooks.list(),
+          window.dataAPI.preferences.get(),
+          window.dataAPI.cookLog.list(),
+          window.dataAPI.consumptionLog.list()
+        ]);
+        if (!r.length) r = seedRecipes();
+      } else {
+        [r, i, s, w, c, p, log, cLog] = await Promise.all([
+          loadKey("recipes", seedRecipes),
+          loadKey("inventory", seedInventory),
+          loadKey("shoppingList", () => []),
+          loadKey("weekmenu", () => ({})),
+          loadKey("cooks", () => []),
+          loadKey("preferences", () => ({ darkMode: false, categoryOrder: null, diets: [], premium: { photoInventory: true, predictiveDepletion: true, householdRSVP: true, sousChef: true } })),
+          loadKey("cookLog", () => []),
+          loadKey("consumptionLog", () => [])
+        ]);
+      }
       applyTheme(!!p.darkMode);
       setPreferences(p);
       setCookLog(log);
       setConsumptionLog(cLog);
-      setRsvp(rsvpData);
       setRecipes(r);
       setInventory(i);
       setShoppingList(s);
@@ -1776,9 +1790,77 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
   const persist = useCallback(async (key, value, setter) => {
     setter(value);
     setSaving(true);
-    await saveKey(key, value);
+    try {
+      if (hasDataAPI) {
+        await syncToDataAPI(key, value);
+      } else {
+        await saveKey(key, value);
+      }
+    } catch (e) {
+      console.error(`Opslaan van "${key}" mislukt:`, e);
+    }
     setSaving(false);
-  }, []);
+  }, [hasDataAPI, inventory, shoppingList, cooks, cookLog, consumptionLog, preferences]);
+  const syncToDataAPI = async (key, value) => {
+    if (key === "inventory") {
+      const prev = inventory;
+      const prevIds = new Set(prev.map((i) => i.id));
+      const nextIds = new Set(value.map((i) => i.id));
+      await Promise.all(prev.filter((i) => !nextIds.has(i.id)).map((i) => window.dataAPI.inventory.remove(i.id)));
+      for (const item of value) {
+        const before = prev.find((i) => i.id === item.id);
+        if (!before) {
+          const newId = await window.dataAPI.inventory.create(item);
+          item.id = newId;
+        } else if (JSON.stringify(before) !== JSON.stringify(item)) {
+          await window.dataAPI.inventory.update(item.id, item);
+        }
+      }
+      return;
+    }
+    if (key === "shoppingList") {
+      const prev = shoppingList;
+      const prevIds = new Set(prev.map((s) => s.id));
+      const nextIds = new Set(value.map((s) => s.id));
+      await Promise.all(prev.filter((s) => !nextIds.has(s.id)).map((s) => window.dataAPI.shopping.remove(s.id)));
+      for (const item of value) {
+        const before = prev.find((s) => s.id === item.id);
+        if (!before) {
+          const newId = await window.dataAPI.shopping.create(item);
+          item.id = newId;
+        } else if (JSON.stringify(before) !== JSON.stringify(item)) {
+          await window.dataAPI.shopping.patch(item.id, { name: item.name, amount: item.amount, unit: item.unit, category: item.category, checked: !!item.checked });
+        }
+      }
+      return;
+    }
+    if (key === "cooks") {
+      const toAdd = value.filter((c) => !cooks.includes(c));
+      const toRemove = cooks.filter((c) => !value.includes(c));
+      await Promise.all([...toAdd.map((c) => window.dataAPI.cooks.add(c)), ...toRemove.map((c) => window.dataAPI.cooks.remove(c))]);
+      return;
+    }
+    if (key === "cookLog") {
+      if (value.length && (!cookLog.length || value[0].id !== cookLog[0]?.id)) {
+        await window.dataAPI.cookLog.add(value[0]);
+      }
+      return;
+    }
+    if (key === "consumptionLog") {
+      const nieuw = value.slice(0, Math.max(0, value.length - consumptionLog.length));
+      if (nieuw.length) await window.dataAPI.consumptionLog.addMany(nieuw);
+      return;
+    }
+    if (key === "preferences") {
+      await window.dataAPI.preferences.update(value);
+      return;
+    }
+    if (key === "weekmenu" || key === "weekmenuTemplate") {
+      const table = key === "weekmenu" ? "weekmenu_days" : "weekmenu_template_days";
+      await window.dataAPI.weekmenu.replaceAll(value, table);
+      return;
+    }
+  };
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 4200);
@@ -2128,17 +2210,25 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   const openRecipe = openRecipeId ? recipes.find((r) => r.id === openRecipeId) || communityRecipes.find((r) => r.id === openRecipeId) : null;
   const openRecipeIsMine = openRecipe ? recipes.some((r) => r.id === openRecipe.id) : true;
   const loadCommunityRecipes = useCallback(async () => {
+    if (hasDataAPI) {
+      try {
+        const items = await window.dataAPI.recipes.listCommunity();
+        setCommunityRecipes(items || []);
+      } catch (e) {
+      }
+      return;
+    }
     if (!hasCommunityBackend) return;
     try {
       const items = await window.communityStore.list();
       setCommunityRecipes(items || []);
     } catch (e) {
     }
-  }, [hasCommunityBackend]);
+  }, [hasCommunityBackend, hasDataAPI]);
   useEffect(() => {
-    if (hasCommunityBackend) loadCommunityRecipes();
-  }, [hasCommunityBackend, loadCommunityRecipes]);
-  const communitySourceRecipes = hasCommunityBackend ? communityRecipes : recipes;
+    if (hasCommunityBackend || hasDataAPI) loadCommunityRecipes();
+  }, [hasCommunityBackend, hasDataAPI, loadCommunityRecipes]);
+  const communitySourceRecipes = hasCommunityBackend || hasDataAPI ? communityRecipes : recipes;
   const [dietOnly, setDietOnly] = useState(false);
   const activeDietTags = useMemo(() => {
     const all = /* @__PURE__ */ new Set();
@@ -2148,56 +2238,84 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   const filteredRecipes = useMemo(() => {
     const source = bookMode === "community" ? communitySourceRecipes : recipes;
     return source.filter((r) => {
-      if (bookMode === "community" && !hasCommunityBackend && !r.community) return false;
+      if (bookMode === "community" && !hasCommunityBackend && !hasDataAPI && !r.community) return false;
       if (favOnly && !r.favorite) return false;
       if (makeOnly && !recipeReadiness(r, inventory).canMake) return false;
       if (dietOnly && activeDietTags.length && !activeDietTags.every((tag) => (r.diets || []).includes(tag))) return false;
       if (query && !r.name.toLowerCase().includes(query.toLowerCase())) return false;
       return true;
     });
-  }, [recipes, communitySourceRecipes, bookMode, hasCommunityBackend, favOnly, makeOnly, dietOnly, activeDietTags, query, inventory]);
+  }, [recipes, communitySourceRecipes, bookMode, hasCommunityBackend, hasDataAPI, favOnly, makeOnly, dietOnly, activeDietTags, query, inventory]);
   const lowStockCount = inventory.filter((i) => i.current < i.min).length;
   const shoppingCount = shoppingList.length;
   const toggleFavorite = (id) => {
     const next = recipes.map((r) => r.id === id ? { ...r, favorite: !r.favorite } : r);
-    persist("recipes", next, setRecipes);
+    setRecipes(next);
+    if (hasDataAPI) window.dataAPI.recipes.patch(id, { favorite: !recipes.find((r) => r.id === id)?.favorite }).catch(() => {
+    });
+    else persist("recipes", next, setRecipes);
   };
   const toggleCommunity = async (id) => {
     const recipe = recipes.find((r) => r.id === id);
     if (!recipe) return;
     const nowShared = !recipe.community;
     const next = recipes.map((r) => r.id === id ? { ...r, community: nowShared } : r);
-    persist("recipes", next, setRecipes);
-    if (hasCommunityBackend) {
+    setRecipes(next);
+    if (hasDataAPI) {
       try {
-        if (nowShared) await window.communityStore.publish({ ...recipe, community: true });
-        else await window.communityStore.unpublish(id);
+        await window.dataAPI.recipes.patch(id, { community: nowShared });
         loadCommunityRecipes();
       } catch (e) {
-        showToast("Delen is lokaal gelukt, maar kon niet worden gesynchroniseerd met de community-backend.");
+        showToast("Delen is lokaal gelukt, maar kon niet worden opgeslagen.");
+      }
+    } else {
+      persist("recipes", next, setRecipes);
+      if (hasCommunityBackend) {
+        try {
+          if (nowShared) await window.communityStore.publish({ ...recipe, community: true });
+          else await window.communityStore.unpublish(id);
+          loadCommunityRecipes();
+        } catch (e) {
+          showToast("Delen is lokaal gelukt, maar kon niet worden gesynchroniseerd met de community-backend.");
+        }
       }
     }
     showToast(nowShared ? `${recipe.name} is gedeeld met de community.` : `${recipe.name} is niet langer gedeeld.`);
   };
-  const duplicateToMyBook = (id) => {
+  const duplicateToMyBook = async (id) => {
     const recipe = recipes.find((r) => r.id === id) || communityRecipes.find((r) => r.id === id);
     if (!recipe) return;
-    const copy = { ...recipe, id: uid(), community: false, favorite: false };
-    persist("recipes", [...recipes, copy], setRecipes);
+    if (hasDataAPI) {
+      const newId = await window.dataAPI.recipes.create({ ...recipe, community: false, favorite: false });
+      setRecipes([...recipes, { ...recipe, id: newId, community: false, favorite: false }]);
+    } else {
+      const copy = { ...recipe, id: uid(), community: false, favorite: false };
+      persist("recipes", [...recipes, copy], setRecipes);
+    }
     showToast(`${recipe.name} toegevoegd aan jouw kookboek.`);
   };
-  const saveRecipe = (recipe) => {
-    let next;
-    if (recipe.id) {
-      next = recipes.map((r) => r.id === recipe.id ? recipe : r);
+  const saveRecipe = async (recipe) => {
+    if (hasDataAPI) {
+      if (recipe.id) {
+        await window.dataAPI.recipes.update(recipe.id, recipe);
+        setRecipes(recipes.map((r) => r.id === recipe.id ? recipe : r));
+      } else {
+        const newId = await window.dataAPI.recipes.create({ ...recipe, favorite: false, community: false });
+        setRecipes([...recipes, { ...recipe, id: newId, favorite: false, community: false }]);
+      }
     } else {
-      next = [...recipes, { ...recipe, id: uid(), favorite: false, community: false }];
+      let next;
+      if (recipe.id) next = recipes.map((r) => r.id === recipe.id ? recipe : r);
+      else next = [...recipes, { ...recipe, id: uid(), favorite: false, community: false }];
+      persist("recipes", next, setRecipes);
     }
-    persist("recipes", next, setRecipes);
     setEditingRecipe(null);
   };
   const deleteRecipe = (id) => {
-    persist("recipes", recipes.filter((r) => r.id !== id), setRecipes);
+    setRecipes(recipes.filter((r) => r.id !== id));
+    if (hasDataAPI) window.dataAPI.recipes.remove(id).catch(() => {
+    });
+    else persist("recipes", recipes.filter((r) => r.id !== id), setRecipes);
     setOpenRecipeId(null);
   };
   const cookRecipe = (recipe, scale = 1) => {
@@ -2399,7 +2517,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     showToast("Dit weekmenu is opgeslagen als sjabloon. Gebruik 'Vorig weekmenu' om het later opnieuw toe te passen.");
   };
   const applyWeekmenuTemplate = async () => {
-    const template = await loadKey("weekmenuTemplate", () => null);
+    const template = hasDataAPI ? await window.dataAPI.weekmenu.list("weekmenu_template_days") : await loadKey("weekmenuTemplate", () => null);
     if (!template || !Object.keys(template).length) {
       showToast("Er is nog geen opgeslagen weekmenu-sjabloon.");
       return;
