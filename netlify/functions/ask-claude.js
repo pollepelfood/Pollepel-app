@@ -4,11 +4,38 @@
 //
 // Vereist: omgevingsvariabele ANTHROPIC_API_KEY, in te stellen via
 // Netlify → Project configuration → Environment variables.
+//
+// Beveiliging: dit endpoint eist een geldig, actief inlogbewijs (Supabase-sessietoken) van
+// een echt Pollepel-account. Zonder geldige login wordt het verzoek geweigerd, vóórdat er
+// iets naar Anthropic (en dus jouw tegoed) wordt doorgestuurd.
+
+const SUPABASE_URL = "https://ucevkzircawpapsrywfv.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_t0F12XeC1bPLzmZgvLWUeQ_CPat-lMn";
+
+async function isAuthenticated(req) {
+  const authHeader = req.headers.get("authorization") || "";
+  if (!authHeader.startsWith("Bearer ")) return false;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { Authorization: authHeader, apikey: SUPABASE_ANON_KEY },
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+}
 
 export default async (req, context) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Alleen POST-verzoeken toegestaan." }), {
       status: 405,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  if (!(await isAuthenticated(req))) {
+    return new Response(JSON.stringify({ error: "Niet ingelogd — dit endpoint is alleen voor ingelogde Pollepel-gebruikers." }), {
+      status: 401,
       headers: { "Content-Type": "application/json" },
     });
   }
