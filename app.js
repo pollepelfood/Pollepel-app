@@ -1868,10 +1868,21 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
     setTimeout(() => setToast(null), 4200);
   };
   const AI_ENDPOINT = "/api/ask-claude";
+  const buildAuthHeaders = async () => {
+    const headers = { "Content-Type": "application/json" };
+    if (typeof window !== "undefined" && window.householdAPI && window.householdAPI.getAccessToken) {
+      try {
+        const token = await window.householdAPI.getAccessToken();
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+      } catch (e) {
+      }
+    }
+    return headers;
+  };
   const askClaude = async (prompt) => {
     const response = await fetch(AI_ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await buildAuthHeaders(),
       body: JSON.stringify({
         model: "claude-sonnet-5",
         max_tokens: 1e3,
@@ -1895,7 +1906,7 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
   const askClaudeVision = async (base64, mediaType, prompt) => {
     const response = await fetch(AI_ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await buildAuthHeaders(),
       body: JSON.stringify({
         model: "claude-sonnet-5",
         max_tokens: 1e3,
@@ -2034,7 +2045,8 @@ Regels:
       const status = Number(code.split("-")[1]);
       if (status === 413) return "Deze foto is te groot om te versturen. Probeer een foto met minder detail, of een kleiner deel van de pagina." + detailSuffix;
       if (status === 429) return "De AI heeft het op dit moment te druk. Wacht een minuutje en probeer het opnieuw." + detailSuffix;
-      if (status === 401 || status === 403) return "Geen toegang tot de AI-dienst op dit moment. Probeer het later opnieuw." + detailSuffix;
+      if (status === 401) return "Je bent niet (meer) ingelogd. Log opnieuw in en probeer het nogmaals." + detailSuffix;
+      if (status === 403) return "Geen toegang tot de AI-dienst op dit moment. Probeer het later opnieuw." + detailSuffix;
       if (status >= 500) return "De AI-dienst heeft zelf een probleem (tijdelijke storing). Probeer het over een paar minuten opnieuw." + detailSuffix;
       return `De AI wees dit verzoek af (foutcode ${status}).${detailSuffix}`;
     }

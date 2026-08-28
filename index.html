@@ -470,6 +470,10 @@
           const { data } = await supabase.auth.getUser();
           return data && data.user ? data.user.email : "";
         },
+        async getAccessToken() {
+          const { data } = await supabase.auth.getSession();
+          return data && data.session ? data.session.access_token : null;
+        },
         async signOut() {
           await supabase.auth.signOut();
           window.location.reload();
