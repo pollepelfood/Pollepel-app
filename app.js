@@ -5386,6 +5386,30 @@ function BoodschappenView({ list, categories, onToggle, onRemove, onAddManual, o
 
 ${body}`;
   };
+  const buildChecklistText = () => {
+    const dateStr = (/* @__PURE__ */ new Date()).toLocaleDateString("nl-NL", { day: "numeric", month: "long" });
+    const body = cats.map((cat) => {
+      const items = byCategory[cat];
+      if (!items || !items.length) return null;
+      return `${cat.toUpperCase()}
+` + items.map((i) => `\u2610 ${i.name} (${i.amount} ${i.unit})`).join("\n");
+    }).filter(Boolean).join("\n\n");
+    return `Boodschappenlijst \u2014 Pollepel (${dateStr})
+
+${body}
+`;
+  };
+  const downloadList = () => {
+    const blob = new Blob([buildChecklistText()], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `boodschappenlijst-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
   const shareList = async () => {
     const text = buildListText();
     if (navigator.share) {
@@ -5416,13 +5440,17 @@ ${body}`;
     ] });
   }
   return /* @__PURE__ */ jsxs("div", { children: [
-    /* @__PURE__ */ jsxs("div", { style: { marginBottom: 14 }, children: [
+    /* @__PURE__ */ jsxs("div", { style: { marginBottom: 14, display: "flex", gap: 8, flexWrap: "wrap" }, children: [
       /* @__PURE__ */ jsxs(GhostButton, { onClick: shareList, children: [
         /* @__PURE__ */ jsx(Share2, { size: 14 }),
         " Lijst delen / kopi\xEBren"
       ] }),
-      shareMsg && /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: 6 }, children: shareMsg })
+      /* @__PURE__ */ jsxs(GhostButton, { onClick: downloadList, children: [
+        /* @__PURE__ */ jsx(Download, { size: 14 }),
+        " Downloaden als afvinklijst"
+      ] })
     ] }),
+    shareMsg && /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: -8, marginBottom: 10 }, children: shareMsg }),
     orderedCatsForDisplay.map((cat) => {
       const items = byCategory[cat];
       if (!items || !items.length) return null;
