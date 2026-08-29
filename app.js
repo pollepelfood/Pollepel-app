@@ -1958,8 +1958,11 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
 
 Regels:
 - Herschrijf elke bereidingsstap kort (max ~15 woorden) en in je eigen woorden, niet letterlijk overnemen uit de bron.
+- BELANGRIJK \u2014 volgorde van de stappen: houd de chronologische kookvolgorde uit de bron exact aan. Verzin geen andere volgorde en herschik niets. Als de bron parallelle acties beschrijft (bijv. "verwarm de oven terwijl je de groenten snijdt"), zet ze in de volgorde waarin je ze zou uitvoeren, en noem dat expliciet in de stap zelf (bijv. "Verwarm ondertussen de oven voor") in plaats van een aparte, losstaande stap te maken die de volgorde verwart.
+- Controleer voor je antwoordt zelf of de stappenvolgorde logisch en compleet is (bijv. niet iets gebruiken v\xF3\xF3r het is voorbereid) \u2014 corrigeer dit zo nodig, maar blijf zo dicht mogelijk bij de bron.
 - Als een ingredi\xEBnt meerdere keren voorkomt (bijv. zowel in een stappenlijst als in een aparte ingredi\xEBntenoverzicht), voeg het maar \xE9\xE9n keer toe met de duidelijkste hoeveelheid.
-- Maximaal 10 stappen en maximaal 20 ingredi\xEBnten \u2014 vat samen of combineer kleine kruiden waar nodig, dit moet compact blijven.
+- Negeer voedingswaardetabellen, allergenenlijsten, "weetjes"/tips, contactgegevens, benodigdheden (pannen e.d.) en voetnootverwijzingen zoals cijfers tussen haakjes \u2014 dit hoort niet bij het recept zelf.
+- Maximaal 8 stappen en maximaal 16 ingredi\xEBnten \u2014 vat samen of combineer kleine kruiden waar nodig, dit moet compact blijven, belangrijker dan volledigheid.
 - Kies per ingredi\xEBnt de dichtstbijzijnde toegestane eenheid; gebruik "stuks" als er geen duidelijke maateenheid is (bijv. "1 kopje" \u2248 240 ml).
 - Negeer reclame, menu's, reacties of andere tekst die niet bij het recept hoort.
 - Schat een redelijke kooktijd als die niet genoemd wordt.
@@ -2030,14 +2033,17 @@ ${sourceText.slice(0, 6e3)}
       setImporting(false);
     }
   };
-  const buildPhotoExtractionPrompt = () => `Je bent een recept-extractor voor de kookboek-app "Pollepel". Op de afbeelding staat een recept (bijv. een kookboekpagina, uitprint, verpakking of handgeschreven kaart). Lees de tekst op de foto en zet die om naar STRIKT GELDIGE, COMPACTE JSON (\xE9\xE9n regel, geen witruimte/inspringing, geen markdown-codeblok, geen uitleg ervoor of erna) volgens dit format:
+  const buildPhotoExtractionPrompt = () => `Je bent een recept-extractor voor de kookboek-app "Pollepel". Op de afbeelding staat een recept (bijv. een kookboekpagina, maaltijdbox-kaart zoals HelloFresh, uitprint, verpakking of handgeschreven kaart). Lees de tekst op de foto en zet die om naar STRIKT GELDIGE, COMPACTE JSON (\xE9\xE9n regel, geen witruimte/inspringing, geen markdown-codeblok, geen uitleg ervoor of erna) volgens dit format:
 
 {"name":string,"emoji":"\xE9\xE9n relevante food-emoji","cookTime":integer(minuten),"servings":integer,"ingredients":[{"name":string,"amount":number,"unit":\xE9\xE9n van "stuks"|"g"|"kg"|"ml"|"l"|"eetlepel"|"theelepel"|"snufje"}],"steps":[string,...]}
 
 Regels:
-- Herschrijf elke bereidingsstap kort (max ~15 woorden) en in je eigen woorden.
-- Maximaal 10 stappen en maximaal 20 ingredi\xEBnten.
-- Kies per ingredi\xEBnt de dichtstbijzijnde toegestane eenheid; gebruik "stuks" als er geen duidelijke maateenheid is.
+- Herschrijf elke bereidingsstap kort (max ~12 woorden) en in je eigen woorden.
+- BELANGRIJK \u2014 volgorde van de stappen: houd de chronologische kookvolgorde op de foto exact aan, meestal herkenbaar aan genummerde stappen. Verzin geen andere volgorde. Bij parallelle acties (bijv. "verwarm ondertussen de oven"), noem dat expliciet in de stap zelf in plaats van een verwarrende losse stap te maken.
+- Controleer voor je antwoordt zelf of de stappenvolgorde logisch is (niet iets gebruiken v\xF3\xF3r het is voorbereid) \u2014 corrigeer dit zo nodig, maar blijf zo dicht mogelijk bij de foto.
+- Negeer alles wat niet de kern van het recept is: voedingswaardetabel, allergenenlijst, "weetjes"/tips, contactgegevens, benodigdheden (pannen e.d.), en voetnootverwijzingen zoals cijfers tussen haakjes.
+- Maximaal 8 stappen en maximaal 16 ingredi\xEBnten \u2014 combineer of laat de minder essenti\xEBle weg als er meer op de foto staan. Dit moet compact blijven, belangrijker dan volledigheid.
+- Kies per ingredi\xEBnt de dichtstbijzijnde toegestane eenheid; gebruik "stuks" als er geen duidelijke maateenheid is. Bij een kaart met een "zelf toevoegen"-lijst: neem beide lijsten samen als ingredi\xEBnten.
 - Als de foto onduidelijk, onvolledig of geen recept is, antwoord dan met {"error":"onleesbaar"}.
 - Antwoord ALLEEN met de JSON, niets anders.`;
   const describePhotoError = (code, detail) => {
@@ -3928,6 +3934,13 @@ function RecipeForm({ initial, inventoryNames, onCancel, onSave }) {
   };
   const updateIng = (idx, patch) => setIngredients(ingredients.map((ing, i) => i === idx ? { ...ing, ...patch } : ing));
   const updateStep = (idx, val) => setSteps(steps.map((s, i) => i === idx ? val : s));
+  const moveStep = (idx, direction) => {
+    const target = idx + direction;
+    if (target < 0 || target >= steps.length) return;
+    const next = [...steps];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    setSteps(next);
+  };
   const canSave = name.trim() && ingredients.some((i) => i.name.trim() && i.amount !== "") && steps.some((s) => s.trim());
   const handleSave = () => {
     onSave({
@@ -3966,10 +3979,14 @@ function RecipeForm({ initial, inventoryNames, onCancel, onSave }) {
       " Ingredi\xEBnt"
     ] }),
     /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "16px 0 6px" }, children: "Bereidingsstappen" }),
-    steps.map((s, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6, marginBottom: 6 }, children: [
+    steps.map((s, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6, marginBottom: 6, alignItems: "flex-start" }, children: [
       /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_MONO, color: C.mustardDeep, fontSize: 12, paddingTop: 10 }, children: String(idx + 1).padStart(2, "0") }),
       /* @__PURE__ */ jsx("textarea", { style: { ...inputStyle, flex: 1, minHeight: 40, resize: "vertical" }, value: s, onChange: (e) => updateStep(idx, e.target.value) }),
-      /* @__PURE__ */ jsx("button", { onClick: () => setSteps(steps.filter((_, i) => i !== idx)), style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(X, { size: 16, color: C.inkSoft }) })
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexDirection: "column", paddingTop: 4 }, children: [
+        /* @__PURE__ */ jsx("button", { onClick: () => moveStep(idx, -1), disabled: idx === 0, style: { background: "none", border: "none", cursor: idx === 0 ? "default" : "pointer", opacity: idx === 0 ? 0.3 : 1, padding: 2 }, children: /* @__PURE__ */ jsx(ChevronUp, { size: 15, color: C.inkSoft }) }),
+        /* @__PURE__ */ jsx("button", { onClick: () => moveStep(idx, 1), disabled: idx === steps.length - 1, style: { background: "none", border: "none", cursor: idx === steps.length - 1 ? "default" : "pointer", opacity: idx === steps.length - 1 ? 0.3 : 1, padding: 2 }, children: /* @__PURE__ */ jsx(ChevronDown, { size: 15, color: C.inkSoft }) })
+      ] }),
+      /* @__PURE__ */ jsx("button", { onClick: () => setSteps(steps.filter((_, i) => i !== idx)), style: { background: "none", border: "none", cursor: "pointer", paddingTop: 8 }, children: /* @__PURE__ */ jsx(X, { size: 16, color: C.inkSoft }) })
     ] }, idx)),
     /* @__PURE__ */ jsxs(GhostButton, { onClick: () => setSteps([...steps, ""]), children: [
       /* @__PURE__ */ jsx(Plus, { size: 14 }),
