@@ -1728,6 +1728,7 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
   const hasCommunityBackend = typeof window !== "undefined" && !!window.communityStore;
   const hasDataAPI = typeof window !== "undefined" && !!window.dataAPI;
   const [makeOnly, setMakeOnly] = useState(false);
+  const [maxCookTime, setMaxCookTime] = useState(null);
   const [openRecipeId, setOpenRecipeId] = useState(null);
   const [editingRecipe, setEditingRecipe] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
@@ -2255,11 +2256,12 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       if (bookMode === "community" && !hasCommunityBackend && !hasDataAPI && !r.community) return false;
       if (favOnly && !r.favorite) return false;
       if (makeOnly && !recipeReadiness(r, inventory).canMake) return false;
+      if (makeOnly && maxCookTime && Number(r.cookTime || 999) > maxCookTime) return false;
       if (dietOnly && activeDietTags.length && !activeDietTags.every((tag) => (r.diets || []).includes(tag))) return false;
       if (query && !r.name.toLowerCase().includes(query.toLowerCase())) return false;
       return true;
     });
-  }, [recipes, communitySourceRecipes, bookMode, hasCommunityBackend, hasDataAPI, favOnly, makeOnly, dietOnly, activeDietTags, query, inventory]);
+  }, [recipes, communitySourceRecipes, bookMode, hasCommunityBackend, hasDataAPI, favOnly, makeOnly, maxCookTime, dietOnly, activeDietTags, query, inventory]);
   const lowStockCount = inventory.filter((i) => i.current < i.min).length;
   const shoppingCount = shoppingList.length;
   const toggleFavorite = (id) => {
@@ -2661,6 +2663,46 @@ Antwoord ALLEEN met STRIKT GELDIGE, COMPACTE JSON (\xE9\xE9n regel, geen markdow
 {"name":string,"emoji":"\xE9\xE9n relevante food-emoji","cookTime":integer(minuten),"servings":4,"ingredients":[{"name":string,"amount":number,"unit":\xE9\xE9n van "stuks"|"g"|"kg"|"ml"|"l"|"eetlepel"|"theelepel"|"snufje"}],"steps":[string,...],"diets":[zero of meer van ${JSON.stringify(DIET_TAGS)}]}
 
 Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi\xEBnten.`;
+  const generatePatternWeekmenu = ({ scope }) => {
+    const days = scope === "empty" ? WEEK_DAYS.filter((d) => !dayEntry(d.key)?.recipeId) : WEEK_DAYS;
+    if (!days.length) {
+      showToast("Alle dagen zijn al ingevuld. Kies 'hele week' om ze te vervangen, of maak eerst dagen leeg.");
+      return;
+    }
+    if (!cookLog.length && !recipes.some((r) => r.favorite)) {
+      showToast("Nog geen kookgeschiedenis of favorieten bekend \u2014 kook eerst een paar keer, of markeer favorieten, voor deze functie iets kan voorstellen.");
+      return;
+    }
+    const dutchDayIndex = { zo: 0, ma: 1, di: 2, wo: 3, do: 4, vr: 5, za: 6 };
+    const next = { ...weekmenu };
+    const usedThisRun = [];
+    days.forEach((day) => {
+      const sameDayCounts = /* @__PURE__ */ new Map();
+      cookLog.forEach((entry) => {
+        if (!entry.recipeId) return;
+        const dow = new Date(entry.date).getDay();
+        if (dutchDayIndex[day.key] === dow) {
+          sameDayCounts.set(entry.recipeId, (sameDayCounts.get(entry.recipeId) || 0) + 1);
+        }
+      });
+      let candidates = Array.from(sameDayCounts.entries()).filter(([id]) => recipes.some((r) => r.id === id) && !usedThisRun.includes(id)).sort((a, b) => b[1] - a[1]).map(([id]) => id);
+      if (!candidates.length) {
+        const overallCounts = /* @__PURE__ */ new Map();
+        cookLog.forEach((entry) => {
+          if (entry.recipeId) overallCounts.set(entry.recipeId, (overallCounts.get(entry.recipeId) || 0) + 1);
+        });
+        const byFrequency = Array.from(overallCounts.entries()).filter(([id]) => recipes.some((r) => r.id === id) && !usedThisRun.includes(id)).sort((a, b) => b[1] - a[1]).map(([id]) => id);
+        const favorites = recipes.filter((r) => r.favorite && !usedThisRun.includes(r.id)).map((r) => r.id);
+        candidates = [...byFrequency, ...favorites];
+      }
+      if (!candidates.length) return;
+      const pick = candidates[0];
+      usedThisRun.push(pick);
+      next[day.key] = { ...dayEntry(day.key), recipeId: pick };
+    });
+    persist("weekmenu", next, setWeekmenu);
+    showToast("Weekmenu ingevuld op basis van jullie eigen kookritme.");
+  };
   const generateAIWeekmenu = async ({ styleId, scope }) => {
     const style = MEAL_STYLES.find((s) => s.id === styleId) || MEAL_STYLES[0];
     const days = scope === "empty" ? WEEK_DAYS.filter((d) => !weekmenu[d.key]) : WEEK_DAYS;
@@ -2807,6 +2849,8 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           setFavOnly,
           makeOnly,
           setMakeOnly,
+          maxCookTime,
+          setMaxCookTime,
           dietOnly,
           setDietOnly,
           activeDietTags,
@@ -2894,6 +2938,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
             setAiWeekError("");
             setAiWeekOpen(true);
           },
+          onPatternGenerate: () => generatePatternWeekmenu({ scope: "empty" }),
           onDuplicate: duplicateWeekmenu,
           onApplyTemplate: applyWeekmenuTemplate,
           onShuffle: shuffleWeekmenu,
@@ -3175,7 +3220,7 @@ function SeasonalAndSurpriseBar({ recipes, inventory, onOpen, showToast }) {
     ] })
   ] });
 }
-function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, makeOnly, setMakeOnly, dietOnly, setDietOnly, activeDietTags, bookMode, setBookMode, inventory, onOpen, onToggleFav, onNew, onImport, onDuplicate, showToast }) {
+function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, makeOnly, setMakeOnly, maxCookTime, setMaxCookTime, dietOnly, setDietOnly, activeDietTags, bookMode, setBookMode, inventory, onOpen, onToggleFav, onNew, onImport, onDuplicate, showToast }) {
   return /* @__PURE__ */ jsxs("div", { children: [
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6, marginBottom: 12 }, children: [
       /* @__PURE__ */ jsxs(
@@ -3263,6 +3308,7 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
           /* @__PURE__ */ jsx(
             "input",
             {
+              autoComplete: "off",
               style: { ...inputStyle, paddingLeft: 30 },
               placeholder: "Zoek een gerecht\u2026",
               value: query,
@@ -3291,7 +3337,10 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
         /* @__PURE__ */ jsx(
           "button",
           {
-            onClick: () => setMakeOnly((v) => !v),
+            onClick: () => setMakeOnly((v) => {
+              if (v) setMaxCookTime(null);
+              return !v;
+            }),
             title: "Alleen wat ik kan maken",
             style: {
               border: `1.5px solid ${makeOnly ? C.sage : C.borderTint}`,
@@ -3325,7 +3374,34 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
           }
         )
       ] }),
-      makeOnly && /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: -6, marginBottom: 10 }, children: "Alleen gerechten waarvan je alle bijgehouden ingredi\xEBnten in voorraad hebt." }),
+      makeOnly && /* @__PURE__ */ jsxs("div", { style: { marginTop: -6, marginBottom: 10 }, children: [
+        /* @__PURE__ */ jsxs("p", { style: { fontSize: 11.5, color: C.inkSoft, margin: "0 0 6px" }, children: [
+          "Alleen gerechten waarvan je alle bijgehouden ingredi\xEBnten in voorraad hebt",
+          maxCookTime ? `, binnen ${maxCookTime} minuten` : "",
+          "."
+        ] }),
+        /* @__PURE__ */ jsx("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" }, children: [["20 min", 20], ["45 min", 45], ["Geen limiet", null]].map(([label, val]) => /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => setMaxCookTime(val),
+            style: {
+              padding: "5px 11px",
+              borderRadius: 16,
+              fontSize: 11.5,
+              cursor: "pointer",
+              border: `1.5px solid ${maxCookTime === val ? C.sage : C.borderTint}`,
+              background: maxCookTime === val ? C.sage : C.cardBg,
+              color: maxCookTime === val ? "#fff" : C.inkSoft,
+              fontWeight: maxCookTime === val ? 600 : 400
+            },
+            children: [
+              /* @__PURE__ */ jsx(Clock, { size: 10, style: { verticalAlign: -1, marginRight: 3 } }),
+              label
+            ]
+          },
+          label
+        )) })
+      ] }),
       /* @__PURE__ */ jsx("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }, children: recipes.map((r) => {
         const readiness = recipeReadiness(r, inventory);
         return /* @__PURE__ */ jsxs(
@@ -3488,6 +3564,7 @@ function SousChefModal({ recipe, onAsk, onClose }) {
       /* @__PURE__ */ jsx(
         "input",
         {
+          autoComplete: "off",
           style: inputStyle,
           placeholder: "Bijv. Kan ik room vervangen door melk?",
           value: question,
@@ -3867,19 +3944,19 @@ function RecipeForm({ initial, inventoryNames, onCancel, onSave }) {
     });
   };
   return /* @__PURE__ */ jsxs(Modal, { title: initial.id ? "Recept bewerken" : "Nieuw recept", onClose: onCancel, wide: true, children: [
-    /* @__PURE__ */ jsx(Field, { label: "Naam", children: /* @__PURE__ */ jsx("input", { style: inputStyle, value: name, onChange: (e) => handleNameChange(e.target.value), placeholder: "Bijv. Groentecurry" }) }),
+    /* @__PURE__ */ jsx(Field, { label: "Naam", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, value: name, onChange: (e) => handleNameChange(e.target.value), placeholder: "Bijv. Groentecurry" }) }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 10 }, children: [
-      /* @__PURE__ */ jsx("div", { style: { width: 70 }, children: /* @__PURE__ */ jsx(Field, { label: "Emoji", children: /* @__PURE__ */ jsx("input", { style: inputStyle, value: emoji, onChange: (e) => handleEmojiChange(e.target.value) }) }) }),
-      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Foto-URL (optioneel)", children: /* @__PURE__ */ jsx("input", { style: inputStyle, value: photoUrl, onChange: (e) => setPhotoUrl(e.target.value), placeholder: "https://\u2026" }) }) })
+      /* @__PURE__ */ jsx("div", { style: { width: 70 }, children: /* @__PURE__ */ jsx(Field, { label: "Emoji", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, value: emoji, onChange: (e) => handleEmojiChange(e.target.value) }) }) }),
+      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Foto-URL (optioneel)", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, value: photoUrl, onChange: (e) => setPhotoUrl(e.target.value), placeholder: "https://\u2026" }) }) })
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 10 }, children: [
-      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Kooktijd (min)", children: /* @__PURE__ */ jsx("input", { type: "number", style: inputStyle, value: cookTime, onChange: (e) => setCookTime(e.target.value) }) }) }),
-      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Personen", children: /* @__PURE__ */ jsx("input", { type: "number", style: inputStyle, value: servings, onChange: (e) => setServings(e.target.value) }) }) })
+      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Kooktijd (min)", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", type: "number", style: inputStyle, value: cookTime, onChange: (e) => setCookTime(e.target.value) }) }) }),
+      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Personen", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", type: "number", style: inputStyle, value: servings, onChange: (e) => setServings(e.target.value) }) }) })
     ] }),
     /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "10px 0 6px" }, children: "Ingredi\xEBnten" }),
     ingredients.map((ing, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6, marginBottom: 6 }, children: [
-      /* @__PURE__ */ jsx("input", { style: { ...inputStyle, flex: 2 }, list: "ing-names", placeholder: "Naam", value: ing.name, onChange: (e) => updateIng(idx, { name: e.target.value }) }),
-      /* @__PURE__ */ jsx("input", { type: "number", style: { ...inputStyle, width: 64 }, placeholder: "Aantal", value: ing.amount, onChange: (e) => updateIng(idx, { amount: e.target.value }) }),
+      /* @__PURE__ */ jsx("input", { autoComplete: "off", style: { ...inputStyle, flex: 2 }, list: "ing-names", placeholder: "Naam", value: ing.name, onChange: (e) => updateIng(idx, { name: e.target.value }) }),
+      /* @__PURE__ */ jsx("input", { autoComplete: "off", type: "number", style: { ...inputStyle, width: 64 }, placeholder: "Aantal", value: ing.amount, onChange: (e) => updateIng(idx, { amount: e.target.value }) }),
       /* @__PURE__ */ jsx("select", { style: { ...inputStyle, width: 90 }, value: ing.unit, onChange: (e) => updateIng(idx, { unit: e.target.value }), children: UNITS.map((u) => /* @__PURE__ */ jsx("option", { value: u, children: u }, u)) }),
       /* @__PURE__ */ jsx("button", { onClick: () => setIngredients(ingredients.filter((_, i) => i !== idx)), style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(X, { size: 16, color: C.inkSoft }) })
     ] }, idx)),
@@ -3935,7 +4012,7 @@ function RecipeForm({ initial, inventoryNames, onCancel, onSave }) {
     ] })
   ] });
 }
-function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, onPickDay, onPickCook, onPickAttendees, onClearDay, onGenerate, onAIGenerate, onDuplicate, onApplyTemplate, onShuffle, onOpenRecipe, onExportCalendar, onQuickPlan }) {
+function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, onPickDay, onPickCook, onPickAttendees, onClearDay, onGenerate, onAIGenerate, onPatternGenerate, onDuplicate, onApplyTemplate, onShuffle, onOpenRecipe, onExportCalendar, onQuickPlan }) {
   const findRecipe = (id) => recipes.find((r) => r.id === id);
   const dayEntry = (day) => {
     const raw = weekmenu[day];
@@ -3982,6 +4059,10 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, onPick
     /* @__PURE__ */ jsx("div", { style: { marginBottom: 14 }, children: /* @__PURE__ */ jsxs(PrimaryButton, { tone: "mustard", full: true, onClick: onAIGenerate, children: [
       /* @__PURE__ */ jsx(Wand2, { size: 16 }),
       " AI: genereer weekmenu"
+    ] }) }),
+    /* @__PURE__ */ jsx("div", { style: { marginBottom: 14 }, children: /* @__PURE__ */ jsxs(GhostButton, { full: true, onClick: onPatternGenerate, children: [
+      /* @__PURE__ */ jsx(Sparkles, { size: 14 }),
+      " Stel voor zoals wij normaal eten"
     ] }) }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginBottom: 14 }, children: [
       /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(GhostButton, { onClick: onDuplicate, children: [
@@ -4123,7 +4204,7 @@ function AttendeesPickerModal({ cooks, current, onSave, onAddCook, onClose }) {
       name
     )) }),
     /* @__PURE__ */ jsx(Field, { label: "Nieuwe naam toevoegen", children: /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
-      /* @__PURE__ */ jsx("input", { style: inputStyle, placeholder: "Bijv. Pietje", value: newName, onChange: (e) => setNewName(e.target.value), onKeyDown: (e) => e.key === "Enter" && addAndSelect() }),
+      /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, placeholder: "Bijv. Pietje", value: newName, onChange: (e) => setNewName(e.target.value), onKeyDown: (e) => e.key === "Enter" && addAndSelect() }),
       /* @__PURE__ */ jsx(PrimaryButton, { onClick: addAndSelect, disabled: !newName.trim(), children: /* @__PURE__ */ jsx(Plus, { size: 16 }) })
     ] }) }),
     /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: -4 }, children: selected.length === 0 ? "Niemand geselecteerd \u2014 de standaard receptportie wordt gebruikt." : `${selected.length} perso${selected.length === 1 ? "on" : "nen"} geselecteerd.` }),
@@ -4167,7 +4248,7 @@ function CookPickerModal({ cooks, current, onPick, onAddCook, onRemoveCook, onCl
       /* @__PURE__ */ jsx("button", { onClick: () => onRemoveCook(name), title: "Verwijder uit lijst", style: { background: "none", border: "none", cursor: "pointer", padding: 2 }, children: /* @__PURE__ */ jsx(X, { size: 13, color: C.inkSoft }) })
     ] }, name)) }),
     /* @__PURE__ */ jsx(Field, { label: "Nieuwe naam toevoegen", children: /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
-      /* @__PURE__ */ jsx("input", { style: inputStyle, placeholder: "Bijv. Pietje", value: newName, onChange: (e) => setNewName(e.target.value), onKeyDown: (e) => e.key === "Enter" && submitNew() }),
+      /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, placeholder: "Bijv. Pietje", value: newName, onChange: (e) => setNewName(e.target.value), onKeyDown: (e) => e.key === "Enter" && submitNew() }),
       /* @__PURE__ */ jsx(PrimaryButton, { onClick: submitNew, disabled: !newName.trim(), children: /* @__PURE__ */ jsx(Plus, { size: 16 }) })
     ] }) }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginTop: 10 }, children: [
@@ -4243,7 +4324,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
   return /* @__PURE__ */ jsxs(Modal, { title: "Instellingen", onClose, children: [
     /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }, children: "Naam van je huishouden" }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginBottom: 16 }, children: [
-      /* @__PURE__ */ jsx("input", { style: inputStyle, value: name, onChange: (e) => setName(e.target.value), placeholder: "Bijv. Familie Jansen" }),
+      /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, value: name, onChange: (e) => setName(e.target.value), placeholder: "Bijv. Familie Jansen" }),
       /* @__PURE__ */ jsx(PrimaryButton, { onClick: saveName, disabled: savingName || !name.trim() || name.trim() === household?.name, children: savingName ? /* @__PURE__ */ jsx(Loader2, { className: "animate-spin", size: 16 }) : /* @__PURE__ */ jsx(Check, { size: 16 }) })
     ] }),
     household?.invite_code && /* @__PURE__ */ jsxs(Fragment, { children: [
@@ -4379,8 +4460,8 @@ function ShelfPhotoModal({ scanning, error, results, onScan, onToggleInclude, on
   };
   const includedCount = results.filter((r) => r.include).length;
   return /* @__PURE__ */ jsxs(Modal, { title: "Koelkastscanner", onClose, wide: true, children: [
-    /* @__PURE__ */ jsx("input", { ref: cameraRef, type: "file", accept: "image/*", capture: "environment", onChange: handleFile, style: { display: "none" } }),
-    /* @__PURE__ */ jsx("input", { ref: galleryRef, type: "file", accept: "image/*", onChange: handleFile, style: { display: "none" } }),
+    /* @__PURE__ */ jsx("input", { autoComplete: "off", ref: cameraRef, type: "file", accept: "image/*", capture: "environment", onChange: handleFile, style: { display: "none" } }),
+    /* @__PURE__ */ jsx("input", { autoComplete: "off", ref: galleryRef, type: "file", accept: "image/*", onChange: handleFile, style: { display: "none" } }),
     !preview && /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.inkSoft, marginTop: 0 }, children: "Maak een foto van een open kast, koelkast of voorraadplank. Pollepel herkent zoveel mogelijk producten in \xE9\xE9n keer en stelt voor je voorraad bij te werken." }),
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginBottom: 10 }, children: [
@@ -4566,6 +4647,7 @@ function TabletModeView({ inventory, onConsume, onRestock, onCreate, onClose }) 
         /* @__PURE__ */ jsx(
           "input",
           {
+            autoComplete: "off",
             ref: inputRef,
             value: code,
             onChange: (e) => setCode(e.target.value),
@@ -4610,7 +4692,7 @@ function TabletModeView({ inventory, onConsume, onRestock, onCreate, onClose }) 
       ] }),
       phase === "creating" && /* @__PURE__ */ jsxs("div", { style: { width: "100%", maxWidth: 400 }, children: [
         /* @__PURE__ */ jsx("div", { style: { fontSize: 18, fontWeight: 700, marginBottom: 16, textAlign: "center" }, children: lookupLoading ? "Product opzoeken\u2026" : "Onbekende barcode \u2014 nieuw product" }),
-        /* @__PURE__ */ jsx("input", { style: { ...inputStyle, marginBottom: 10, fontSize: 16 }, placeholder: "Productnaam", value: newName, onChange: (e) => setNewName(e.target.value) }),
+        /* @__PURE__ */ jsx("input", { autoComplete: "off", style: { ...inputStyle, marginBottom: 10, fontSize: 16 }, placeholder: "Productnaam", value: newName, onChange: (e) => setNewName(e.target.value) }),
         /* @__PURE__ */ jsx("select", { style: { ...inputStyle, marginBottom: 10, fontSize: 16 }, value: newCategory, onChange: (e) => setNewCategory(e.target.value), children: CATEGORIES.map((c) => /* @__PURE__ */ jsx("option", { value: c, children: c }, c)) }),
         /* @__PURE__ */ jsx("select", { style: { ...inputStyle, marginBottom: 18, fontSize: 16 }, value: newUnit, onChange: (e) => setNewUnit(e.target.value), children: UNITS.map((u) => /* @__PURE__ */ jsx("option", { value: u, children: u }, u)) }),
         /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", gap: 18, marginBottom: 22 }, children: [
@@ -4714,7 +4796,7 @@ function RecipePickerModal({ recipes, inventory, onPick, onClose }) {
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { position: "relative", marginBottom: 10 }, children: [
       /* @__PURE__ */ jsx(Search, { size: 15, color: C.inkSoft, style: { position: "absolute", left: 10, top: 11 } }),
-      /* @__PURE__ */ jsx("input", { style: { ...inputStyle, paddingLeft: 30 }, placeholder: "Zoek een gerecht\u2026", value: query, onChange: (e) => setQuery(e.target.value) })
+      /* @__PURE__ */ jsx("input", { autoComplete: "off", style: { ...inputStyle, paddingLeft: 30 }, placeholder: "Zoek een gerecht\u2026", value: query, onChange: (e) => setQuery(e.target.value) })
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { maxHeight: 340, overflowY: "auto" }, children: [
       filtered.map((r) => /* @__PURE__ */ jsxs(
@@ -4976,6 +5058,7 @@ function InventoryForm({ initial, onCancel, onSave }) {
       /* @__PURE__ */ jsx(
         "input",
         {
+          autoComplete: "off",
           style: inputStyle,
           list: "common-groceries",
           value: name,
@@ -5007,12 +5090,12 @@ function InventoryForm({ initial, onCancel, onSave }) {
     /* @__PURE__ */ jsx(Field, { label: "Categorie", children: /* @__PURE__ */ jsx("select", { style: inputStyle, value: category, onChange: (e) => setCategory(e.target.value), children: CATEGORIES.map((c) => /* @__PURE__ */ jsx("option", { value: c, children: c }, c)) }) }),
     /* @__PURE__ */ jsx(Field, { label: "Eenheid", children: /* @__PURE__ */ jsx("select", { style: inputStyle, value: unit, onChange: (e) => setUnit(e.target.value), children: UNITS.map((u) => /* @__PURE__ */ jsx("option", { value: u, children: u }, u)) }) }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
-      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Huidige voorraad", children: /* @__PURE__ */ jsx("input", { type: "number", style: inputStyle, value: current, onChange: (e) => setCurrent(e.target.value) }) }) }),
-      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Minimum", children: /* @__PURE__ */ jsx("input", { type: "number", style: inputStyle, value: min, onChange: (e) => setMin(e.target.value) }) }) }),
-      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Maximum", children: /* @__PURE__ */ jsx("input", { type: "number", style: inputStyle, value: max, onChange: (e) => setMax(e.target.value) }) }) })
+      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Huidige voorraad", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", type: "number", style: inputStyle, value: current, onChange: (e) => setCurrent(e.target.value) }) }) }),
+      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Minimum", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", type: "number", style: inputStyle, value: min, onChange: (e) => setMin(e.target.value) }) }) }),
+      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Maximum", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", type: "number", style: inputStyle, value: max, onChange: (e) => setMax(e.target.value) }) }) })
     ] }),
-    /* @__PURE__ */ jsx(Field, { label: "Barcode (optioneel, voor scannen)", children: /* @__PURE__ */ jsx("input", { style: inputStyle, value: barcode, onChange: (e) => setBarcode(e.target.value), placeholder: "Bijv. 8710400123456" }) }),
-    /* @__PURE__ */ jsx(Field, { label: "Houdbaar tot (THT, optioneel)", children: /* @__PURE__ */ jsx("input", { type: "date", style: inputStyle, value: expiryDate, onChange: (e) => setExpiryDate(e.target.value) }) }),
+    /* @__PURE__ */ jsx(Field, { label: "Barcode (optioneel, voor scannen)", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, value: barcode, onChange: (e) => setBarcode(e.target.value), placeholder: "Bijv. 8710400123456" }) }),
+    /* @__PURE__ */ jsx(Field, { label: "Houdbaar tot (THT, optioneel)", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", type: "date", style: inputStyle, value: expiryDate, onChange: (e) => setExpiryDate(e.target.value) }) }),
     /* @__PURE__ */ jsxs(
       "button",
       {
@@ -5069,8 +5152,17 @@ function BoodschappenView({ list, categories, onToggle, onRemove, onAddManual, o
     list.forEach((item) => {
       (map[item.category] || (map[item.category] = [])).push(item);
     });
+    Object.keys(map).forEach((c) => {
+      map[c] = [...map[c]].sort((a, b) => a.checked === b.checked ? 0 : a.checked ? 1 : -1);
+    });
     return map;
   }, [list, cats]);
+  const orderedCatsForDisplay = useMemo(() => {
+    const withItems = cats.filter((c) => byCategory[c] && byCategory[c].length > 0);
+    const open = withItems.filter((c) => byCategory[c].some((i) => !i.checked));
+    const done = withItems.filter((c) => byCategory[c].every((i) => i.checked));
+    return [...open, ...done];
+  }, [cats, byCategory]);
   const checkedCount = list.filter((i) => i.checked).length;
   const submitManual = () => {
     if (!newName.trim() || newAmount === "") return;
@@ -5129,9 +5221,21 @@ ${body}`;
       ] }),
       shareMsg && /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: 6 }, children: shareMsg })
     ] }),
-    cats.map((cat) => {
+    orderedCatsForDisplay.map((cat) => {
       const items = byCategory[cat];
       if (!items || !items.length) return null;
+      const isDone = items.every((i) => i.checked);
+      if (isDone) {
+        return /* @__PURE__ */ jsxs("div", { style: { marginBottom: 8, display: "flex", alignItems: "center", gap: 6, padding: "6px 2px", opacity: 0.6 }, children: [
+          /* @__PURE__ */ jsx(CheckCircle2, { size: 13, color: C.sage }),
+          /* @__PURE__ */ jsxs("span", { style: { fontFamily: FONT_MONO, fontSize: 11, letterSpacing: 0.5, color: C.sage, textTransform: "uppercase" }, children: [
+            cat,
+            " \u2014 klaar (",
+            items.length,
+            ")"
+          ] })
+        ] }, cat);
+      }
       return /* @__PURE__ */ jsxs("div", { style: { marginBottom: 14 }, children: [
         /* @__PURE__ */ jsx("div", { style: { fontFamily: FONT_MONO, fontSize: 11, letterSpacing: 0.5, color: C.blueSoft, marginBottom: 6, textTransform: "uppercase" }, children: cat }),
         /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 16, border: `1.5px solid ${C.borderTint}` }, children: items.map((item, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: idx < items.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
@@ -5274,7 +5378,7 @@ function ImportModal({ importing, error, onCancel, onImportText, onImportUrl, on
         }
       )
     ] }),
-    mode === "url" && /* @__PURE__ */ jsx(Field, { label: "Link naar het recept", children: /* @__PURE__ */ jsx("input", { style: inputStyle, placeholder: "https://voorbeeld.nl/recept/spaghetti", value: url, onChange: (e) => setUrl(e.target.value) }) }),
+    mode === "url" && /* @__PURE__ */ jsx(Field, { label: "Link naar het recept", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, placeholder: "https://voorbeeld.nl/recept/spaghetti", value: url, onChange: (e) => setUrl(e.target.value) }) }),
     mode === "text" && /* @__PURE__ */ jsx(Field, { label: "Plak de recepttekst (ingredi\xEBnten + bereiding)", children: /* @__PURE__ */ jsx(
       "textarea",
       {
@@ -5285,8 +5389,8 @@ function ImportModal({ importing, error, onCancel, onImportText, onImportUrl, on
       }
     ) }),
     mode === "photo" && /* @__PURE__ */ jsxs("div", { children: [
-      /* @__PURE__ */ jsx("input", { ref: cameraInputRef, type: "file", accept: "image/*", capture: "environment", onChange: handlePhotoSelected, style: { display: "none" } }),
-      /* @__PURE__ */ jsx("input", { ref: galleryInputRef, type: "file", accept: "image/*", onChange: handlePhotoSelected, style: { display: "none" } }),
+      /* @__PURE__ */ jsx("input", { autoComplete: "off", ref: cameraInputRef, type: "file", accept: "image/*", capture: "environment", onChange: handlePhotoSelected, style: { display: "none" } }),
+      /* @__PURE__ */ jsx("input", { autoComplete: "off", ref: galleryInputRef, type: "file", accept: "image/*", onChange: handlePhotoSelected, style: { display: "none" } }),
       photoPreview ? /* @__PURE__ */ jsxs("div", { style: { marginBottom: 10 }, children: [
         /* @__PURE__ */ jsx("img", { src: photoPreview, alt: "Recept", style: { width: "100%", maxHeight: 220, objectFit: "contain", borderRadius: 14, border: `1.5px solid ${C.borderTint}`, background: C.ceramic } }),
         /* @__PURE__ */ jsx("div", { style: { marginTop: 6 }, children: /* @__PURE__ */ jsxs(GhostButton, { onClick: () => {
@@ -5538,7 +5642,7 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
     phase === "manual" && /* @__PURE__ */ jsxs("div", { children: [
       cameraError && /* @__PURE__ */ jsx("div", { style: { background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 12, padding: "8px 10px", fontSize: 12.5, color: C.brick, marginBottom: 10 }, children: cameraError }),
       /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.inkSoft, marginTop: 0 }, children: "Voer de barcode in (de cijfers onder de streepjescode op de verpakking)." }),
-      /* @__PURE__ */ jsx(Field, { label: "Barcode", children: /* @__PURE__ */ jsx("input", { style: inputStyle, value: manualCode, onChange: (e) => setManualCode(e.target.value), placeholder: "Bijv. 8710400123456", inputMode: "numeric", autoFocus: true }) }),
+      /* @__PURE__ */ jsx(Field, { label: "Barcode", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, value: manualCode, onChange: (e) => setManualCode(e.target.value), placeholder: "Bijv. 8710400123456", inputMode: "numeric", autoFocus: true }) }),
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" }, children: [
         /* @__PURE__ */ jsxs(PrimaryButton, { disabled: !manualCode.trim(), onClick: () => handleDetected(manualCode.trim()), children: [
           /* @__PURE__ */ jsx(Search, { size: 16 }),
@@ -5591,16 +5695,16 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
         "). ",
         lookupLoading ? "Productnaam opzoeken\u2026" : offName ? "Gevonden via Open Food Facts:" : "Niet gevonden \u2014 vul zelf de gegevens in:"
       ] }),
-      /* @__PURE__ */ jsx(Field, { label: "Naam", children: /* @__PURE__ */ jsx("input", { style: inputStyle, value: newName, onChange: (e) => setNewName(e.target.value), placeholder: lookupLoading ? "Bezig met zoeken\u2026" : "Productnaam" }) }),
+      /* @__PURE__ */ jsx(Field, { label: "Naam", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, value: newName, onChange: (e) => setNewName(e.target.value), placeholder: lookupLoading ? "Bezig met zoeken\u2026" : "Productnaam" }) }),
       /* @__PURE__ */ jsx(Field, { label: "Categorie", children: /* @__PURE__ */ jsx("select", { style: inputStyle, value: newCategory, onChange: (e) => {
         setNewCategory(e.target.value);
         setCategoryTouched(true);
       }, children: CATEGORIES.map((c) => /* @__PURE__ */ jsx("option", { value: c, children: c }, c)) }) }),
       /* @__PURE__ */ jsx(Field, { label: "Eenheid", children: /* @__PURE__ */ jsx("select", { style: inputStyle, value: newUnit, onChange: (e) => setNewUnit(e.target.value), children: UNITS.map((u) => /* @__PURE__ */ jsx("option", { value: u, children: u }, u)) }) }),
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
-        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Huidige voorraad", children: /* @__PURE__ */ jsx("input", { type: "number", style: inputStyle, value: newCurrent, onChange: (e) => setNewCurrent(e.target.value) }) }) }),
-        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Minimum", children: /* @__PURE__ */ jsx("input", { type: "number", style: inputStyle, value: newMin, onChange: (e) => setNewMin(e.target.value) }) }) }),
-        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Maximum", children: /* @__PURE__ */ jsx("input", { type: "number", style: inputStyle, value: newMax, onChange: (e) => setNewMax(e.target.value) }) }) })
+        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Huidige voorraad", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", type: "number", style: inputStyle, value: newCurrent, onChange: (e) => setNewCurrent(e.target.value) }) }) }),
+        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Minimum", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", type: "number", style: inputStyle, value: newMin, onChange: (e) => setNewMin(e.target.value) }) }) }),
+        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Maximum", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", type: "number", style: inputStyle, value: newMax, onChange: (e) => setNewMax(e.target.value) }) }) })
       ] }),
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginTop: 8 }, children: [
         /* @__PURE__ */ jsxs(
@@ -5637,9 +5741,9 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
 function ManualAddForm({ newName, setNewName, newAmount, setNewAmount, newUnit, setNewUnit, newCategory, setNewCategory, onCategoryTouched, submitManual, onCancel }) {
   return /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: 10, marginTop: 8 }, children: [
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6, marginBottom: 6 }, children: [
-      /* @__PURE__ */ jsx("input", { style: { ...inputStyle, flex: 1 }, placeholder: "Naam", value: newName, onChange: (e) => setNewName(e.target.value) }),
+      /* @__PURE__ */ jsx("input", { autoComplete: "off", style: { ...inputStyle, flex: 1 }, placeholder: "Naam", value: newName, onChange: (e) => setNewName(e.target.value) }),
       /* @__PURE__ */ jsx(VoiceInputButton, { onResult: (text) => setNewName(text), title: "Naam inspreken" }),
-      /* @__PURE__ */ jsx("input", { type: "number", style: { ...inputStyle, width: 64 }, placeholder: "Aantal", value: newAmount, onChange: (e) => setNewAmount(e.target.value) })
+      /* @__PURE__ */ jsx("input", { autoComplete: "off", type: "number", style: { ...inputStyle, width: 64 }, placeholder: "Aantal", value: newAmount, onChange: (e) => setNewAmount(e.target.value) })
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6, marginBottom: 8 }, children: [
       /* @__PURE__ */ jsx("select", { style: { ...inputStyle, flex: 1 }, value: newUnit, onChange: (e) => setNewUnit(e.target.value), children: UNITS.map((u) => /* @__PURE__ */ jsx("option", { value: u, children: u }, u)) }),
