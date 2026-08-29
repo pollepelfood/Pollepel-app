@@ -335,7 +335,7 @@
             const { data, error } = await supabase.from(t).select("*").eq("household_id", householdId);
             if (error || !data) return {};
             const obj = {};
-            data.forEach((d) => { obj[d.day_key] = { recipeId: d.recipe_id, cook: d.cook || "", attendees: d.attendees || [] }; });
+            data.forEach((d) => { obj[d.day_key] = { recipeId: d.recipe_id, cook: d.cook || "", attendees: d.attendees || [], offNight: !!d.off_night, doublePortion: !!d.double_portion }; });
             return obj;
           },
           async setDay(dayKey, entry, table) {
@@ -343,6 +343,7 @@
             const { error } = await supabase.from(t).upsert({
               household_id: householdId, day_key: dayKey, recipe_id: entry.recipeId || null,
               cook: entry.cook || null, attendees: entry.attendees || [],
+              off_night: !!entry.offNight, double_portion: !!entry.doublePortion,
             }, { onConflict: "household_id,day_key" });
             if (error) throw error;
           },
@@ -353,8 +354,9 @@
           async replaceAll(days, table) {
             const t = table || "weekmenu_days";
             await supabase.from(t).delete().eq("household_id", householdId);
-            const rows = Object.entries(days).filter(([, v]) => v && v.recipeId).map(([dayKey, v]) => ({
-              household_id: householdId, day_key: dayKey, recipe_id: v.recipeId, cook: v.cook || null, attendees: v.attendees || [],
+            const rows = Object.entries(days).filter(([, v]) => v && (v.recipeId || v.offNight)).map(([dayKey, v]) => ({
+              household_id: householdId, day_key: dayKey, recipe_id: v.recipeId || null, cook: v.cook || null, attendees: v.attendees || [],
+              off_night: !!v.offNight, double_portion: !!v.doublePortion,
             }));
             if (rows.length) await supabase.from(t).insert(rows);
           },
@@ -406,14 +408,15 @@
         preferences: {
           async get() {
             const { data } = await supabase.from("household_preferences").select("*").eq("household_id", householdId).maybeSingle();
-            if (!data) return { darkMode: false, categoryOrder: null, diets: [], premium: { photoInventory: true, predictiveDepletion: true, householdRSVP: true, sousChef: true } };
-            return { darkMode: data.dark_mode, categoryOrder: data.category_order, diets: data.diets || [], premium: data.premium || {} };
+            if (!data) return { darkMode: false, categoryOrder: null, diets: [], dislikes: [], premium: { photoInventory: true, predictiveDepletion: true, householdRSVP: true, sousChef: true } };
+            return { darkMode: data.dark_mode, categoryOrder: data.category_order, diets: data.diets || [], dislikes: data.dislikes || [], premium: data.premium || {} };
           },
           async update(patch) {
             const dbPatch = {};
             if ("darkMode" in patch) dbPatch.dark_mode = patch.darkMode;
             if ("categoryOrder" in patch) dbPatch.category_order = patch.categoryOrder;
             if ("diets" in patch) dbPatch.diets = patch.diets;
+            if ("dislikes" in patch) dbPatch.dislikes = patch.dislikes;
             if ("premium" in patch) dbPatch.premium = patch.premium;
             const { error } = await supabase.from("household_preferences").upsert({ household_id: householdId, ...dbPatch }, { onConflict: "household_id" });
             if (error) throw error;

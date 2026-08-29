@@ -1713,7 +1713,7 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
   const [shoppingList, setShoppingList] = useState([]);
   const [weekmenu, setWeekmenu] = useState({});
   const [cooks, setCooks] = useState([]);
-  const [preferences, setPreferences] = useState({ darkMode: false, categoryOrder: null, diets: [], premium: { photoInventory: true, predictiveDepletion: true, householdRSVP: true, sousChef: true } });
+  const [preferences, setPreferences] = useState({ darkMode: false, categoryOrder: null, diets: [], dislikes: [], premium: { photoInventory: true, predictiveDepletion: true, householdRSVP: true, sousChef: true } });
   const [cookLog, setCookLog] = useState([]);
   const [consumptionLog, setConsumptionLog] = useState([]);
   const [rsvp, setRsvp] = useState({});
@@ -1730,6 +1730,7 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
   const [makeOnly, setMakeOnly] = useState(false);
   const [maxCookTime, setMaxCookTime] = useState(null);
   const [openRecipeId, setOpenRecipeId] = useState(null);
+  const [doublePortionDefault, setDoublePortionDefault] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [toast, setToast] = useState(null);
@@ -1773,7 +1774,7 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
           loadKey("shoppingList", () => []),
           loadKey("weekmenu", () => ({})),
           loadKey("cooks", () => []),
-          loadKey("preferences", () => ({ darkMode: false, categoryOrder: null, diets: [], premium: { photoInventory: true, predictiveDepletion: true, householdRSVP: true, sousChef: true } })),
+          loadKey("preferences", () => ({ darkMode: false, categoryOrder: null, diets: [], dislikes: [], premium: { photoInventory: true, predictiveDepletion: true, householdRSVP: true, sousChef: true } })),
           loadKey("cookLog", () => []),
           loadKey("consumptionLog", () => [])
         ]);
@@ -2401,6 +2402,35 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     const next = tags.length ? [...rest, { name: cookName, tags }] : rest;
     updatePreferences({ diets: next });
   };
+  const updateCookDislikes = (cookName, items) => {
+    const rest = (preferences.dislikes || []).filter((d) => d.name !== cookName);
+    const next = items.length ? [...rest, { name: cookName, items }] : rest;
+    updatePreferences({ dislikes: next });
+  };
+  const allDislikes = useMemo(() => {
+    const map = /* @__PURE__ */ new Map();
+    (preferences.dislikes || []).forEach((d) => {
+      (d.items || []).forEach((item) => {
+        const key = norm(item);
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(d.name);
+      });
+    });
+    return map;
+  }, [preferences.dislikes]);
+  const getRecipeDislikeWarnings = (recipe) => {
+    if (!recipe || !recipe.ingredients) return [];
+    const warnings = [];
+    recipe.ingredients.forEach((ing) => {
+      for (const [dislikeKey, people] of allDislikes.entries()) {
+        if (namesMatch(dislikeKey, ing.name)) {
+          warnings.push({ ingredient: ing.name, people });
+          break;
+        }
+      }
+    });
+    return warnings;
+  };
   const addLeftover = (recipe, portions) => {
     if (!portions || portions <= 0) return;
     const expiry = /* @__PURE__ */ new Date();
@@ -2418,6 +2448,24 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     };
     persist("inventory", [...inventory, newItem], setInventory);
     showToast(`${portions} portie${portions > 1 ? "s" : ""} kliekjes toegevoegd aan je voorraad (THT over 3 dagen).`);
+  };
+  const addFreezerPortion = (recipe) => {
+    const portions = recipe.servings || 1;
+    const expiry = /* @__PURE__ */ new Date();
+    expiry.setDate(expiry.getDate() + 90);
+    const newItem = {
+      id: uid(),
+      name: `Vriezer: ${recipe.name}`,
+      category: "Diepvries",
+      unit: "stuks",
+      current: portions,
+      min: 0,
+      max: portions,
+      expiryDate: expiry.toISOString().slice(0, 10),
+      sourceRecipeId: recipe.id
+    };
+    persist("inventory", [...inventory, newItem], setInventory);
+    showToast(`Extra portie ${recipe.name} in de vriezer gezet (${portions} pers., THT over 3 maanden).`);
   };
   const consumeInventoryItem = (itemId, amount) => {
     const item = inventory.find((i) => i.id === itemId);
@@ -2500,10 +2548,23 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     if (typeof raw === "string") return { recipeId: raw, cook: "" };
     return raw;
   };
+  const isDayEmpty = (day) => {
+    const e = dayEntry(day);
+    return !e || !e.recipeId && !e.offNight;
+  };
   const setDayRecipe = (day, recipeId) => {
-    const next = { ...weekmenu, [day]: { ...dayEntry(day), recipeId } };
+    const next = { ...weekmenu, [day]: { ...dayEntry(day), recipeId, offNight: false } };
     persist("weekmenu", next, setWeekmenu);
     setPickerDay(null);
+  };
+  const setDayOffNight = (day) => {
+    const next = { ...weekmenu, [day]: { offNight: true, cook: "", attendees: [], doublePortion: false } };
+    persist("weekmenu", next, setWeekmenu);
+    setPickerDay(null);
+  };
+  const setDayDoublePortion = (day, value) => {
+    const next = { ...weekmenu, [day]: { ...dayEntry(day), doublePortion: value } };
+    persist("weekmenu", next, setWeekmenu);
   };
   const setDayCook = (day, cook) => {
     const next = { ...weekmenu, [day]: { ...dayEntry(day), cook: cook.trim() } };
@@ -2516,7 +2577,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     setAttendeesDay(null);
   };
   const quickPlanExpiring = (recipeId, recipeName) => {
-    const emptyDay = WEEK_DAYS.find((d) => !dayEntry(d.key)?.recipeId);
+    const emptyDay = WEEK_DAYS.find((d) => isDayEmpty(d.key));
     if (!emptyDay) {
       showToast("Alle dagen zijn al ingepland \u2014 maak eerst een dag leeg om dit te plannen.");
       return;
@@ -2617,7 +2678,8 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     const plannedEntries = WEEK_DAYS.map((d) => dayEntry(d.key)).filter((e) => e && e.recipeId).map((e) => {
       const recipe = recipes.find((r) => r.id === e.recipeId);
       if (!recipe) return null;
-      const scale = isPremiumOn("householdRSVP") && e.attendees && e.attendees.length ? e.attendees.length / (recipe.servings || 1) : 1;
+      const attendeeScale = isPremiumOn("householdRSVP") && e.attendees && e.attendees.length ? e.attendees.length / (recipe.servings || 1) : 1;
+      const scale = attendeeScale * (e.doublePortion ? 2 : 1);
       return { recipe, scale };
     }).filter(Boolean);
     if (!plannedEntries.length) {
@@ -2670,7 +2732,7 @@ Antwoord ALLEEN met STRIKT GELDIGE, COMPACTE JSON (\xE9\xE9n regel, geen markdow
 
 Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi\xEBnten.`;
   const generatePatternWeekmenu = ({ scope }) => {
-    const days = scope === "empty" ? WEEK_DAYS.filter((d) => !dayEntry(d.key)?.recipeId) : WEEK_DAYS;
+    const days = scope === "empty" ? WEEK_DAYS.filter((d) => isDayEmpty(d.key)) : WEEK_DAYS;
     if (!days.length) {
       showToast("Alle dagen zijn al ingevuld. Kies 'hele week' om ze te vervangen, of maak eerst dagen leeg.");
       return;
@@ -2711,7 +2773,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
   };
   const generateAIWeekmenu = async ({ styleId, scope }) => {
     const style = MEAL_STYLES.find((s) => s.id === styleId) || MEAL_STYLES[0];
-    const days = scope === "empty" ? WEEK_DAYS.filter((d) => !weekmenu[d.key]) : WEEK_DAYS;
+    const days = scope === "empty" ? WEEK_DAYS.filter((d) => isDayEmpty(d.key)) : WEEK_DAYS;
     if (!days.length) {
       setAiWeekError("Alle dagen zijn al ingevuld. Kies 'hele week' om ze te vervangen, of maak eerst dagen leeg.");
       return;
@@ -2887,10 +2949,13 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           onCook: (scale) => cookRecipe(openRecipe, scale),
           onDuplicate: () => duplicateToMyBook(openRecipe.id),
           onAddLeftover: addLeftover,
+          onAddFreezerPortion: addFreezerPortion,
           onAskSousChef: askSousChef,
           isPremiumOn,
           inventory,
-          showToast
+          showToast,
+          dislikeWarnings: getRecipeDislikeWarnings(openRecipe),
+          doublePortionDefault
         }
       ),
       tab === "voorraad" && /* @__PURE__ */ jsx(
@@ -2905,8 +2970,9 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           onNew: () => setEditingItem({}),
           onDelete: deleteInventoryItem,
           onScan: () => setScanOpen(true),
-          onOpenRecipe: (id) => {
+          onOpenRecipe: (id, dbl) => {
             setOpenRecipeId(id);
+            setDoublePortionDefault(!!dbl);
             setTab("kookboek");
           },
           onOpenShelfPhoto: () => {
@@ -2938,6 +3004,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           onPickDay: setPickerDay,
           onPickCook: setCookDay,
           onPickAttendees: setAttendeesDay,
+          onSetDoublePortion: setDayDoublePortion,
           onClearDay: clearDay,
           onGenerate: generateWeekShoppingList,
           onAIGenerate: () => {
@@ -2948,8 +3015,9 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           onDuplicate: duplicateWeekmenu,
           onApplyTemplate: applyWeekmenuTemplate,
           onShuffle: shuffleWeekmenu,
-          onOpenRecipe: (id) => {
+          onOpenRecipe: (id, dbl) => {
             setOpenRecipeId(id);
+            setDoublePortionDefault(!!dbl);
             setTab("kookboek");
           },
           onExportCalendar: exportWeekmenuToCalendar,
@@ -2987,6 +3055,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         recipes,
         inventory,
         onPick: (recipeId) => setDayRecipe(pickerDay, recipeId),
+        onPickOffNight: () => setDayOffNight(pickerDay),
         onClose: () => setPickerDay(null)
       }
     ),
@@ -3032,6 +3101,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         onToggleDarkMode: toggleDarkMode,
         onMoveCategoryOrder: moveCategoryOrder,
         onUpdateCookDiets: updateCookDiets,
+        onUpdateCookDislikes: updateCookDislikes,
         onTogglePremium: togglePremiumFeature,
         onClose: () => setSettingsOpen(false)
       }
@@ -3582,9 +3652,13 @@ function SousChefModal({ recipe, onAsk, onClose }) {
     ] })
   ] });
 }
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAskSousChef, isPremiumOn, inventory, showToast }) {
+function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [leftoverPortions, setLeftoverPortions] = useState(0);
+  const [wantDoublePortion, setWantDoublePortion] = useState(!!doublePortionDefault);
+  useEffect(() => {
+    setWantDoublePortion(!!doublePortionDefault);
+  }, [doublePortionDefault, recipe?.id]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [servings, setServings] = useState(recipe.servings);
   const [screenAwake, setScreenAwake] = useState(false);
@@ -3786,6 +3860,15 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         /* @__PURE__ */ jsx("button", { onClick: () => setServings((s) => s + 1), style: { width: 30, height: 30, borderRadius: 9, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx(Plus, { size: 14 }) })
       ] })
     ] }),
+    dislikeWarnings && dislikeWarnings.length > 0 && /* @__PURE__ */ jsx("div", { style: { background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 14, padding: 12, marginBottom: 14 }, children: dislikeWarnings.map((w, idx) => /* @__PURE__ */ jsxs("div", { style: { fontSize: 12.5, color: C.brick, marginBottom: idx < dislikeWarnings.length - 1 ? 4 : 0 }, children: [
+      "\u26A0\uFE0F Bevat ",
+      /* @__PURE__ */ jsx("strong", { children: w.ingredient }),
+      " \u2014 ",
+      w.people.join(" en "),
+      " ",
+      w.people.length > 1 ? "lusten" : "lust",
+      " dit niet"
+    ] }, idx)) }),
     /* @__PURE__ */ jsx("h3", { style: { fontFamily: FONT_DISPLAY, fontSize: 15, margin: "0 0 8px" }, children: "Ingredi\xEBnten" }),
     /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 16, border: `1.5px solid ${C.borderTint}`, marginBottom: 16 }, children: scaledIngredients.map((ing, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", padding: "9px 12px", borderBottom: idx < scaledIngredients.length - 1 ? `1px solid ${C.ceramic}` : "none", fontSize: 13.5 }, children: [
       /* @__PURE__ */ jsx("span", { children: ing.name }),
@@ -3862,10 +3945,37 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         servings === 1 ? "persoon" : "personen",
         ") en vult de boodschappenlijst automatisch aan waar nodig. Doorgaan?"
       ] }),
+      /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: () => setWantDoublePortion((v) => !v),
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            width: "100%",
+            padding: "9px 10px",
+            marginBottom: 10,
+            background: wantDoublePortion ? C.successBg : C.cardBg,
+            border: `1.5px solid ${wantDoublePortion ? C.sage : C.borderTint}`,
+            borderRadius: 12,
+            cursor: "pointer"
+          },
+          children: [
+            /* @__PURE__ */ jsx("span", { style: { fontSize: 15 }, children: "\u2744\uFE0F" }),
+            /* @__PURE__ */ jsx("span", { style: { fontSize: 12.5, color: wantDoublePortion ? C.sage : C.inkSoft, fontWeight: wantDoublePortion ? 600 : 400 }, children: "Dubbele portie koken (extra gaat de vriezer in)" })
+          ]
+        }
+      ),
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
         /* @__PURE__ */ jsx(PrimaryButton, { tone: "sage", onClick: () => {
-          onCook(scale);
-          setConfirmCook("leftover");
+          onCook(wantDoublePortion ? scale * 2 : scale);
+          if (wantDoublePortion) {
+            onAddFreezerPortion(recipe);
+            setConfirmCook(false);
+          } else {
+            setConfirmCook("leftover");
+          }
         }, children: "Ja, bijwerken" }),
         /* @__PURE__ */ jsx(GhostButton, { onClick: () => setConfirmCook(false), children: "Annuleren" })
       ] })
@@ -4029,7 +4139,7 @@ function RecipeForm({ initial, inventoryNames, onCancel, onSave }) {
     ] })
   ] });
 }
-function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, onPickDay, onPickCook, onPickAttendees, onClearDay, onGenerate, onAIGenerate, onPatternGenerate, onDuplicate, onApplyTemplate, onShuffle, onOpenRecipe, onExportCalendar, onQuickPlan }) {
+function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, onPickDay, onPickCook, onPickAttendees, onSetDoublePortion, onClearDay, onGenerate, onAIGenerate, onPatternGenerate, onDuplicate, onApplyTemplate, onShuffle, onOpenRecipe, onExportCalendar, onQuickPlan }) {
   const findRecipe = (id) => recipes.find((r) => r.id === id);
   const dayEntry = (day) => {
     const raw = weekmenu[day];
@@ -4038,7 +4148,10 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, onPick
     return raw;
   };
   const plannedCount = WEEK_DAYS.filter((d) => dayEntry(d.key)?.recipeId).length;
-  const hasEmptyDay = WEEK_DAYS.some((d) => !dayEntry(d.key)?.recipeId);
+  const hasEmptyDay = WEEK_DAYS.some((d) => {
+    const e = dayEntry(d.key);
+    return !e || !e.recipeId && !e.offNight;
+  });
   const plannedRecipeIds = WEEK_DAYS.map((d) => dayEntry(d.key)?.recipeId).filter(Boolean);
   const expiringWithRecipes = useMemo(() => {
     if (!hasEmptyDay || !inventory) return [];
@@ -4114,17 +4227,21 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, onPick
           children: [
             /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
               /* @__PURE__ */ jsx("div", { style: { width: 66, fontSize: 12, fontFamily: FONT_MONO, color: C.blueSoft, flexShrink: 0 }, children: day.label }),
-              recipe ? /* @__PURE__ */ jsxs(Fragment, { children: [
+              entry?.offNight ? /* @__PURE__ */ jsxs(Fragment, { children: [
+                /* @__PURE__ */ jsx("div", { style: { width: 30, height: 30, borderRadius: 9, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }, children: "\u{1F355}" }),
+                /* @__PURE__ */ jsx("div", { style: { flex: 1, fontSize: 13.5, color: C.inkSoft, fontStyle: "italic" }, children: "Geen kookavond" }),
+                /* @__PURE__ */ jsx("button", { onClick: () => onClearDay(day.key), style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(X, { size: 15, color: C.inkSoft }) })
+              ] }) : recipe ? /* @__PURE__ */ jsxs(Fragment, { children: [
                 /* @__PURE__ */ jsx(
                   "div",
                   {
-                    onClick: () => onOpenRecipe(recipe.id),
+                    onClick: () => onOpenRecipe(recipe.id, entry?.doublePortion),
                     title: "Open dit recept",
                     style: { width: 30, height: 30, borderRadius: 9, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0, cursor: "pointer" },
                     children: recipe.emoji || "\u{1F37D}\uFE0F"
                   }
                 ),
-                /* @__PURE__ */ jsx("div", { style: { flex: 1, fontSize: 13.5, color: C.ink, cursor: "pointer" }, onClick: () => onOpenRecipe(recipe.id), children: recipe.name }),
+                /* @__PURE__ */ jsx("div", { style: { flex: 1, fontSize: 13.5, color: C.ink, cursor: "pointer" }, onClick: () => onOpenRecipe(recipe.id, entry?.doublePortion), children: recipe.name }),
                 /* @__PURE__ */ jsx("button", { onClick: () => onPickDay(day.key), title: "Ander recept kiezen", style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(Pencil, { size: 13, color: C.inkSoft }) }),
                 /* @__PURE__ */ jsx("button", { onClick: () => onClearDay(day.key), style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(X, { size: 15, color: C.inkSoft }) })
               ] }) : /* @__PURE__ */ jsxs("button", { onClick: () => onPickDay(day.key), style: { flex: 1, display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: C.inkSoft, fontSize: 13, cursor: "pointer", padding: "4px 0" }, children: [
@@ -4132,7 +4249,7 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, onPick
                 " Kies een recept"
               ] })
             ] }),
-            /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, marginLeft: 76, marginTop: 6 }, children: [
+            !entry?.offNight && /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, marginLeft: 76, marginTop: 6 }, children: [
               /* @__PURE__ */ jsxs(
                 "button",
                 {
@@ -4170,6 +4287,27 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, onPick
                   children: [
                     /* @__PURE__ */ jsx("span", { style: { fontSize: 12 }, children: "\u{1F64B}" }),
                     /* @__PURE__ */ jsx("span", { style: { fontSize: 11.5, color: entry?.attendees?.length ? C.sage : C.inkSoft, fontWeight: entry?.attendees?.length ? 600 : 400 }, children: entry?.attendees?.length ? `${entry.attendees.length} eten mee` : "Wie eet mee?" })
+                  ]
+                }
+              ),
+              recipe && /* @__PURE__ */ jsxs(
+                "button",
+                {
+                  onClick: () => onSetDoublePortion(day.key, !entry?.doublePortion),
+                  title: "Kook dubbele portie, extra portie gaat de vriezer in",
+                  style: {
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    background: entry?.doublePortion ? C.successBg : "none",
+                    border: entry?.doublePortion ? "none" : `1px dashed ${C.borderTint}`,
+                    borderRadius: 20,
+                    padding: "3px 10px",
+                    cursor: "pointer"
+                  },
+                  children: [
+                    /* @__PURE__ */ jsx("span", { style: { fontSize: 12 }, children: "\u2744\uFE0F" }),
+                    /* @__PURE__ */ jsx("span", { style: { fontSize: 11.5, color: entry?.doublePortion ? C.sage : C.inkSoft, fontWeight: entry?.doublePortion ? 600 : 400 }, children: "Dubbele portie" })
                   ]
                 }
               )
@@ -4315,7 +4453,37 @@ function CookDietRow({ name, preferences, onUpdate }) {
     )) })
   ] });
 }
-function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onExportBackup, onToggleDarkMode, onMoveCategoryOrder, onUpdateCookDiets, onTogglePremium, onClose }) {
+function CookDislikeRow({ name, preferences, onUpdate }) {
+  const [open, setOpen] = useState(false);
+  const [newItem, setNewItem] = useState("");
+  const active = (preferences?.dislikes || []).find((d) => d.name === name)?.items || [];
+  const addItem = () => {
+    const val = newItem.trim();
+    if (!val || active.includes(val)) return;
+    onUpdate(name, [...active, val]);
+    setNewItem("");
+  };
+  const removeItem = (item) => {
+    onUpdate(name, active.filter((i) => i !== item));
+  };
+  return /* @__PURE__ */ jsxs("div", { style: { padding: "8px 0", borderBottom: `1px solid ${C.ceramic}` }, children: [
+    /* @__PURE__ */ jsxs("button", { onClick: () => setOpen((o) => !o), style: { display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "none", border: "none", cursor: "pointer", padding: 0 }, children: [
+      /* @__PURE__ */ jsx("span", { style: { fontSize: 13, color: C.ink, fontWeight: 600 }, children: name }),
+      /* @__PURE__ */ jsx("span", { style: { fontSize: 11, color: C.inkSoft }, children: active.length ? active.join(", ") : "geen afkeuren" })
+    ] }),
+    open && /* @__PURE__ */ jsxs("div", { style: { marginTop: 8 }, children: [
+      active.length > 0 && /* @__PURE__ */ jsx("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }, children: active.map((item) => /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 16, fontSize: 11, background: C.warnBg, color: C.brick }, children: [
+        item,
+        /* @__PURE__ */ jsx("button", { onClick: () => removeItem(item), style: { background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex" }, children: /* @__PURE__ */ jsx(X, { size: 11, color: C.brick }) })
+      ] }, item)) }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6 }, children: [
+        /* @__PURE__ */ jsx("input", { style: { ...inputStyle, flex: 1, fontSize: 13, padding: "7px 10px" }, placeholder: "Bijv. paddenstoelen", value: newItem, onChange: (e) => setNewItem(e.target.value), onKeyDown: (e) => e.key === "Enter" && addItem() }),
+        /* @__PURE__ */ jsx("button", { onClick: addItem, disabled: !newItem.trim(), style: { background: C.blue, border: "none", borderRadius: 10, padding: "0 12px", cursor: newItem.trim() ? "pointer" : "default", opacity: newItem.trim() ? 1 : 0.5, display: "flex", alignItems: "center" }, children: /* @__PURE__ */ jsx(Plus, { size: 14, color: "#fff" }) })
+      ] })
+    ] })
+  ] });
+}
+function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onExportBackup, onToggleDarkMode, onMoveCategoryOrder, onUpdateCookDiets, onUpdateCookDislikes, onTogglePremium, onClose }) {
   const [name, setName] = useState(household?.name || "");
   const [savingName, setSavingName] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -4419,7 +4587,10 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
     ] }, cat)) }),
     cooks && cooks.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }, children: "Dieetwensen & allergie\xEBn" }),
-      /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 16, padding: "4px 12px" }, children: cooks.map((cookName) => /* @__PURE__ */ jsx(CookDietRow, { name: cookName, preferences, onUpdate: onUpdateCookDiets }, cookName)) })
+      /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 16, padding: "4px 12px" }, children: cooks.map((cookName) => /* @__PURE__ */ jsx(CookDietRow, { name: cookName, preferences, onUpdate: onUpdateCookDiets }, cookName)) }),
+      /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }, children: "Afkeuren per huisgenoot" }),
+      /* @__PURE__ */ jsx("p", { style: { fontSize: 11, color: C.inkSoft, marginTop: -4, marginBottom: 8 }, children: 'Geen dieet, gewoon een voorkeur \u2014 bijv. "paddenstoelen". Je krijgt een seintje op een recept, geen harde blokkade.' }),
+      /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 16, padding: "4px 12px" }, children: cooks.map((cookName) => /* @__PURE__ */ jsx(CookDislikeRow, { name: cookName, preferences, onUpdate: onUpdateCookDislikes }, cookName)) })
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 16, overflow: "hidden" }, children: [
       /* @__PURE__ */ jsxs(
@@ -4776,7 +4947,7 @@ function FridgeMagnetView({ household, onClose }) {
     ] })
   ] });
 }
-function RecipePickerModal({ recipes, inventory, onPick, onClose }) {
+function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose }) {
   const [query, setQuery] = useState("");
   const filtered = recipes.filter((r) => r.name.toLowerCase().includes(query.toLowerCase()));
   const leftovers = useMemo(() => {
@@ -4784,6 +4955,20 @@ function RecipePickerModal({ recipes, inventory, onPick, onClose }) {
     return inventory.filter((i) => i.sourceRecipeId && i.current > 0).map((i) => ({ item: i, recipe: recipes.find((r) => r.id === i.sourceRecipeId), daysLeft: daysUntil(i.expiryDate) })).filter((l) => l.recipe);
   }, [inventory, recipes]);
   return /* @__PURE__ */ jsxs(Modal, { title: "Kies een recept", onClose, children: [
+    !query && /* @__PURE__ */ jsxs(
+      "button",
+      {
+        onClick: onPickOffNight,
+        style: { display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: C.cardBg, border: `1.5px dashed ${C.borderTint}`, borderRadius: 12, padding: "9px 10px", marginBottom: 12, cursor: "pointer" },
+        children: [
+          /* @__PURE__ */ jsx("div", { style: { width: 32, height: 32, borderRadius: 9, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }, children: "\u{1F355}" }),
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("div", { style: { fontSize: 13.5, color: C.ink, fontWeight: 500 }, children: "Geen kookavond" }),
+            /* @__PURE__ */ jsx("div", { style: { fontSize: 11, color: C.inkSoft }, children: "Afhaal, uit eten, of gewoon vrij \u2014 geen boodschappen nodig" })
+          ] })
+        ]
+      }
+    ),
     leftovers.length > 0 && !query && /* @__PURE__ */ jsxs("div", { style: { marginBottom: 12 }, children: [
       /* @__PURE__ */ jsx("div", { style: { fontSize: 11.5, fontWeight: 700, color: C.mustardDeep, marginBottom: 6, display: "flex", alignItems: "center", gap: 4 }, children: "\u{1F371} Kliekjes op \u2014 eerst opeten?" }),
       leftovers.map(({ item, recipe, daysLeft }) => /* @__PURE__ */ jsxs(
