@@ -2627,6 +2627,45 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   const addManualItem = (item) => {
     persist("shoppingList", [...shoppingList, { ...item, id: uid(), auto: false, checked: false }], setShoppingList);
   };
+  const addMissingToShopping = (recipe, scale = 1) => {
+    const { missing } = recipeReadiness(recipe, inventory, scale);
+    if (!missing.length) {
+      showToast("Je hebt alles voor dit gerecht al in huis.");
+      return;
+    }
+    const toAdd = [];
+    const skipped = [];
+    missing.forEach((name) => {
+      if (shoppingList.some((s) => namesMatch(s.name, name))) {
+        skipped.push(name);
+        return;
+      }
+      const ing = (recipe.ingredients || []).find((i) => namesMatch(i.name, name));
+      const invItem = inventory.find((i) => namesMatch(i.name, name));
+      const needed = ing ? round2(Number(ing.amount || 0) * scale) : 1;
+      let amount = needed;
+      if (invItem && ing && (invItem.unit || "").toLowerCase() === (ing.unit || "").toLowerCase()) {
+        amount = Math.max(round2(needed - Number(invItem.current || 0)), 0.01);
+      }
+      toAdd.push({
+        name,
+        amount,
+        unit: ing ? ing.unit : "stuks",
+        category: invItem && invItem.category || guessCategory(name)
+      });
+    });
+    if (toAdd.length) {
+      persist(
+        "shoppingList",
+        [...shoppingList, ...toAdd.map((i) => ({ ...i, id: uid(), auto: false, checked: false }))],
+        setShoppingList
+      );
+    }
+    const parts = [];
+    if (toAdd.length) parts.push(`${toAdd.length} ingredi\xEBnt${toAdd.length === 1 ? "" : "en"} toegevoegd aan de boodschappenlijst`);
+    if (skipped.length) parts.push(`${skipped.length} stond${skipped.length === 1 ? "" : "en"} er al op`);
+    showToast(parts.join(" \u2014 ") + ".");
+  };
   const removeShoppingItem = (id) => {
     persist("shoppingList", shoppingList.filter((s) => s.id !== id), setShoppingList);
   };
@@ -3072,6 +3111,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           showToast,
           dislikeWarnings: getRecipeDislikeWarnings(openRecipe),
           doublePortionDefault,
+          onAddMissingToShopping: (scale) => addMissingToShopping(openRecipe, scale),
           onRecalculateNutrition: () => recalculateNutrition(openRecipe.id),
           nutritionBusy
         }
@@ -3657,7 +3697,7 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
                   " Gedeeld"
                 ] })
               ] }),
-              makeOnly && readiness.missing.length > 0 && /* @__PURE__ */ jsxs("div", { style: { marginTop: 6, fontSize: 10.5, color: C.inkSoft, lineHeight: 1.35 }, children: [
+              readiness.missing.length > 0 && readiness.missing.length <= 3 && /* @__PURE__ */ jsxs("div", { style: { marginTop: 6, fontSize: 10.5, color: C.inkSoft, lineHeight: 1.35 }, children: [
                 "Nog nodig: ",
                 /* @__PURE__ */ jsx("span", { style: { color: C.brick }, children: readiness.missing.join(", ") })
               ] }),
@@ -3840,7 +3880,7 @@ function NutritionLabel({ recipe, isMine, onRecalculate, busy }) {
     /* @__PURE__ */ jsx("div", { style: { fontSize: 10, color: C.inkSoft, marginTop: 8, lineHeight: 1.4 }, children: "Gebaseerd op gegevens van NEVO-online versie 2025/9.0, RIVM, Bilthoven." })
   ] });
 }
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onRecalculateNutrition, nutritionBusy }) {
+function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onRecalculateNutrition, nutritionBusy }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [leftoverPortions, setLeftoverPortions] = useState(0);
   const [wantDoublePortion, setWantDoublePortion] = useState(!!doublePortionDefault);
@@ -4039,13 +4079,39 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
     readiness.missing.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.warnBg, border: `1px solid ${C.mustardDeep}`, borderRadius: 14, padding: "10px 12px", marginBottom: 14 }, children: [
       /* @__PURE__ */ jsx("div", { style: { fontSize: 12.5, fontWeight: 600, color: C.ink, marginBottom: 4 }, children: "Hiervoor heb je nog nodig:" }),
       /* @__PURE__ */ jsx("div", { style: { fontSize: 12.5, color: C.ink, lineHeight: 1.5 }, children: readiness.missing.join(" \xB7 ") }),
-      /* @__PURE__ */ jsxs("div", { style: { fontSize: 10.5, color: C.inkSoft, marginTop: 6 }, children: [
+      /* @__PURE__ */ jsxs("div", { style: { fontSize: 10.5, color: C.inkSoft, marginTop: 6, marginBottom: 8 }, children: [
         "Voor ",
         servings,
         " ",
         servings === 1 ? "persoon" : "personen",
         ". Basis zoals zout, peper en olie is niet meegerekend."
-      ] })
+      ] }),
+      onAddMissingToShopping && /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: () => onAddMissingToShopping(scale),
+          style: {
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            background: C.mustard,
+            color: "#fff",
+            border: "none",
+            borderRadius: 12,
+            padding: "9px 12px",
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: "pointer",
+            fontFamily: FONT_BODY
+          },
+          children: [
+            /* @__PURE__ */ jsx(ShoppingCart, { size: 15 }),
+            " Zet op de boodschappenlijst"
+          ]
+        }
+      )
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: "8px 12px", marginBottom: 14 }, children: [
       /* @__PURE__ */ jsxs("span", { style: { fontSize: 13, color: C.ink, display: "flex", alignItems: "center", gap: 6 }, children: [
@@ -5271,6 +5337,9 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
     cats.forEach((c) => map[c] = []);
     inventory.forEach((i) => {
       (map[i.category] || (map[i.category] = [])).push(i);
+    });
+    Object.keys(map).forEach((c) => {
+      map[c] = [...map[c]].sort((a, b) => (a.name || "").localeCompare(b.name || "", "nl", { sensitivity: "base" }));
     });
     return map;
   }, [inventory, cats]);
