@@ -3382,25 +3382,31 @@ function SeasonalAndSurpriseBar({ recipes, inventory, onOpen, showToast }) {
   const [lastPickId, setLastPickId] = useState(null);
   const surpriseMe = () => {
     const makeable = recipes.filter((r) => recipeReadiness(r, inventory).complete);
-    let fallbackHint = "";
+    let incomplete = false;
     let pool = makeable;
     if (!pool.length && recipes.length) {
       const scored = recipes.map((r) => ({ r, missing: recipeReadiness(r, inventory).missing.length })).sort((a, b) => a.missing - b.missing);
       const fewest = scored[0].missing;
       pool = scored.filter((s) => s.missing === fewest).map((s) => s.r);
-      fallbackHint = `Niets is volledig compleet \u2014 dit komt het dichtst in de buurt (nog ${fewest} ingredi\xEBnt${fewest === 1 ? "" : "en"} nodig).`;
+      incomplete = true;
     }
     if (!pool.length) return;
-    if (fallbackHint && showToast) showToast(fallbackHint);
+    let pick;
     if (pool.length === 1) {
-      if (showToast && !fallbackHint) showToast("Dit is nu het enige gerecht dat volledig met je voorraad te maken is \u2014 voeg meer voorraad toe voor meer variatie.");
-      onOpen(pool[0].id);
-      setLastPickId(pool[0].id);
-      return;
+      pick = pool[0];
+    } else {
+      const choices = pool.filter((r) => r.id !== lastPickId);
+      const finalPool = choices.length ? choices : pool;
+      pick = finalPool[Math.floor(Math.random() * finalPool.length)];
     }
-    const choices = pool.filter((r) => r.id !== lastPickId);
-    const finalPool = choices.length ? choices : pool;
-    const pick = finalPool[Math.floor(Math.random() * finalPool.length)];
+    if (showToast) {
+      const { missing } = recipeReadiness(pick, inventory);
+      if (missing.length) {
+        showToast(`${pick.name}: hiervoor mis je nog ${missing.join(", ")}.`);
+      } else if (pool.length === 1 && !incomplete) {
+        showToast("Dit is nu het enige gerecht dat volledig met je voorraad te maken is \u2014 voeg meer voorraad toe voor meer variatie.");
+      }
+    }
     setLastPickId(pick.id);
     onOpen(pick.id);
   };
@@ -3427,7 +3433,7 @@ function SeasonalAndSurpriseBar({ recipes, inventory, onOpen, showToast }) {
         },
         children: [
           /* @__PURE__ */ jsx(Shuffle, { size: 16 }),
-          " Verras me! (kies iets wat ik kan maken)"
+          " Verras me! (kijkt naar je voorraad)"
         ]
       }
     ),
