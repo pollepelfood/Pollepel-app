@@ -480,18 +480,94 @@ function categoryFromOffTags(tags) {
   }
   return null;
 }
+const PANTRY_BASICS = [
+  "zout",
+  "peper",
+  "zwarte peper",
+  "witte peper",
+  "water",
+  "suiker",
+  "azijn",
+  "olie",
+  "olijfolie",
+  "zonnebloemolie",
+  "bakolie",
+  "boter",
+  "margarine",
+  "bloem",
+  "maizena",
+  "kruiden",
+  "specerijen",
+  "paprikapoeder",
+  "komijn",
+  "kerrie",
+  "kerriepoeder",
+  "oregano",
+  "tijm",
+  "rozemarijn",
+  "laurier",
+  "laurierblad",
+  "nootmuskaat",
+  "kaneel",
+  "chilipoeder",
+  "mosterd",
+  "honing",
+  "sojasaus",
+  "ketjap",
+  "bouillon",
+  "bouillonblokje",
+  "bouillonblokjes"
+];
+function isPantryBasic(name) {
+  const n = norm(name);
+  if (!n) return false;
+  return PANTRY_BASICS.some((b) => n === b || namesMatch(n, b));
+}
+const UNIT_FACTORS = { g: 1, kg: 1e3, ml: 1, l: 1e3 };
+function comparableAmounts(invItem, ing) {
+  const iu = (invItem.unit || "").toLowerCase();
+  const ru = (ing.unit || "").toLowerCase();
+  if (iu === ru) return { have: Number(invItem.current || 0), need: Number(ing.amount || 0) };
+  const massOrVolume = (u) => UNIT_FACTORS[u] != null;
+  const sameKind = (a, b) => ["g", "kg"].includes(a) && ["g", "kg"].includes(b) || ["ml", "l"].includes(a) && ["ml", "l"].includes(b);
+  if (massOrVolume(iu) && massOrVolume(ru) && sameKind(iu, ru)) {
+    return { have: Number(invItem.current || 0) * UNIT_FACTORS[iu], need: Number(ing.amount || 0) * UNIT_FACTORS[ru] };
+  }
+  return null;
+}
 function recipeReadiness(recipe, inventory, scale = 1) {
-  let tracked = 0;
-  let have = 0;
   const missing = [];
-  recipe.ingredients.forEach((ing) => {
-    const item = inventory.find((i) => namesMatch(i.name, ing.name) && i.unit === ing.unit);
-    if (!item) return;
-    tracked += 1;
-    if (item.current >= Number(ing.amount || 0) * scale) have += 1;
-    else missing.push(item.name);
+  const unknown = [];
+  let have = 0;
+  let relevant = 0;
+  (recipe.ingredients || []).forEach((ing) => {
+    if (isPantryBasic(ing.name)) return;
+    relevant += 1;
+    const item = inventory.find((i) => namesMatch(i.name, ing.name));
+    if (!item) {
+      missing.push(ing.name);
+      return;
+    }
+    const cmp = comparableAmounts(item, ing);
+    if (!cmp) {
+      unknown.push(ing.name);
+      have += 1;
+      return;
+    }
+    if (cmp.have >= cmp.need * scale) have += 1;
+    else missing.push(ing.name);
   });
-  return { tracked, have, missing, canMake: tracked > 0 && missing.length === 0, total: recipe.ingredients.length };
+  return {
+    have,
+    relevant,
+    missing,
+    unknown,
+    total: (recipe.ingredients || []).length,
+    complete: relevant > 0 && missing.length === 0,
+    canMake: relevant > 0 && missing.length === 0,
+    // behouden voor bestaande aanroepen
+    tracked: relevant
+  };
 }
 function parseSpokenDurationMinutes(text) {
   if (!text) return null;
@@ -2264,11 +2340,15 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     return source.filter((r) => {
       if (bookMode === "community" && !hasCommunityBackend && !hasDataAPI && !r.community) return false;
       if (favOnly && !r.favorite) return false;
-      if (makeOnly && !recipeReadiness(r, inventory).canMake) return false;
       if (makeOnly && maxCookTime && Number(r.cookTime || 999) > maxCookTime) return false;
       if (dietOnly && activeDietTags.length && !activeDietTags.every((tag) => (r.diets || []).includes(tag))) return false;
       if (query && !r.name.toLowerCase().includes(query.toLowerCase())) return false;
       return true;
+    }).sort((a, b) => {
+      if (!makeOnly) return 0;
+      const ma = recipeReadiness(a, inventory).missing.length;
+      const mb = recipeReadiness(b, inventory).missing.length;
+      return ma - mb;
     });
   }, [recipes, communitySourceRecipes, bookMode, hasCommunityBackend, hasDataAPI, favOnly, makeOnly, maxCookTime, dietOnly, activeDietTags, query, inventory]);
   const lowStockCount = inventory.filter((i) => i.current < i.min).length;
@@ -3261,11 +3341,19 @@ function SeasonalAndSurpriseBar({ recipes, inventory, onOpen, showToast }) {
   const monthName = (/* @__PURE__ */ new Date()).toLocaleDateString("nl-NL", { month: "long" });
   const [lastPickId, setLastPickId] = useState(null);
   const surpriseMe = () => {
-    const makeable = recipes.filter((r) => recipeReadiness(r, inventory).canMake);
-    const pool = makeable.length ? makeable : recipes;
+    const makeable = recipes.filter((r) => recipeReadiness(r, inventory).complete);
+    let fallbackHint = "";
+    let pool = makeable;
+    if (!pool.length && recipes.length) {
+      const scored = recipes.map((r) => ({ r, missing: recipeReadiness(r, inventory).missing.length })).sort((a, b) => a.missing - b.missing);
+      const fewest = scored[0].missing;
+      pool = scored.filter((s) => s.missing === fewest).map((s) => s.r);
+      fallbackHint = `Niets is volledig compleet \u2014 dit komt het dichtst in de buurt (nog ${fewest} ingredi\xEBnt${fewest === 1 ? "" : "en"} nodig).`;
+    }
     if (!pool.length) return;
+    if (fallbackHint && showToast) showToast(fallbackHint);
     if (pool.length === 1) {
-      if (showToast) showToast("Dit is nu het enige gerecht dat volledig met je voorraad te maken is \u2014 voeg meer voorraad toe voor meer variatie.");
+      if (showToast && !fallbackHint) showToast("Dit is nu het enige gerecht dat volledig met je voorraad te maken is \u2014 voeg meer voorraad toe voor meer variatie.");
       onOpen(pool[0].id);
       setLastPickId(pool[0].id);
       return;
@@ -3414,7 +3502,6 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
       )
     ] }),
     bookMode === "community" && /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: -6, marginBottom: 10 }, children: 'Recepten die huishoudens gedeeld hebben. Tik "voeg toe" om een eigen bewerkbare kopie in je kookboek te zetten.' }),
-    bookMode === "mine" && /* @__PURE__ */ jsx(SeasonalAndSurpriseBar, { recipes, inventory, onOpen, showToast }),
     bookMode === "history" ? /* @__PURE__ */ jsx(CookHistoryList, { cookLog, onOpen }) : /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginBottom: 12 }, children: [
         /* @__PURE__ */ jsxs("div", { style: { flex: 1, position: "relative" }, children: [
@@ -3490,9 +3577,9 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
       ] }),
       makeOnly && /* @__PURE__ */ jsxs("div", { style: { marginTop: -6, marginBottom: 10 }, children: [
         /* @__PURE__ */ jsxs("p", { style: { fontSize: 11.5, color: C.inkSoft, margin: "0 0 6px" }, children: [
-          "Alleen gerechten waarvan je alle bijgehouden ingredi\xEBnten in voorraad hebt",
+          "Gesorteerd op wat je in huis hebt: compleet bovenaan, daaronder wat je nog moet halen",
           maxCookTime ? `, binnen ${maxCookTime} minuten` : "",
-          "."
+          ". Basis zoals zout, peper en olie wordt als aanwezig beschouwd."
         ] }),
         /* @__PURE__ */ jsx("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" }, children: [["20 min", 20], ["45 min", 45], ["Geen limiet", null]].map(([label, val]) => /* @__PURE__ */ jsxs(
           "button",
@@ -3516,6 +3603,17 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
           label
         )) })
       ] }),
+      bookMode === "mine" && /* @__PURE__ */ jsxs("div", { style: { marginBottom: 12, display: "flex", gap: 8 }, children: [
+        /* @__PURE__ */ jsxs(PrimaryButton, { onClick: onNew, full: true, children: [
+          /* @__PURE__ */ jsx(Plus, { size: 16 }),
+          " Nieuw recept"
+        ] }),
+        /* @__PURE__ */ jsxs(GhostButton, { onClick: onImport, children: [
+          /* @__PURE__ */ jsx(Sparkles, { size: 15 }),
+          " Importeren"
+        ] })
+      ] }),
+      bookMode === "mine" && /* @__PURE__ */ jsx(SeasonalAndSurpriseBar, { recipes, inventory, onOpen, showToast }),
       /* @__PURE__ */ jsx("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }, children: recipes.map((r) => {
         const readiness = recipeReadiness(r, inventory);
         return /* @__PURE__ */ jsxs(
@@ -3546,19 +3644,22 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
                 ] })
               ] }),
               /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }, children: [
-                readiness.tracked > 0 && (readiness.canMake ? /* @__PURE__ */ jsxs(Pill, { tone: "ok", children: [
+                readiness.relevant > 0 && (readiness.complete ? /* @__PURE__ */ jsxs(Pill, { tone: "ok", children: [
                   /* @__PURE__ */ jsx(Check, { size: 10 }),
-                  " In huis"
+                  " Compleet"
                 ] }) : /* @__PURE__ */ jsxs(Pill, { tone: "warn", children: [
-                  readiness.tracked - readiness.missing.length,
-                  "/",
-                  readiness.tracked,
-                  " in huis"
+                  "Nog ",
+                  readiness.missing.length,
+                  " nodig"
                 ] })),
                 r.community && bookMode === "mine" && /* @__PURE__ */ jsxs(Pill, { tone: "auto", children: [
                   /* @__PURE__ */ jsx(Users, { size: 10 }),
                   " Gedeeld"
                 ] })
+              ] }),
+              makeOnly && readiness.missing.length > 0 && /* @__PURE__ */ jsxs("div", { style: { marginTop: 6, fontSize: 10.5, color: C.inkSoft, lineHeight: 1.35 }, children: [
+                "Nog nodig: ",
+                /* @__PURE__ */ jsx("span", { style: { color: C.brick }, children: readiness.missing.join(", ") })
               ] }),
               bookMode === "community" && /* @__PURE__ */ jsxs(
                 "button",
@@ -3583,17 +3684,7 @@ function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, 
         /* @__PURE__ */ jsx(Users, { size: 26, color: C.ceramicDark, style: { marginBottom: 8 } }),
         /* @__PURE__ */ jsx("p", { children: "Nog geen gedeelde recepten. Open een recept in je eigen kookboek en tik op het community-icoon om als eerste iets te delen." })
       ] }),
-      recipes.length === 0 && bookMode === "mine" && /* @__PURE__ */ jsx("div", { style: { textAlign: "center", padding: "40px 10px", color: C.inkSoft, fontSize: 13 }, children: "Geen gerechten gevonden. Voeg je eerste recept toe." }),
-      bookMode === "mine" && /* @__PURE__ */ jsxs("div", { style: { marginTop: 16, display: "flex", gap: 8 }, children: [
-        /* @__PURE__ */ jsxs(PrimaryButton, { onClick: onNew, full: true, children: [
-          /* @__PURE__ */ jsx(Plus, { size: 16 }),
-          " Nieuw recept"
-        ] }),
-        /* @__PURE__ */ jsxs(GhostButton, { onClick: onImport, children: [
-          /* @__PURE__ */ jsx(Sparkles, { size: 15 }),
-          " Importeren"
-        ] })
-      ] })
+      recipes.length === 0 && bookMode === "mine" && /* @__PURE__ */ jsx("div", { style: { textAlign: "center", padding: "40px 10px", color: C.inkSoft, fontSize: 13 }, children: "Geen gerechten gevonden. Voeg je eerste recept toe." })
     ] })
   ] });
 }
@@ -3936,15 +4027,25 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         /* @__PURE__ */ jsx(Users, { size: 10 }),
         " Gedeeld met community"
       ] }),
-      readiness.tracked > 0 && (readiness.canMake ? /* @__PURE__ */ jsxs(Pill, { tone: "ok", children: [
+      readiness.relevant > 0 && (readiness.complete ? /* @__PURE__ */ jsxs(Pill, { tone: "ok", children: [
         /* @__PURE__ */ jsx(Check, { size: 10 }),
         " Alles in huis"
       ] }) : /* @__PURE__ */ jsxs(Pill, { tone: "warn", children: [
-        readiness.tracked - readiness.missing.length,
-        "/",
-        readiness.tracked,
-        " in huis"
+        "Nog ",
+        readiness.missing.length,
+        " nodig"
       ] }))
+    ] }),
+    readiness.missing.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.warnBg, border: `1px solid ${C.mustardDeep}`, borderRadius: 14, padding: "10px 12px", marginBottom: 14 }, children: [
+      /* @__PURE__ */ jsx("div", { style: { fontSize: 12.5, fontWeight: 600, color: C.ink, marginBottom: 4 }, children: "Hiervoor heb je nog nodig:" }),
+      /* @__PURE__ */ jsx("div", { style: { fontSize: 12.5, color: C.ink, lineHeight: 1.5 }, children: readiness.missing.join(" \xB7 ") }),
+      /* @__PURE__ */ jsxs("div", { style: { fontSize: 10.5, color: C.inkSoft, marginTop: 6 }, children: [
+        "Voor ",
+        servings,
+        " ",
+        servings === 1 ? "persoon" : "personen",
+        ". Basis zoals zout, peper en olie is niet meegerekend."
+      ] })
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: "8px 12px", marginBottom: 14 }, children: [
       /* @__PURE__ */ jsxs("span", { style: { fontSize: 13, color: C.ink, display: "flex", alignItems: "center", gap: 6 }, children: [
