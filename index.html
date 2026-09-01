@@ -33,6 +33,74 @@
 <body>
   <div id="root"></div>
 
+  <script>
+    // ---------- Barcode-decoder ----------
+    // BarcodeDetector bestaat niet op iOS (elke browser daar draait op WebKit).
+    // Daarom laden we ZBar als WebAssembly, maar pas wanneer de scanner opengaat.
+    window.barcodeDecoder = (function () {
+      let zbarPromise = null;
+
+      function loadZbar() {
+        if (zbarPromise) return zbarPromise;
+        zbarPromise = new Promise((resolve, reject) => {
+          if (window.zbarWasm) return resolve(window.zbarWasm);
+          const s = document.createElement("script");
+          s.src = "https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.11.0/dist/index.js";
+          s.async = true;
+          s.onload = () => (window.zbarWasm ? resolve(window.zbarWasm) : reject(new Error("zbar niet beschikbaar")));
+          s.onerror = () => reject(new Error("zbar kon niet worden gedownload"));
+          document.head.appendChild(s);
+        });
+        return zbarPromise;
+      }
+
+      // EAN-13/EAN-8/UPC hebben een controlecijfer; daarmee filteren we misreads eruit.
+      function checksumOk(code) {
+        if (!/^\d{8}$|^\d{12,14}$/.test(code)) return true; // ander formaat: niet controleerbaar
+        const digits = code.split("").map(Number);
+        const check = digits.pop();
+        let sum = 0;
+        digits.reverse().forEach((d, i) => { sum += d * (i % 2 === 0 ? 3 : 1); });
+        return (10 - (sum % 10)) % 10 === check;
+      }
+
+      const FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf"];
+
+      return {
+        checksumOk,
+        // 'native' is sneller (Android), 'wasm' werkt overal inclusief iOS.
+        async prepare() {
+          if ("BarcodeDetector" in window) {
+            try {
+              const supported = await window.BarcodeDetector.getSupportedFormats();
+              if (supported && supported.includes("ean_13")) {
+                const det = new window.BarcodeDetector({ formats: FORMATS.filter((f) => supported.includes(f)) });
+                return {
+                  kind: "native",
+                  detect: async (canvas) => {
+                    const codes = await det.detect(canvas);
+                    return codes && codes.length ? codes[0].rawValue : null;
+                  },
+                };
+              }
+            } catch (e) { /* val terug op wasm */ }
+          }
+          const zbar = await loadZbar();
+          return {
+            kind: "wasm",
+            detect: async (canvas) => {
+              const ctx = canvas.getContext("2d", { willReadFrequently: true });
+              const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const symbols = await zbar.scanImageData(imageData);
+              if (!symbols || !symbols.length) return null;
+              return symbols[0].decode() || null;
+            },
+          };
+        },
+      };
+    })();
+  </script>
+
   <script type="module">
     import React, { useState, useEffect } from "react";
     import { createRoot } from "react-dom/client";

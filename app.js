@@ -5832,16 +5832,23 @@ function AIWeekmenuModal({ generating, progress, error, onCancel, onGenerate }) 
 }
 function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
   const videoRef = React.useRef(null);
+  const canvasRef = React.useRef(null);
   const streamRef = React.useRef(null);
-  const supported = typeof window !== "undefined" && "BarcodeDetector" in window;
-  const [phase, setPhase] = useState("manual");
+  const detectorRef = React.useRef(null);
+  const lastHitRef = React.useRef({ code: "", at: 0 });
+  const busyRef = React.useRef(false);
+  const [phase, setPhase] = useState("intro");
   const [code, setCode] = useState("");
   const [manualCode, setManualCode] = useState("");
   const [cameraError, setCameraError] = useState("");
+  const [decoderKind, setDecoderKind] = useState("");
+  const [preparing, setPreparing] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [offName, setOffName] = useState("");
   const [amount, setAmount] = useState(1);
   const [doneMsg, setDoneMsg] = useState("");
+  const [flash, setFlash] = useState("");
+  const [session, setSession] = useState([]);
   const [newName, setNewName] = useState("");
   const [newCategory, setNewCategory] = useState(CATEGORIES[0]);
   const [categoryTouched, setCategoryTouched] = useState(false);
@@ -5854,11 +5861,14 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
   }, [newName, categoryTouched]);
   const matchedItem = code ? inventory.find((i) => i.barcode && i.barcode === code) : null;
   useEffect(() => {
-    if (!supported || phase !== "scanning") return;
+    if (phase !== "scanning") return;
     let cancelled = false;
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
@@ -5866,11 +5876,14 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          videoRef.current.setAttribute("playsinline", "true");
           await videoRef.current.play();
         }
       } catch (e) {
-        setCameraError("Geen toegang tot de camera in dit venster (dit gebeurt vaker binnen ingebedde app-schermen). Gebruik de handmatige invoer hieronder.");
-        setPhase("manual");
+        setCameraError(
+          e && e.name === "NotAllowedError" ? "Geen toestemming voor de camera. Sta cameratoegang toe voor deze site en probeer het opnieuw \u2014 of voer de cijfers hieronder handmatig in." : "De camera kon niet worden gestart. Voer de cijfers hieronder handmatig in."
+        );
+        setPhase("intro");
       }
     })();
     return () => {
@@ -5880,32 +5893,55 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
         streamRef.current = null;
       }
     };
-  }, [supported, phase]);
+  }, [phase]);
   useEffect(() => {
-    if (!supported || phase !== "scanning") return;
+    if (phase !== "scanning" || !detectorRef.current) return;
     let active = true;
-    let detector;
-    try {
-      detector = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "qr_code"] });
-    } catch (e) {
-      setPhase("manual");
-      return;
-    }
-    const timer = setInterval(async () => {
-      if (!videoRef.current || videoRef.current.readyState < 2) return;
-      try {
-        const codes = await detector.detect(videoRef.current);
-        if (active && codes && codes.length) {
-          handleDetected(codes[0].rawValue);
+    const tick = async () => {
+      if (!active) return;
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (video && canvas && video.readyState >= 2 && !busyRef.current) {
+        busyRef.current = true;
+        try {
+          const vw = video.videoWidth, vh = video.videoHeight;
+          if (vw && vh) {
+            const cropH = Math.round(vh * 0.4);
+            const cropY = Math.round((vh - cropH) / 2);
+            const targetW = Math.min(640, vw);
+            const scale = targetW / vw;
+            canvas.width = targetW;
+            canvas.height = Math.round(cropH * scale);
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            ctx.drawImage(video, 0, cropY, vw, cropH, 0, 0, canvas.width, canvas.height);
+            const value = await detectorRef.current.detect(canvas);
+            if (value && window.barcodeDecoder.checksumOk(value)) handleDetected(value);
+          }
+        } catch (e) {
         }
-      } catch (e) {
+        busyRef.current = false;
       }
-    }, 350);
+      if (active) setTimeout(tick, 250);
+    };
+    tick();
     return () => {
       active = false;
-      clearInterval(timer);
     };
-  }, [supported, phase]);
+  }, [phase, inventory]);
+  const startScanning = async () => {
+    setCameraError("");
+    setPreparing(true);
+    try {
+      const d = await window.barcodeDecoder.prepare();
+      detectorRef.current = d;
+      setDecoderKind(d.kind);
+      setPhase("scanning");
+    } catch (e) {
+      setCameraError("De scanner-module kon niet worden geladen (controleer je internetverbinding). Handmatig invoeren werkt wel.");
+    } finally {
+      setPreparing(false);
+    }
+  };
   const lookupProductName = async (c) => {
     setLookupLoading(true);
     setOffName("");
@@ -5927,10 +5963,21 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
     }
   };
   const handleDetected = (c) => {
+    const now = Date.now();
+    if (lastHitRef.current.code === c && now - lastHitRef.current.at < 3e3) return;
+    lastHitRef.current = { code: c, at: now };
+    const match = inventory.find((i) => i.barcode && i.barcode === c);
+    if (match && phase === "scanning") {
+      onRestock(match.id, 1);
+      setSession((s) => [{ name: match.name, unit: match.unit, qty: 1, at: now }, ...s.filter((x) => x.name !== match.name).slice(0, 5)]);
+      setFlash(`${match.name} +1 ${match.unit}`);
+      if (navigator.vibrate) navigator.vibrate(40);
+      setTimeout(() => setFlash(""), 1600);
+      return;
+    }
     setCode(c);
     setAmount(1);
     setPhase("found");
-    const match = inventory.find((i) => i.barcode && i.barcode === c);
     if (!match) lookupProductName(c);
   };
   const backToScan = () => {
@@ -5938,7 +5985,8 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
     setOffName("");
     setNewName("");
     setDoneMsg("");
-    setPhase("manual");
+    lastHitRef.current = { code: "", at: Date.now() };
+    setPhase(detectorRef.current ? "scanning" : "intro");
   };
   const stepper = (value, setValue, unitLabel) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, justifyContent: "center", margin: "10px 0" }, children: [
     /* @__PURE__ */ jsx("button", { onClick: () => setValue(Math.max(0, round2(value - 1))), style: { width: 38, height: 38, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }, children: /* @__PURE__ */ jsx(Minus, { size: 16 }) }),
@@ -5950,35 +5998,55 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
     /* @__PURE__ */ jsx("button", { onClick: () => setValue(round2(value + 1)), style: { width: 38, height: 38, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }, children: /* @__PURE__ */ jsx(Plus, { size: 16 }) })
   ] });
   return /* @__PURE__ */ jsxs(Modal, { title: "Barcode scannen", onClose, children: [
+    /* @__PURE__ */ jsx("canvas", { ref: canvasRef, style: { display: "none" } }),
     phase === "scanning" && /* @__PURE__ */ jsxs("div", { children: [
       /* @__PURE__ */ jsxs("div", { style: { position: "relative", borderRadius: 12, overflow: "hidden", background: "#000", aspectRatio: "3/4" }, children: [
         /* @__PURE__ */ jsx("video", { ref: videoRef, muted: true, playsInline: true, style: { width: "100%", height: "100%", objectFit: "cover" } }),
-        /* @__PURE__ */ jsx("div", { style: { position: "absolute", inset: "30% 10%", border: `2px solid ${C.mustard}`, borderRadius: 14, boxShadow: "0 0 0 999px rgba(0,0,0,0.25)" } })
-      ] }),
-      /* @__PURE__ */ jsxs("p", { style: { fontSize: 12.5, color: C.inkSoft, textAlign: "center", margin: "10px 0" }, children: [
-        /* @__PURE__ */ jsx(ScanLine, { size: 14, style: { verticalAlign: -2, marginRight: 4 } }),
-        "Richt de camera op de barcode van het product."
-      ] }),
-      /* @__PURE__ */ jsx(GhostButton, { onClick: () => setPhase("manual"), children: "Terug naar handmatig invoeren" })
-    ] }),
-    phase === "manual" && /* @__PURE__ */ jsxs("div", { children: [
-      cameraError && /* @__PURE__ */ jsx("div", { style: { background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 12, padding: "8px 10px", fontSize: 12.5, color: C.brick, marginBottom: 10 }, children: cameraError }),
-      /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.inkSoft, marginTop: 0 }, children: "Voer de barcode in (de cijfers onder de streepjescode op de verpakking)." }),
-      /* @__PURE__ */ jsx(Field, { label: "Barcode", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, value: manualCode, onChange: (e) => setManualCode(e.target.value), placeholder: "Bijv. 8710400123456", inputMode: "numeric", autoFocus: true }) }),
-      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" }, children: [
-        /* @__PURE__ */ jsxs(PrimaryButton, { disabled: !manualCode.trim(), onClick: () => handleDetected(manualCode.trim()), children: [
-          /* @__PURE__ */ jsx(Search, { size: 16 }),
-          " Opzoeken"
-        ] }),
-        supported && /* @__PURE__ */ jsxs(GhostButton, { onClick: () => {
-          setCameraError("");
-          setPhase("scanning");
-        }, children: [
-          /* @__PURE__ */ jsx(Camera, { size: 14 }),
-          " Camera proberen"
+        /* @__PURE__ */ jsx("div", { style: { position: "absolute", inset: "30% 8%", border: `2px solid ${C.mustard}`, borderRadius: 14, boxShadow: "0 0 0 999px rgba(0,0,0,0.28)" } }),
+        flash && /* @__PURE__ */ jsxs("div", { style: { position: "absolute", left: 0, right: 0, bottom: 0, background: C.sage, color: "#fff", padding: "10px 12px", fontSize: 14, fontWeight: 600, textAlign: "center" }, children: [
+          /* @__PURE__ */ jsx(CheckCircle2, { size: 16, style: { verticalAlign: -3, marginRight: 6 } }),
+          flash
         ] })
       ] }),
-      !supported && /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: 10 }, children: "Automatisch scannen met de camera wordt niet ondersteund door dit toestel/deze browser \u2014 handmatig invoeren werkt overal." })
+      /* @__PURE__ */ jsxs("p", { style: { fontSize: 12.5, color: C.inkSoft, textAlign: "center", margin: "10px 0 6px" }, children: [
+        /* @__PURE__ */ jsx(ScanLine, { size: 14, style: { verticalAlign: -2, marginRight: 4 } }),
+        "Houd de streepjescode in het kader. Bekende producten worden meteen bijgeboekt \u2014 scan er gerust meerdere achter elkaar."
+      ] }),
+      session.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: 10, marginBottom: 10 }, children: [
+        /* @__PURE__ */ jsx("div", { style: { fontSize: 11.5, color: C.inkSoft, marginBottom: 4 }, children: "Deze sessie bijgeboekt:" }),
+        session.map((s, i) => /* @__PURE__ */ jsxs("div", { style: { fontSize: 12.5, padding: "2px 0" }, children: [
+          /* @__PURE__ */ jsx(CheckCircle2, { size: 12, color: C.sage, style: { verticalAlign: -1, marginRight: 5 } }),
+          s.name,
+          " ",
+          /* @__PURE__ */ jsxs("span", { style: { fontFamily: FONT_MONO, color: C.inkSoft }, children: [
+            "+",
+            s.qty,
+            " ",
+            s.unit
+          ] })
+        ] }, i))
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" }, children: [
+        /* @__PURE__ */ jsx(GhostButton, { onClick: () => setPhase("intro"), children: "Handmatig invoeren" }),
+        /* @__PURE__ */ jsx(GhostButton, { onClick: onClose, children: "Klaar" })
+      ] })
+    ] }),
+    phase === "intro" && /* @__PURE__ */ jsxs("div", { children: [
+      cameraError && /* @__PURE__ */ jsx("div", { style: { background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 12, padding: "8px 10px", fontSize: 12.5, color: C.brick, marginBottom: 10 }, children: cameraError }),
+      /* @__PURE__ */ jsx("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }, children: /* @__PURE__ */ jsxs(PrimaryButton, { onClick: startScanning, disabled: preparing, children: [
+        /* @__PURE__ */ jsx(Camera, { size: 16 }),
+        " ",
+        preparing ? "Scanner laden\u2026" : "Camera starten"
+      ] }) }),
+      /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.inkSoft, marginTop: 0 }, children: "Of voer de cijfers onder de streepjescode in:" }),
+      /* @__PURE__ */ jsx(Field, { label: "Barcode", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, value: manualCode, onChange: (e) => setManualCode(e.target.value), placeholder: "Bijv. 8710400123456", inputMode: "numeric" }) }),
+      /* @__PURE__ */ jsxs(PrimaryButton, { disabled: !manualCode.trim(), onClick: () => {
+        setPhase("intro");
+        handleDetected(manualCode.trim());
+      }, children: [
+        /* @__PURE__ */ jsx(Search, { size: 16 }),
+        " Opzoeken"
+      ] })
     ] }),
     phase === "found" && matchedItem && /* @__PURE__ */ jsxs("div", { children: [
       /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.ink, marginTop: 0 }, children: "Herkend als bestaand voorraaditem:" }),
@@ -6008,7 +6076,7 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
         /* @__PURE__ */ jsx(ArrowDownCircle, { size: 16 }),
         " Afboeken (buiten gerecht om)"
       ] }) }),
-      /* @__PURE__ */ jsx("div", { style: { marginTop: 12 }, children: /* @__PURE__ */ jsx(GhostButton, { onClick: backToScan, children: "Andere barcode scannen" }) })
+      /* @__PURE__ */ jsx("div", { style: { marginTop: 12 }, children: /* @__PURE__ */ jsx(GhostButton, { onClick: backToScan, children: "Verder scannen" }) })
     ] }),
     phase === "found" && !matchedItem && /* @__PURE__ */ jsxs("div", { children: [
       /* @__PURE__ */ jsxs("p", { style: { fontSize: 13, color: C.ink, marginTop: 0 }, children: [
@@ -6053,7 +6121,7 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, justifyContent: "center", marginTop: 10 }, children: [
         /* @__PURE__ */ jsxs(PrimaryButton, { onClick: backToScan, children: [
           /* @__PURE__ */ jsx(ScanLine, { size: 16 }),
-          " Nog een product scannen"
+          " Verder scannen"
         ] }),
         /* @__PURE__ */ jsx(GhostButton, { onClick: onClose, children: "Klaar" })
       ] })
