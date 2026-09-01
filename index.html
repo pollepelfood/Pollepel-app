@@ -197,6 +197,14 @@
               diets: r.diets || [],
               ingredients: (ings || []).filter((i) => i.recipe_id === r.id).map((i) => ({ name: i.name, amount: Number(i.amount), unit: i.unit })),
               steps: (steps || []).filter((s) => s.recipe_id === r.id).map((s) => s.content),
+              nutrition: r.nutrition_calculated_at ? {
+                kcal: Number(r.nutrition_kcal), proteinG: Number(r.nutrition_protein_g), carbsG: Number(r.nutrition_carbs_g),
+                sugarsG: Number(r.nutrition_sugars_g), fiberG: Number(r.nutrition_fiber_g), fatG: Number(r.nutrition_fat_g),
+                saturatedFatG: Number(r.nutrition_saturated_fat_g), saltG: Number(r.nutrition_salt_g),
+                unmatched: r.nutrition_unmatched || [], matched: r.nutrition_matched || [],
+                fingerprint: r.nutrition_fingerprint || null, coverage: r.nutrition_coverage,
+                calculatedAt: r.nutrition_calculated_at,
+              } : null,
             }));
           },
           async create(recipe) {
@@ -265,7 +273,347 @@
               favorite: false, community: true, notes: r.notes || "", diets: r.diets || [],
               ingredients: (ings || []).filter((i) => i.recipe_id === r.id).map((i) => ({ name: i.name, amount: Number(i.amount), unit: i.unit })),
               steps: (steps || []).filter((s) => s.recipe_id === r.id).map((s) => s.content),
+              nutrition: r.nutrition_calculated_at ? {
+                kcal: Number(r.nutrition_kcal), proteinG: Number(r.nutrition_protein_g), carbsG: Number(r.nutrition_carbs_g),
+                sugarsG: Number(r.nutrition_sugars_g), fiberG: Number(r.nutrition_fiber_g), fatG: Number(r.nutrition_fat_g),
+                saturatedFatG: Number(r.nutrition_saturated_fat_g), saltG: Number(r.nutrition_salt_g),
+                unmatched: r.nutrition_unmatched || [], matched: r.nutrition_matched || [],
+                fingerprint: r.nutrition_fingerprint || null, coverage: r.nutrition_coverage,
+                calculatedAt: r.nutrition_calculated_at,
+              } : null,
             }));
+          },
+        },
+
+        // ---------- Voedingswaarden (NEVO, RIVM) ----------
+        // Gratis voor eindgebruikers — mag nooit achter de premium-toggle.
+        nutrition: {
+          UNIT_GRAMS: { g: 1, kg: 1000, ml: 1, l: 1000, eetlepel: 15, theelepel: 5, snufje: 0.5 },
+
+          // Gemiddeld gewicht per stuk. Sleutels worden op hele woorden gematcht,
+          // zodat "prei" niet per ongeluk op "ei" valt.
+          STUKS_GRAMS: [
+            ["teentje knoflook", 5], ["teen knoflook", 5], ["knoflookteen", 5], ["knoflookteentje", 5],
+            ["laurierblad", 0.2], ["kruidnagel", 0.1],
+            ["bosje peterselie", 30], ["bosje bieslook", 15], ["bosje koriander", 30],
+            ["chilipeper", 15], ["rode peper", 15], ["spaanse peper", 15],
+            ["sjalotje", 25], ["sjalot", 25], ["lente-ui", 15], ["bosui", 15],
+            ["rode ui", 100], ["ui", 100], ["uien", 100],
+            ["eidooier", 18], ["eiwit", 33], ["eieren", 55], ["ei", 55],
+            ["trostomaat", 100], ["cherrytomaatje", 15], ["cherrytomaat", 15], ["tomaat", 120], ["tomaten", 120],
+            ["aardappel", 150], ["aardappelen", 150], ["wortel", 80], ["wortels", 80], ["winterpeen", 200],
+            ["paprika", 150], ["courgette", 250], ["prei", 150], ["komkommer", 300],
+            ["bleekselderij", 60], ["stengel bleekselderij", 60], ["venkelknol", 300], ["aubergine", 250],
+            ["citroen", 100], ["limoen", 70], ["sinaasappel", 200], ["appel", 150], ["peer", 170],
+            ["banaan", 120], ["avocado", 200], ["kipfilet", 150], ["kipfilets", 150],
+            // knollen, vlees en vis per stuk
+            ["knoflook", 5], ["knoflookbol", 50], ["zalmfilet", 125], ["visfilet", 125],
+            ["kabeljauwfilet", 125], ["witvis", 125], ["kipdijfilet", 100], ["kippenpoot", 200],
+            ["drumstick", 100], ["speklap", 40], ["schnitzel", 120], ["hamburger", 100],
+            ["gehaktbal", 90], ["braadworst", 90], ["rookworst", 275], ["knakworst", 25],
+            ["cordon bleu", 150], ["saucijs", 90], ["plak ham", 20], ["ham", 20],
+            // groente per stuk
+            ["witlof", 100], ["witlofstronk", 100], ["stronk witlof", 100],
+            ["broccoli", 400], ["bloemkool", 800], ["spitskool", 700], ["venkel", 300],
+            ["mais", 200], ["maiskolf", 200], ["radijs", 8], ["biet", 150], ["rode biet", 150],
+            ["pastinaak", 150], ["knolselderij", 700], ["koolrabi", 300], ["artisjok", 300],
+            // zuivel, brood en overig per stuk
+            ["mozzarella", 125], ["bol mozzarella", 125], ["burrata", 125],
+            ["wrap", 40], ["tortilla", 40], ["pitabroodje", 60], ["pita", 60],
+            ["boterham", 35], ["snee brood", 35], ["broodje", 60], ["bagel", 85],
+            ["beschuit", 10], ["cracker", 8], ["rijstwafel", 8],
+            ["bouillonblokje", 4], ["bouillonblokjes", 4], ["stockcube", 4],
+            ["blik", 400], ["blikje", 400], ["pot", 350], ["potje", 350], ["pak", 500],
+            ["tomatenblokjes", 400], ["kokosmelk", 400],
+          ],
+
+          // Woorden die alleen bereidingsruis zijn. Worden alleen verwijderd
+          // als er daarna nog iets overblijft — "gehakt" is zelf een product.
+          NOISE: ["verse", "vers", "fijngehakte", "fijngehakt", "fijngesneden", "gesneden", "gehakte",
+                  "geraspte", "geraspt",
+                  "klein", "kleine", "grof", "grove", "fijn", "fijne", "takjes", "takje", "snufje",
+                  "geperste", "geperst", "gepelde", "gepeld", "biologische", "biologisch"],
+
+          // Veelgebruikte samenstellingen die NEVO omgekeerd of anders schrijft.
+          SYNONYMS: {
+            "olijfolie": ["olie", "olijf"], "zonnebloemolie": ["olie", "zonnebloem"],
+            "kokosolie": ["olie", "kokos"], "sesamolie": ["olie", "sesam"],
+            "zalmfilet": ["zalm"], "kipfilet": ["kip", "kipfilet"], "kipdij": ["kip"],
+            "runderpoulet": ["rundvlees", "runderpoulet"], "rundergehakt": ["gehakt", "runder"],
+            "kalfsgehakt": ["gehakt", "kalfs"], "varkensgehakt": ["gehakt", "varkens"],
+            "kookroom": ["room", "kook"], "slagroom": ["room", "slag"], "zure room": ["room", "zure"],
+            "creme fraiche": ["creme", "fraiche"],
+            "halfvolle melk": ["melk", "halfvolle"], "volle melk": ["melk", "volle"],
+            "magere melk": ["melk", "magere"], "karnemelk": ["melk", "karne"],
+            "griekse yoghurt": ["yoghurt", "griekse"],
+            "bloem": ["bloem", "tarwe"], "tarwebloem": ["bloem", "tarwe"],
+            "paneermeel": ["paneermeel"], "maizena": ["maizena"],
+            "spekjes": ["spek"], "katenspek": ["spek", "katen"], "ontbijtspek": ["spek", "ontbijt"],
+            "rookworst": ["worst", "rook"], "braadworst": ["worst", "braad"],
+            "boerenkool": ["kool", "boeren"], "rodekool": ["kool", "rode"],
+            "witte kool": ["kool", "witte"], "spitskool": ["kool", "spits"],
+            "zuurkool": ["kool", "zuur"], "bloemkool": ["kool", "bloem"],
+            "spruitjes": ["spruitjes"], "sperziebonen": ["bonen", "sperzie"],
+            "snijbonen": ["bonen", "snij"], "kidneybonen": ["bonen", "kidney"],
+            "witte bonen": ["bonen", "witte"], "bruine bonen": ["bonen", "bruine"],
+            "zwarte bonen": ["bonen", "zwarte"], "kikkererwten": ["erwten", "kikker"],
+            "doperwten": ["doperwten"], "spliterwten": ["erwten", "split"],
+            "tomatenblokjes": ["tomaat", "blik"], "tomatenpuree": ["puree", "tomaten"],
+            "passata": ["tomaat", "gezeefd"], "tomatenpassata": ["tomaat", "gezeefd"],
+            "feta": ["kaas", "feta"], "mozzarella": ["kaas", "mozzarella"],
+            "parmezaan": ["kaas", "parmezaanse"], "parmezaanse kaas": ["kaas", "parmezaanse"],
+            "geraspte kaas": ["kaas"], "roomkaas": ["kaas", "room"],
+            "bouillonblokjes": ["bouillonblokje"], "bouillonblokje": ["bouillonblokje"],
+            "groentebouillon": ["bouillon"], "kippenbouillon": ["bouillon"],
+            "olijven": ["olijven"], "champignons": ["champignon"],
+            "wraps": ["wrap"], "tortilla": ["wrap"], "pitabroodjes": ["tarwebrood", "pita"],
+            "spaghetti": ["pasta"], "macaroni": ["pasta"], "penne": ["pasta"],
+            "tagliatelle": ["pasta"], "fusilli": ["pasta"], "lasagnebladen": ["pasta"],
+            "rijst": ["rijst"], "basmatirijst": ["rijst", "witte"], "zilvervliesrijst": ["rijst", "zilvervlies"],
+            "witlof": ["witlof"], "ham": ["ham"], "achterham": ["ham", "achter"],
+            "sperzieboontjes": ["bonen", "sperzie"], "worteltjes": ["wortel"],
+            "sla": ["sla"], "ijsbergsla": ["sla", "ijsberg"], "rucola": ["sla", "rucola"],
+            "balsamicoazijn": ["azijn", "balsamico"], "azijn": ["azijn"],
+            "mosterd": ["mosterd"], "honing": ["honing"], "suiker": ["suiker"],
+            "kerstomaatjes": ["tomaat", "kers"], "kerstomaten": ["tomaat", "kers"],
+            "cherrytomaatjes": ["tomaat", "kers"], "trostomaten": ["tomaat", "tros"],
+            "zalmfilet": ["zalm", "kweek"], "witvis": ["vis", "mager"],
+            "kabeljauwfilet": ["kabeljauw"], "visfilet": ["vis", "mager"],
+            "sojasaus": ["saus", "soja"], "ketjap": ["ketjap"],
+            "satesaus": ["saus", "sate"], "pindasaus": ["saus", "sate"],
+            "creme fraiche": ["creme", "fraiche"], "crème fraîche": ["creme", "fraiche"],
+            "risottorijst": ["rijst", "witte"], "mie": ["mihoen"], "mie noedels": ["mihoen"],
+            "noedels": ["mihoen"], "kerriepoeder": ["kerrie"], "kerrie": ["kerrie"],
+            "gemberpasta": ["gemberwortel"], "gember": ["gemberwortel"],
+            "verse dille": ["kruiden", "tuin"], "dille": ["kruiden", "tuin"],
+            "verse peterselie": ["peterselie", "vers"], "peterselie": ["peterselie", "vers"],
+          },
+
+          // Ruwe Nederlandse enkelvoudsvorm — genoeg voor substring-zoeken.
+          singularize(w) {
+            if (w.length <= 3) return w;
+            if (/tten$/.test(w)) return w.slice(0, -3);          // ritten -> rit
+            if (/([bdfgklmnprst])\1en$/.test(w)) return w.slice(0, -3); // bollen -> bol
+            if (/ien$/.test(w)) return w.slice(0, -3) + "ie";
+            if (/en$/.test(w)) {
+              const stem = w.slice(0, -2);
+              // aardappelen -> aardappel, tomaten -> tomaat (open lettergreep)
+              if (/[aeiou][bcdfghjklmnpqrstvwxz]$/.test(stem) && stem.length >= 4) {
+                return stem.slice(0, -1) + stem.slice(-2, -1) + stem.slice(-1);
+              }
+              return stem;
+            }
+            if (/jes$/.test(w)) return w.slice(0, -3);
+            if (/s$/.test(w) && !/ss$/.test(w)) return w.slice(0, -1);
+            return w;
+          },
+
+          normalize(s) {
+            return (s || "").toLowerCase()
+              .replace(/\(.*?\)/g, " ")
+              .replace(/[^a-zà-ÿ\s-]/g, " ")
+              .replace(/-+/g, " ")   // NEVO schrijft "Room kook-", "Bonen sperzie-"
+              .replace(/\s+/g, " ")
+              .trim();
+          },
+
+          contentWords(term) {
+            // "(blik)" is betekenisvol: het onderscheidt blik van gedroogd/vers.
+            const withParens = (term || "").toLowerCase().replace(/[()]/g, " ");
+            const clean = this.normalize(withParens);
+            if (this.SYNONYMS[clean]) return this.SYNONYMS[clean];
+            const words = clean.split(" ").filter(Boolean);
+            const kept = words.filter((w) => !this.NOISE.includes(w));
+            const base = kept.length ? kept : words;
+            // laatste kans: losse woorden die wél een synoniem hebben
+            const out = [];
+            base.forEach((w) => {
+              if (this.SYNONYMS[w]) out.push(...this.SYNONYMS[w]);
+              else out.push(w);
+            });
+            // dedupliceer, en voeg enkelvoudsvormen toe voor het zoeken
+            return [...new Set(out)];
+          },
+
+          searchWords(term) {
+            const words = this.contentWords(term);
+            const withSingular = [];
+            words.forEach((w) => {
+              withSingular.push(w);
+              const s = this.singularize(w);
+              if (s !== w && s.length >= 3) withSingular.push(s);
+            });
+            return [...new Set(withSingular)];
+          },
+
+          gramsForIngredient(ing) {
+            const unit = (ing.unit || "").toLowerCase();
+            const amount = Number(ing.amount || 0);
+            if (this.UNIT_GRAMS[unit] != null) return amount * this.UNIT_GRAMS[unit];
+            if (unit !== "stuks") return null;
+            // Woordenset inclusief enkelvouden en synoniemen, zodat "Wraps" en
+            // "Kidneybonen (blik)" ook een stukgewicht vinden.
+            const withParens = (ing.name || "").toLowerCase().replace(/[()]/g, " ");
+            const raw = this.normalize(withParens).split(" ").filter(Boolean);
+            const words = new Set();
+            raw.concat(this.contentWords(ing.name)).forEach((w) => {
+              words.add(w);
+              const s = this.singularize(w);
+              if (s.length >= 2) words.add(s);
+            });
+            let best = null;
+            for (const [key, grams] of this.STUKS_GRAMS) {
+              const keyWords = key.split(" ");
+              const hit = keyWords.every((kw) => words.has(kw) || words.has(this.singularize(kw)));
+              // specifiekere sleutel wint: "tomatenblokjes" (blik) boven "tomaat" (stuk)
+              if (hit && (!best || key.length > best.len)) best = { grams, len: key.length };
+            }
+            return best ? amount * best.grams : null;
+          },
+
+          async searchCandidates(term) {
+            const words = this.searchWords(term);
+            if (!words.length) return [];
+            // Zoek op elk inhoudelijk woord apart (OR), zodat "rode ui" ook op "ui" zoekt.
+            const filter = words.map((w) => `name_nl.ilike.%${w}%`).join(",");
+            const { data } = await supabase
+              .from("nutrition_reference")
+              .select("id, nevo_code, name_nl, kcal, protein_g, carbs_g, sugars_g, fiber_g, fat_g, saturated_fat_g, salt_g")
+              .or(filter)
+              .limit(300);
+            return data || [];
+          },
+
+          // Woorden die duiden op een samengesteld gerecht in plaats van een basisproduct.
+          DISH_WORDS: ["bolognese", "carbonara", "huishoudelijk", "bereid", "kant-en-klaar",
+                       "maaltijd", "schotel", "ovenschotel", "salade", "soep", "saus", "gerecht",
+                       "koelverse", "cordon", "gevuld", "gevulde", "pizza", "wrap", "sandwich",
+                       "tosti", "broodje", "taart", "cake", "koek", "biscuit", "reep", "candybar",
+                       "babyvoeding", "zuigelingenvoeding", "opvolgmelk", "dreumesmelk", "peutermelk",
+                       "vegetarisch", "vegetarische", "plantaardig"],
+
+          PREP_WORDS: ["blik", "glas", "diepvries", "gefrituurd", "gebakken", "gekookt", "gestoofd",
+                       "gezouten", "gerookt", "siroop", "zoetzuur", "poeder", "gedroogd", "gedroogde",
+                       "instant", "magnetron", "gegrild", "gepaneerd", "gepoft"],
+
+          scoreCandidate(ingredientWords, candidate) {
+            const rawName = this.normalize(candidate.name_nl);
+            const nameWords = rawName.split(" ").filter(Boolean);
+            if (!nameWords.length) return -1;
+            const head = nameWords[0];
+            const ingSingular = ingredientWords.map((w) => this.singularize(w));
+            const matchesWord = (target) => {
+              const t = this.singularize(target);
+              return ingredientWords.includes(target) || ingSingular.includes(t) ||
+                     ingredientWords.some((w) => this.singularize(w) === t);
+            };
+            let score = 0;
+
+            // Exacte naamgelijkheid is het sterkste signaal
+            if (rawName === ingredientWords.join(" ")) score += 14;
+
+            // NEVO zet het hoofdproduct vooraan: "Ui rode rauw", "Gehakt runder- rauw".
+            if (matchesWord(head)) score += 10;
+            else if (ingredientWords.some((w) => w.length >= 4 && (head.startsWith(w) || w.startsWith(head)))) score += 5;
+            else score -= 2;
+
+            // Overige overlappende woorden (bijv. "feta" in "Kaas Feta")
+            let extra = 0;
+            nameWords.slice(1).forEach((nw) => {
+              if (matchesWord(nw)) extra += 6;
+              else if (ingredientWords.some((w) => w.length >= 5 && nw.startsWith(w))) extra += 1;
+            });
+            score += Math.min(extra, 12);
+
+            // Generieke/onbewerkte varianten hebben de voorkeur
+            if (nameWords.includes("gem")) score += 3;
+            if (nameWords.includes("naturel")) score += 3;
+            if (nameWords.includes("rauw")) score += 2;
+            if (nameWords.includes("onbereid")) score += 1.5;
+            // "m" = met: "Wrap m kip" is een gevuld gerecht, geen basisproduct
+            if (nameWords.includes("m") && nameWords.length > 2) score -= 4;
+
+            // Samengestelde gerechten zwaar afstraffen als het ingrediënt dat niet vraagt
+            this.DISH_WORDS.forEach((bad) => {
+              if (nameWords.includes(bad) && !ingredientWords.includes(bad)) score -= 7;
+            });
+            this.PREP_WORDS.forEach((bad) => {
+              if (nameWords.includes(bad) && !ingredientWords.includes(bad)) score -= 2;
+            });
+
+            // Kortere namen zijn doorgaans de generieke basisproducten
+            score -= Math.max(0, nameWords.length - 3) * 0.8;
+            return score;
+          },
+
+          pickBestMatch(ingredientName, candidates) {
+            if (!candidates.length) return null;
+            const words = this.contentWords(ingredientName);
+            let best = null, bestScore = -Infinity;
+            for (const c of candidates) {
+              const s = this.scoreCandidate(words, c);
+              if (s > bestScore) { bestScore = s; best = c; }
+            }
+            return bestScore >= 8 ? best : null; // hoofdproduct moet echt raak zijn
+          },
+
+          async matchIngredient(ing) {
+            const grams = this.gramsForIngredient(ing);
+            if (grams == null) return { ing, grams: null, match: null, reason: "eenheid" };
+            const candidates = await this.searchCandidates(ing.name);
+            const match = this.pickBestMatch(ing.name, candidates);
+            if (!match) return { ing, grams, match: null, reason: "product" };
+            return { ing, grams, match, reason: null };
+          },
+
+          async calculateForRecipe(recipe) {
+            const ings = recipe.ingredients || [];
+            // parallel, scheelt flink bij lange ingrediëntenlijsten
+            const results = await Promise.all(ings.map((ing) => this.matchIngredient(ing)));
+            const totals = { kcal: 0, protein_g: 0, carbs_g: 0, sugars_g: 0, fiber_g: 0, fat_g: 0, saturated_fat_g: 0, salt_g: 0 };
+            const unmatched = [];
+            const matched = [];
+            for (const r of results) {
+              if (!r.match || r.grams == null) { unmatched.push(r.ing.name); continue; }
+              const f = r.grams / 100;
+              totals.kcal += (Number(r.match.kcal) || 0) * f;
+              totals.protein_g += (Number(r.match.protein_g) || 0) * f;
+              totals.carbs_g += (Number(r.match.carbs_g) || 0) * f;
+              totals.sugars_g += (Number(r.match.sugars_g) || 0) * f;
+              totals.fiber_g += (Number(r.match.fiber_g) || 0) * f;
+              totals.fat_g += (Number(r.match.fat_g) || 0) * f;
+              totals.saturated_fat_g += (Number(r.match.saturated_fat_g) || 0) * f;
+              totals.salt_g += (Number(r.match.salt_g) || 0) * f;
+              matched.push({ ingredient: r.ing.name, grams: Math.round(r.grams), nevo: r.match.name_nl, nevoCode: r.match.nevo_code });
+            }
+            const servings = recipe.servings || 1;
+            const perPortion = {};
+            Object.keys(totals).forEach((k) => { perPortion[k] = Math.round((totals[k] / servings) * 10) / 10; });
+            // Dekking op basis van gewicht, niet op aantal ingrediënten: één gemiste
+            // zak pasta weegt zwaarder dan drie gemiste kruiden.
+            const gramsMatched = results.reduce((s, r) => s + (r.match && r.grams ? r.grams : 0), 0);
+            const gramsTotal = results.reduce((s, r) => s + (r.grams || 0), 0);
+            const coverage = gramsTotal > 0 ? gramsMatched / gramsTotal : 0;
+            const reliable = coverage >= 0.7 && unmatched.length <= Math.max(1, Math.floor(ings.length * 0.34));
+            return { perPortion, unmatched, matched, coverage: Math.round(coverage * 100), reliable };
+          },
+
+          // Vingerafdruk van de ingrediënten: verandert die, dan is de berekening verouderd.
+          fingerprint(recipe) {
+            return (recipe.ingredients || [])
+              .map((i) => `${(i.name || "").toLowerCase()}|${i.amount}|${i.unit}`)
+              .join("~") + `#${recipe.servings || 1}`;
+          },
+
+          async save(recipeId, perPortion, unmatched, matched, fingerprint, coverage) {
+            const { error } = await supabase.from("recipes").update({
+              nutrition_kcal: perPortion.kcal, nutrition_protein_g: perPortion.protein_g, nutrition_carbs_g: perPortion.carbs_g,
+              nutrition_sugars_g: perPortion.sugars_g, nutrition_fiber_g: perPortion.fiber_g, nutrition_fat_g: perPortion.fat_g,
+              nutrition_saturated_fat_g: perPortion.saturated_fat_g, nutrition_salt_g: perPortion.salt_g,
+              nutrition_unmatched: unmatched, nutrition_matched: matched, nutrition_coverage: coverage,
+              nutrition_fingerprint: fingerprint, nutrition_calculated_at: new Date().toISOString(),
+            }).eq("id", recipeId);
+            if (error) throw error;
           },
         },
 

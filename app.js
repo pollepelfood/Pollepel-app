@@ -1577,11 +1577,12 @@ function PrimaryButton({ children, onClick, tone = "blue", disabled, full, compa
     }
   );
 }
-function GhostButton({ children, onClick, danger, full }) {
+function GhostButton({ children, onClick, danger, full, disabled }) {
   return /* @__PURE__ */ jsx(
     "button",
     {
       onClick,
+      disabled,
       style: {
         background: "transparent",
         color: danger ? C.brick : C.blue,
@@ -1595,7 +1596,8 @@ function GhostButton({ children, onClick, danger, full }) {
         alignItems: "center",
         justifyContent: "center",
         gap: 6,
-        cursor: "pointer",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.6 : 1,
         width: full ? "100%" : void 0
       },
       children
@@ -2334,6 +2336,40 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     }
     setEditingRecipe(null);
   };
+  const [nutritionBusy, setNutritionBusy] = useState(false);
+  const recalculateNutrition = async (recipeId) => {
+    if (!hasDataAPI || !window.dataAPI.nutrition) return;
+    const recipe = recipes.find((r) => r.id === recipeId) || communityRecipes.find((r) => r.id === recipeId);
+    if (!recipe) return;
+    setNutritionBusy(true);
+    try {
+      const { perPortion, unmatched, matched, coverage } = await window.dataAPI.nutrition.calculateForRecipe(recipe);
+      const fingerprint = window.dataAPI.nutrition.fingerprint(recipe);
+      await window.dataAPI.nutrition.save(recipeId, perPortion, unmatched, matched, fingerprint, coverage);
+      const nutrition = {
+        kcal: perPortion.kcal,
+        proteinG: perPortion.protein_g,
+        carbsG: perPortion.carbs_g,
+        sugarsG: perPortion.sugars_g,
+        fiberG: perPortion.fiber_g,
+        fatG: perPortion.fat_g,
+        saturatedFatG: perPortion.saturated_fat_g,
+        saltG: perPortion.salt_g,
+        unmatched,
+        matched,
+        fingerprint,
+        coverage,
+        calculatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      setRecipes((prev) => prev.map((r) => r.id === recipeId ? { ...r, nutrition } : r));
+      showToast(unmatched.length ? `Voedingswaarden berekend (${unmatched.length} ingredi\xEBnt${unmatched.length > 1 ? "en" : ""} niet meegerekend).` : "Voedingswaarden berekend.");
+    } catch (e) {
+      console.error("Voedingswaarden berekenen mislukt:", e);
+      showToast("Kon voedingswaarden niet berekenen. Probeer het later opnieuw.");
+    } finally {
+      setNutritionBusy(false);
+    }
+  };
   const deleteRecipe = (id) => {
     setRecipes(recipes.filter((r) => r.id !== id));
     if (hasDataAPI) window.dataAPI.recipes.remove(id).catch(() => {
@@ -2955,7 +2991,9 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           inventory,
           showToast,
           dislikeWarnings: getRecipeDislikeWarnings(openRecipe),
-          doublePortionDefault
+          doublePortionDefault,
+          onRecalculateNutrition: () => recalculateNutrition(openRecipe.id),
+          nutritionBusy
         }
       ),
       tab === "voorraad" && /* @__PURE__ */ jsx(
@@ -3652,7 +3690,66 @@ function SousChefModal({ recipe, onAsk, onClose }) {
     ] })
   ] });
 }
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault }) {
+function nutritionFingerprint(recipe) {
+  return (recipe.ingredients || []).map((i) => `${(i.name || "").toLowerCase()}|${i.amount}|${i.unit}`).join("~") + `#${recipe.servings || 1}`;
+}
+function NutritionLabel({ recipe, isMine, onRecalculate, busy }) {
+  const [showDetails, setShowDetails] = useState(false);
+  const n = recipe.nutrition;
+  if (!n) {
+    return /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 16, padding: 14, marginBottom: 16 }, children: [
+      /* @__PURE__ */ jsx("div", { style: { fontSize: 12.5, color: C.inkSoft, marginBottom: isMine ? 8 : 0 }, children: "Voedingswaarden nog niet berekend." }),
+      isMine && /* @__PURE__ */ jsx(GhostButton, { onClick: onRecalculate, disabled: busy, full: true, children: busy ? "Bezig met berekenen\u2026" : "Bereken voedingswaarden" })
+    ] });
+  }
+  const stale = n.fingerprint && n.fingerprint !== nutritionFingerprint(recipe);
+  const r1 = (v) => Math.round((v || 0) * 10) / 10;
+  const rows = [
+    ["Energie", `${Math.round(n.kcal || 0)} kcal`],
+    ["Eiwitten", `${r1(n.proteinG)} g`],
+    ["Koolhydraten", `${r1(n.carbsG)} g`, `waarvan suikers ${r1(n.sugarsG)} g`],
+    ["Vezels", `${r1(n.fiberG)} g`],
+    ["Vet", `${r1(n.fatG)} g`, `waarvan verzadigd ${r1(n.saturatedFatG)} g`],
+    ["Zout", `${r1(n.saltG)} g`]
+  ];
+  return /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${stale ? C.brick : C.borderTint}`, borderRadius: 16, padding: 14, marginBottom: 16 }, children: [
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }, children: [
+      /* @__PURE__ */ jsx("h3", { style: { fontFamily: FONT_DISPLAY, fontSize: 14, margin: 0 }, children: "Voedingswaarden per portie" }),
+      isMine && /* @__PURE__ */ jsx("button", { onClick: onRecalculate, disabled: busy, style: { background: "none", border: "none", cursor: busy ? "default" : "pointer", color: C.blue, fontSize: 11.5, fontWeight: 600, padding: 0, flexShrink: 0 }, children: busy ? "Bezig\u2026" : "Opnieuw berekenen" })
+    ] }),
+    stale && /* @__PURE__ */ jsx("div", { style: { background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 10, padding: "7px 9px", marginBottom: 9, fontSize: 11.5, color: C.brick }, children: "\u26A0\uFE0F Het recept is gewijzigd na deze berekening \u2014 de waarden kloppen mogelijk niet meer." }),
+    rows.map(([label, value, sub], idx) => /* @__PURE__ */ jsxs("div", { style: { padding: "5px 0", borderBottom: idx < rows.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 13 }, children: [
+        /* @__PURE__ */ jsx("span", { children: label }),
+        /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_MONO, color: C.ink, fontWeight: 600 }, children: value })
+      ] }),
+      sub && /* @__PURE__ */ jsx("div", { style: { fontSize: 11, color: C.inkSoft, marginTop: 1 }, children: sub })
+    ] }, idx)),
+    n.unmatched && n.unmatched.length > 0 && /* @__PURE__ */ jsx("div", { style: { fontSize: 11, color: C.inkSoft, marginTop: 8 }, children: typeof n.coverage === "number" && n.coverage < 70 ? `\u26A0\uFE0F Ruwe schatting \u2014 een groot deel van het recept kon niet worden herkend (${n.coverage}% van het gewicht meegerekend). Niet meegeteld: ${n.unmatched.join(", ")}` : `Gedeeltelijke schatting \u2014 niet meegerekend: ${n.unmatched.join(", ")}` }),
+    n.matched && n.matched.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: () => setShowDetails((v) => !v),
+          style: { background: "none", border: "none", padding: 0, marginTop: 8, cursor: "pointer", color: C.blue, fontSize: 11.5, fontWeight: 600 },
+          children: [
+            showDetails ? "Verberg" : "Toon",
+            " welke producten zijn gebruikt"
+          ]
+        }
+      ),
+      showDetails && /* @__PURE__ */ jsx("div", { style: { marginTop: 6, borderTop: `1px solid ${C.ceramic}`, paddingTop: 6 }, children: n.matched.map((m, idx) => /* @__PURE__ */ jsxs("div", { style: { fontSize: 11, color: C.inkSoft, padding: "2px 0" }, children: [
+        /* @__PURE__ */ jsx("strong", { style: { color: C.ink }, children: m.ingredient }),
+        " (",
+        m.grams,
+        " g) \u2192 ",
+        m.nevo
+      ] }, idx)) })
+    ] }),
+    /* @__PURE__ */ jsx("div", { style: { fontSize: 10, color: C.inkSoft, marginTop: 8, lineHeight: 1.4 }, children: "Gebaseerd op gegevens van NEVO-online versie 2025/9.0, RIVM, Bilthoven." })
+  ] });
+}
+function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onRecalculateNutrition, nutritionBusy }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [leftoverPortions, setLeftoverPortions] = useState(0);
   const [wantDoublePortion, setWantDoublePortion] = useState(!!doublePortionDefault);
@@ -3878,6 +3975,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         ing.unit
       ] })
     ] }, idx)) }),
+    /* @__PURE__ */ jsx(NutritionLabel, { recipe, isMine, onRecalculate: onRecalculateNutrition, busy: nutritionBusy }),
     /* @__PURE__ */ jsxs("h3", { style: { fontFamily: FONT_DISPLAY, fontSize: 15, margin: "0 0 8px", display: "flex", alignItems: "center", gap: 8 }, children: [
       "Bereiding",
       /* @__PURE__ */ jsx(VoiceInputButton, { onResult: handleVoiceTimer, title: "Zeg bijv. 'zet een timer van 10 minuten'", size: 13 })
@@ -5440,15 +5538,9 @@ ${body}
     ] });
   }
   return /* @__PURE__ */ jsxs("div", { children: [
-    /* @__PURE__ */ jsxs("div", { style: { marginBottom: 14, display: "flex", gap: 8, flexWrap: "wrap" }, children: [
-      /* @__PURE__ */ jsxs(GhostButton, { onClick: shareList, children: [
-        /* @__PURE__ */ jsx(Share2, { size: 14 }),
-        " Lijst delen / kopi\xEBren"
-      ] }),
-      /* @__PURE__ */ jsxs(GhostButton, { onClick: downloadList, children: [
-        /* @__PURE__ */ jsx(Download, { size: 14 }),
-        " Downloaden als afvinklijst"
-      ] })
+    /* @__PURE__ */ jsxs("div", { style: { marginBottom: 14, display: "flex", gap: 8 }, children: [
+      /* @__PURE__ */ jsx("button", { onClick: shareList, title: "Lijst delen / kopi\xEBren", style: { width: 42, height: 42, background: C.cardBg, border: `1.5px solid ${C.blue}`, borderRadius: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }, children: /* @__PURE__ */ jsx(Share2, { size: 17, color: C.blue }) }),
+      /* @__PURE__ */ jsx("button", { onClick: downloadList, title: "Downloaden als afvinklijst", style: { width: 42, height: 42, background: C.cardBg, border: `1.5px solid ${C.blue}`, borderRadius: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }, children: /* @__PURE__ */ jsx(Download, { size: 17, color: C.blue }) })
     ] }),
     shareMsg && /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: -8, marginBottom: 10 }, children: shareMsg }),
     orderedCatsForDisplay.map((cat) => {
