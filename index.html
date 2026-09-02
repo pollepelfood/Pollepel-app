@@ -353,6 +353,43 @@
           },
         },
 
+        // ---------- Realtime: huisgenoten zien elkaars wijzigingen ----------
+        // Zonder dit merk je pas na het herladen van de app dat je huisgenoot
+        // iets op de boodschappenlijst heeft gezet — terwijl je in de winkel staat.
+        realtime: {
+          _channel: null,
+          subscribe(onChange) {
+            if (this._channel) return () => {};
+            // Alleen de gedeelde tabellen: dat is waar samenwerking misgaat.
+            const TABELLEN = [
+              ["shopping_list_items", "shoppingList"],
+              ["inventory_items", "inventory"],
+              ["weekmenu_days", "weekmenu"],
+              ["recipes", "recipes"],
+            ];
+            const channel = supabase.channel(`huishouden-${householdId}`);
+            TABELLEN.forEach(([tabel, sleutel]) => {
+              channel.on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: tabel, filter: `household_id=eq.${householdId}` },
+                (payload) => { try { onChange(sleutel, payload); } catch (e) { console.error("Realtime-verwerking mislukt:", e); } }
+              );
+            });
+            // recipe_ingredients en recipe_steps hebben geen household_id;
+            // die volgen we zonder filter en laten RLS het werk doen.
+            ["recipe_ingredients", "recipe_steps"].forEach((tabel) => {
+              channel.on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: tabel },
+                () => { try { onChange("recipes", null); } catch (e) { /* genegeerd */ } }
+              );
+            });
+            channel.subscribe();
+            this._channel = channel;
+            return () => { try { supabase.removeChannel(channel); } catch (e) {} this._channel = null; };
+          },
+        },
+
         // ---------- Voedingswaarden (NEVO, RIVM) ----------
         // Gratis voor eindgebruikers — mag nooit achter de premium-toggle.
         nutrition: {

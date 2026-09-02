@@ -2064,6 +2064,7 @@ function WelcomeTour({ onFinish }) {
 function AppInner({ household = null, members = [], onLogout = null, onRenameHousehold = null } = {}) {
   const [loading, setLoading] = useState(true);
   const [saveError, setSaveError] = useState(null);
+  const savingRef = React.useRef(false);
   const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
   useEffect(() => {
     const goOffline = () => setIsOffline(true);
@@ -2159,6 +2160,58 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       setLoading(false);
     })();
   }, []);
+  const refreshShared = useCallback(async (sleutels) => {
+    if (!hasDataAPI) return;
+    if (savingRef.current) {
+      setTimeout(() => refreshShared(sleutels), 600);
+      return;
+    }
+    const wil = (k) => !sleutels || sleutels.includes(k);
+    try {
+      const [i, s, w, r] = await Promise.all([
+        wil("inventory") ? window.dataAPI.inventory.list() : null,
+        wil("shoppingList") ? window.dataAPI.shopping.list() : null,
+        wil("weekmenu") ? window.dataAPI.weekmenu.list() : null,
+        wil("recipes") ? window.dataAPI.recipes.list() : null
+      ]);
+      if (i) setInventory(i);
+      if (s) setShoppingList(s);
+      if (w) setWeekmenu(w);
+      if (r && r.length) setRecipes(r);
+    } catch (e) {
+      console.error("Verversen van gedeelde gegevens mislukt:", e);
+    }
+  }, [hasDataAPI]);
+  useEffect(() => {
+    if (!hasDataAPI || !window.dataAPI.realtime) return;
+    let timer = null;
+    const wachtrij = /* @__PURE__ */ new Set();
+    const opWijziging = (sleutel) => {
+      wachtrij.add(sleutel);
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const sleutels = [...wachtrij];
+        wachtrij.clear();
+        refreshShared(sleutels);
+      }, 400);
+    };
+    const stop = window.dataAPI.realtime.subscribe(opWijziging);
+    return () => {
+      clearTimeout(timer);
+      if (typeof stop === "function") stop();
+    };
+  }, [hasDataAPI, refreshShared]);
+  useEffect(() => {
+    const opTerug = () => {
+      if (document.visibilityState === "visible") refreshShared();
+    };
+    document.addEventListener("visibilitychange", opTerug);
+    window.addEventListener("focus", opTerug);
+    return () => {
+      document.removeEventListener("visibilitychange", opTerug);
+      window.removeEventListener("focus", opTerug);
+    };
+  }, [refreshShared]);
   const persist = useCallback(async (key, value, setter, vorigeWaarde) => {
     let terugrolWaarde = vorigeWaarde;
     setter((huidig) => {
@@ -2166,6 +2219,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       return value;
     });
     setSaving(true);
+    savingRef.current = true;
     try {
       if (hasDataAPI) {
         await syncToDataAPI(key, value);
@@ -2183,6 +2237,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       });
     }
     setSaving(false);
+    savingRef.current = false;
   }, [hasDataAPI, inventory, shoppingList, cooks, cookLog, consumptionLog, preferences, recipes, weekmenu]);
   const syncToDataAPI = async (key, value) => {
     if (key === "inventory") {
