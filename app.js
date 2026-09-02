@@ -3978,7 +3978,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
   }, [doublePortionDefault, recipe?.id]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [servings, setServings] = useState(recipe.servings);
-  const [screenAwake, setScreenAwake] = useState(false);
+  const [keepAwake, setKeepAwake] = useState(false);
   const [sousChefOpen, setSousChefOpen] = useState(false);
   const [timers, setTimers] = useState([]);
   const [timerTick, setTimerTick] = useState(0);
@@ -4047,46 +4047,60 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
   };
   const formatTimer = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const wakeLockRef = React.useRef(null);
+  const keepAwakeRef = React.useRef(false);
   const wakeLockSupported = typeof navigator !== "undefined" && "wakeLock" in navigator;
-  const requestWakeLock = async () => {
-    if (!wakeLockSupported) {
-      console.error("Wake Lock API niet aanwezig in navigator op dit toestel/deze browser.");
-      if (showToast) showToast("Scherm-aan-houden wordt niet ondersteund door deze browser.");
-      return;
-    }
+  const acquireWakeLock = async () => {
+    if (!wakeLockSupported) return false;
     try {
-      wakeLockRef.current = await navigator.wakeLock.request("screen");
-      setScreenAwake(true);
-      wakeLockRef.current.addEventListener("release", () => setScreenAwake(false));
+      const lock = await navigator.wakeLock.request("screen");
+      wakeLockRef.current = lock;
+      lock.addEventListener("release", () => {
+        wakeLockRef.current = null;
+      });
+      return true;
     } catch (e) {
       console.error("Wake Lock-aanvraag mislukt:", e.name, e.message);
-      setScreenAwake(false);
-      if (showToast) showToast(`Kon scherm niet aan houden: ${e.message || e.name || "onbekende fout"}.`);
+      return false;
     }
   };
   const releaseWakeLock = async () => {
-    if (wakeLockRef.current) {
+    const lock = wakeLockRef.current;
+    wakeLockRef.current = null;
+    if (lock) {
       try {
-        await wakeLockRef.current.release();
+        await lock.release();
       } catch (e) {
       }
-      wakeLockRef.current = null;
     }
-    setScreenAwake(false);
   };
-  const toggleScreenAwake = () => {
-    screenAwake ? releaseWakeLock() : requestWakeLock();
+  const toggleScreenAwake = async () => {
+    if (keepAwakeRef.current) {
+      keepAwakeRef.current = false;
+      setKeepAwake(false);
+      await releaseWakeLock();
+      return;
+    }
+    const ok = await acquireWakeLock();
+    if (ok) {
+      keepAwakeRef.current = true;
+      setKeepAwake(true);
+    } else if (showToast) {
+      showToast("Het scherm kon niet aan worden gehouden. Dit kan gebeuren bij een lage batterij of in de energiebesparingsmodus.");
+    }
   };
   useEffect(() => {
     const handleVisibility = () => {
-      if (screenAwake && document.visibilityState === "visible" && !wakeLockRef.current) requestWakeLock();
+      if (keepAwakeRef.current && document.visibilityState === "visible" && !wakeLockRef.current) {
+        acquireWakeLock();
+      }
     };
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility);
+      keepAwakeRef.current = false;
       releaseWakeLock();
     };
-  }, [screenAwake]);
+  }, []);
   const scale = servings / recipe.servings;
   const scaledIngredients = recipe.ingredients.map((ing) => ({ ...ing, scaledAmount: round2(ing.amount * scale) }));
   const readiness = recipeReadiness(recipe, inventory, scale);
@@ -4109,11 +4123,11 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
             ]
           }
         ),
-        /* @__PURE__ */ jsxs(
+        wakeLockSupported && /* @__PURE__ */ jsxs(
           "button",
           {
             onClick: toggleScreenAwake,
-            title: screenAwake ? "Scherm blijft aan (keukenmodus)" : "Scherm aan houden tijdens koken",
+            title: keepAwake ? "Het scherm blijft aan tijdens het koken" : "Voorkom dat het scherm uitvalt tijdens het koken",
             style: {
               display: "flex",
               alignItems: "center",
@@ -4121,13 +4135,13 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
               padding: "5px 10px",
               borderRadius: 20,
               cursor: "pointer",
-              border: `1.5px solid ${screenAwake ? C.mustard : C.borderTint}`,
-              background: screenAwake ? C.mustard : C.cardBg,
-              color: screenAwake ? "#fff" : C.inkSoft
+              border: `1.5px solid ${keepAwake ? C.mustard : C.borderTint}`,
+              background: keepAwake ? C.mustard : C.cardBg,
+              color: keepAwake ? "#fff" : C.inkSoft
             },
             children: [
               /* @__PURE__ */ jsx(Sun, { size: 13 }),
-              /* @__PURE__ */ jsx("span", { style: { fontSize: 11.5, fontWeight: 600 }, children: screenAwake ? "Scherm blijft aan" : "Keukenmodus" })
+              /* @__PURE__ */ jsx("span", { style: { fontSize: 11.5, fontWeight: 600 }, children: keepAwake ? "Scherm blijft aan" : "Scherm aan houden" })
             ]
           }
         )
@@ -5028,7 +5042,10 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
           style: { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 12px", background: "none", border: "none", borderBottom: `1px solid ${C.ceramic}`, cursor: "pointer", textAlign: "left" },
           children: [
             /* @__PURE__ */ jsx(ScanLine, { size: 16, color: C.blueDeep }),
-            /* @__PURE__ */ jsx("span", { style: { fontSize: 13.5, color: C.ink }, children: "Tabletmodus starten" })
+            /* @__PURE__ */ jsxs("span", { style: { display: "flex", flexDirection: "column" }, children: [
+              /* @__PURE__ */ jsx("span", { style: { fontSize: 13.5, color: C.ink }, children: "Tabletmodus starten" }),
+              /* @__PURE__ */ jsx("span", { style: { fontSize: 11, color: C.inkSoft }, children: "Scanstation voor de keuken \u2014 barcodes scannen om voorraad bij te werken" })
+            ] })
           ]
         }
       ),
@@ -5153,6 +5170,9 @@ function TabletModeView({ inventory, onConsume, onRestock, onCreate, onClose }) 
           return;
         }
         wakeLockRef.current = lock;
+        lock.addEventListener("release", () => {
+          wakeLockRef.current = null;
+        });
       } catch (e) {
       }
     };
