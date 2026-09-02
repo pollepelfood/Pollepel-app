@@ -263,7 +263,7 @@
               community: r.community,
               notes: r.notes || "",
               diets: r.diets || [],
-              ingredients: (ings || []).filter((i) => i.recipe_id === r.id).map((i) => ({ name: i.name, amount: Number(i.amount), unit: i.unit })),
+              ingredients: (ings || []).filter((i) => i.recipe_id === r.id).map((i) => ({ name: i.name, amount: Number(i.amount), unit: i.unit, inventoryItemId: i.inventory_item_id || null })),
               steps: (steps || []).filter((s) => s.recipe_id === r.id).map((s) => s.content),
               nutrition: r.nutrition_calculated_at ? {
                 kcal: Number(r.nutrition_kcal), proteinG: Number(r.nutrition_protein_g), carbsG: Number(r.nutrition_carbs_g),
@@ -284,7 +284,7 @@
             if (error) throw error;
             if (recipe.ingredients && recipe.ingredients.length) {
               await supabase.from("recipe_ingredients").insert(recipe.ingredients.map((ing, idx) => ({
-                recipe_id: data.id, sort_order: idx, name: ing.name, amount: ing.amount, unit: ing.unit,
+                recipe_id: data.id, sort_order: idx, name: ing.name, amount: ing.amount, unit: ing.unit, inventory_item_id: ing.inventoryItemId || null,
               })));
             }
             if (recipe.steps && recipe.steps.length) {
@@ -305,7 +305,7 @@
               await supabase.from("recipe_ingredients").delete().eq("recipe_id", id);
               if (recipe.ingredients.length) {
                 await supabase.from("recipe_ingredients").insert(recipe.ingredients.map((ing, idx) => ({
-                  recipe_id: id, sort_order: idx, name: ing.name, amount: ing.amount, unit: ing.unit,
+                  recipe_id: id, sort_order: idx, name: ing.name, amount: ing.amount, unit: ing.unit, inventory_item_id: ing.inventoryItemId || null,
                 })));
               }
             }
@@ -339,7 +339,7 @@
             return recs.map((r) => ({
               id: r.id, name: r.name, emoji: r.emoji, photoUrl: r.photo_url || "", cookTime: r.cook_time, servings: r.servings,
               favorite: false, community: true, notes: r.notes || "", diets: r.diets || [],
-              ingredients: (ings || []).filter((i) => i.recipe_id === r.id).map((i) => ({ name: i.name, amount: Number(i.amount), unit: i.unit })),
+              ingredients: (ings || []).filter((i) => i.recipe_id === r.id).map((i) => ({ name: i.name, amount: Number(i.amount), unit: i.unit, inventoryItemId: i.inventory_item_id || null })),
               steps: (steps || []).filter((s) => s.recipe_id === r.id).map((s) => s.content),
               nutrition: r.nutrition_calculated_at ? {
                 kcal: Number(r.nutrition_kcal), proteinG: Number(r.nutrition_protein_g), carbsG: Number(r.nutrition_carbs_g),

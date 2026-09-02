@@ -221,15 +221,106 @@ const TILE_GRADIENTS = [
 const uid = () => Math.random().toString(36).slice(2, 10);
 const round2 = (n) => Math.round(n * 100) / 100;
 const norm = (s) => (s || "").trim().toLowerCase();
+const IRREGULAR_SINGULARS = {
+  eieren: "ei",
+  kinderen: "kind",
+  bladeren: "blad",
+  eiwitten: "eiwit",
+  tenen: "teen",
+  teentjes: "teentje"
+};
+function wordVariants(w) {
+  if (!w) return [];
+  const out = /* @__PURE__ */ new Set([w]);
+  if (IRREGULAR_SINGULARS[w]) out.add(IRREGULAR_SINGULARS[w]);
+  if (w.length > 3) {
+    if (/tjes$/.test(w)) out.add(w.slice(0, -4));
+    if (/jes$/.test(w)) out.add(w.slice(0, -3));
+    if (/s$/.test(w) && !/ss$/.test(w)) out.add(w.slice(0, -1));
+    if (/en$/.test(w)) {
+      const stem = w.slice(0, -2);
+      out.add(stem);
+      if (/([bdfgklmnprst])\1$/.test(stem)) out.add(stem.slice(0, -1));
+      if (/[aeiou][bcdfghjklmnpqrstvwxz]$/.test(stem) && stem.length >= 4) {
+        out.add(stem.slice(0, -1) + stem.slice(-2, -1) + stem.slice(-1));
+      }
+    }
+  }
+  return [...out];
+}
+const INGREDIENT_SYNONYMS = [
+  ["knoflook", "knoflookteen", "knoflooktenen", "knoflookteentje", "knoflookteentjes", "teentje knoflook"],
+  ["kip", "kipfilet", "kipdij", "kipdijfilet", "kippenpoot", "kipreepjes", "kippendij"],
+  ["tomaat", "tomaten", "tomatenblokje", "tomatenblokjes", "trostomaat", "kerstomaat", "cherrytomaat", "cherrytomaatjes"],
+  ["ui", "uien", "sjalot", "sjalotje"],
+  ["room", "kookroom", "slagroom"],
+  ["melk", "halfvolle melk", "volle melk", "magere melk"],
+  ["gehakt", "rundergehakt", "varkensgehakt"],
+  ["spek", "spekjes", "katenspek", "ontbijtspek"],
+  ["wortel", "wortels", "winterpeen", "bospeen", "worteltjes"],
+  ["aardappel", "aardappelen", "krieltjes"],
+  ["boter", "roomboter"],
+  ["olie", "olijfolie", "zonnebloemolie", "bakolie"],
+  ["bouillon", "bouillonblokje", "bouillonblokjes"],
+  ["pasta", "spaghetti", "macaroni", "penne", "tagliatelle", "fusilli"],
+  ["kaas", "geraspte kaas"]
+];
+function nameWords(s) {
+  return norm(s).replace(/\(.*?\)/g, " ").replace(/[^a-zà-ÿ\s-]/g, " ").replace(/-+/g, " ").split(/\s+/).filter(Boolean);
+}
+function wordsEqual(a, b) {
+  if (a === b) return true;
+  const va = wordVariants(a), vb = wordVariants(b);
+  return va.some((x) => vb.includes(x));
+}
+function synonymGroup(words) {
+  const joined = words.join(" ");
+  for (const group of INGREDIENT_SYNONYMS) {
+    if (group.includes(joined)) return group;
+    if (words.some((w) => group.some((g) => wordsEqual(g, w) && !g.includes(" ")))) return group;
+  }
+  return null;
+}
 function namesMatch(a, b) {
-  const na = norm(a);
-  const nb = norm(b);
+  const na = norm(a), nb = norm(b);
   if (!na || !nb) return false;
   if (na === nb) return true;
-  const stripSuffix = (s) => s.replace(/('s|s|en)$/, "");
-  if (stripSuffix(na) === stripSuffix(nb)) return true;
-  if (na.length >= 4 && nb.length >= 4 && (na.includes(nb) || nb.includes(na))) return true;
+  const wa = nameWords(a), wb = nameWords(b);
+  if (!wa.length || !wb.length) return false;
+  const ga = synonymGroup(wa), gb = synonymGroup(wb);
+  if (ga && gb && ga === gb) return true;
+  const shorter = wa.length <= wb.length ? wa : wb;
+  const longer = shorter === wa ? wb : wa;
+  if (shorter.every((s) => longer.some((l) => wordsEqual(s, l)))) return true;
   return false;
+}
+const UNIT_BASE = { g: 1, kg: 1e3, ml: 1, l: 1e3 };
+const UNIT_KIND = { g: "massa", kg: "massa", ml: "volume", l: "volume" };
+function convertAmount(amount, fromUnit, toUnit) {
+  const f = (fromUnit || "").toLowerCase(), t = (toUnit || "").toLowerCase();
+  if (f === t) return Number(amount || 0);
+  if (UNIT_KIND[f] && UNIT_KIND[f] === UNIT_KIND[t]) {
+    return Number(amount || 0) * UNIT_BASE[f] / UNIT_BASE[t];
+  }
+  return null;
+}
+function findInventoryMatch(inventory, ing) {
+  if (!ing) return null;
+  if (ing.inventoryItemId) {
+    const linked = inventory.find((i) => i.id === ing.inventoryItemId);
+    if (linked) return linked;
+  }
+  const byNameAndUnit = inventory.find(
+    (i) => namesMatch(i.name, ing.name) && convertAmount(1, ing.unit, i.unit) !== null
+  );
+  if (byNameAndUnit) return byNameAndUnit;
+  return inventory.find((i) => namesMatch(i.name, ing.name)) || null;
+}
+function stockVsNeed(item, ing, scale = 1) {
+  if (!item) return null;
+  const need = convertAmount(Number(ing.amount || 0) * scale, ing.unit, item.unit);
+  if (need === null) return null;
+  return { have: Number(item.current || 0), need, unit: item.unit };
 }
 const EMOJI_KEYWORDS = [
   [["spaghetti", "pasta", "macaroni", "lasagne", "penne", "tagliatelle"], "\u{1F35D}"],
@@ -523,18 +614,6 @@ function isPantryBasic(name) {
   if (!n) return false;
   return PANTRY_BASICS.some((b) => n === b || namesMatch(n, b));
 }
-const UNIT_FACTORS = { g: 1, kg: 1e3, ml: 1, l: 1e3 };
-function comparableAmounts(invItem, ing) {
-  const iu = (invItem.unit || "").toLowerCase();
-  const ru = (ing.unit || "").toLowerCase();
-  if (iu === ru) return { have: Number(invItem.current || 0), need: Number(ing.amount || 0) };
-  const massOrVolume = (u) => UNIT_FACTORS[u] != null;
-  const sameKind = (a, b) => ["g", "kg"].includes(a) && ["g", "kg"].includes(b) || ["ml", "l"].includes(a) && ["ml", "l"].includes(b);
-  if (massOrVolume(iu) && massOrVolume(ru) && sameKind(iu, ru)) {
-    return { have: Number(invItem.current || 0) * UNIT_FACTORS[iu], need: Number(ing.amount || 0) * UNIT_FACTORS[ru] };
-  }
-  return null;
-}
 function recipeReadiness(recipe, inventory, scale = 1) {
   const missing = [];
   const unknown = [];
@@ -543,18 +622,18 @@ function recipeReadiness(recipe, inventory, scale = 1) {
   (recipe.ingredients || []).forEach((ing) => {
     if (isPantryBasic(ing.name)) return;
     relevant += 1;
-    const item = inventory.find((i) => namesMatch(i.name, ing.name));
+    const item = findInventoryMatch(inventory, ing);
     if (!item) {
       missing.push(ing.name);
       return;
     }
-    const cmp = comparableAmounts(item, ing);
+    const cmp = stockVsNeed(item, ing, scale);
     if (!cmp) {
       unknown.push(ing.name);
       have += 1;
       return;
     }
-    if (cmp.have >= cmp.need * scale) have += 1;
+    if (cmp.have >= cmp.need) have += 1;
     else missing.push(ing.name);
   });
   return {
@@ -2464,12 +2543,13 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     const added = [];
     const newConsumptionEntries = [];
     recipe.ingredients.forEach((ing) => {
-      const idx = nextInventory.findIndex(
-        (i) => namesMatch(i.name, ing.name) && i.unit === ing.unit
-      );
+      const matchItem = findInventoryMatch(nextInventory, ing);
+      const idx = matchItem ? nextInventory.findIndex((i) => i.id === matchItem.id) : -1;
       if (idx === -1) return;
       const item = nextInventory[idx];
-      const amountUsed = Number(ing.amount || 0) * scale;
+      const cmp = stockVsNeed(item, ing, scale);
+      if (!cmp) return;
+      const amountUsed = cmp.need;
       const newCurrent = Math.max(0, round2(item.current - amountUsed));
       nextInventory[idx] = { ...item, current: newCurrent };
       used.push(item.name);
@@ -2852,9 +2932,11 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     let nextShopping = shoppingList.map((s) => ({ ...s }));
     let addedCount = 0;
     totals.forEach((need) => {
-      const item = inventory.find((i) => namesMatch(i.name, need.name) && i.unit === need.unit);
-      const inStock = item ? item.current : 0;
-      const shortfall = round2(need.amount - inStock);
+      const item = findInventoryMatch(inventory, need);
+      const cmp = item ? stockVsNeed(item, need, 1) : null;
+      const inStock = cmp ? cmp.have : 0;
+      const needed = cmp ? cmp.need : Number(need.amount || 0);
+      const shortfall = round2(needed - inStock);
       if (shortfall <= 0) return;
       const category = item ? item.category : guessCategory(need.name);
       const idx = nextShopping.findIndex((s) => namesMatch(s.name, need.name) && s.unit === need.unit);
@@ -3292,6 +3374,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
       {
         initial: editingRecipe,
         inventoryNames: [.../* @__PURE__ */ new Set([...inventory.map((i) => i.name), ...COMMON_GROCERY_ITEMS])],
+        inventoryItems: inventory,
         onCancel: () => setEditingRecipe(null),
         onSave: saveRecipe
       }
@@ -4294,7 +4377,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
     sousChefOpen && /* @__PURE__ */ jsx(SousChefModal, { recipe, onAsk: onAskSousChef, onClose: () => setSousChefOpen(false) })
   ] });
 }
-function RecipeForm({ initial, inventoryNames, onCancel, onSave }) {
+function RecipeForm({ initial, inventoryNames, inventoryItems = [], onCancel, onSave }) {
   const [name, setName] = useState(initial.name || "");
   const [emoji, setEmoji] = useState(initial.emoji || "\u{1F37D}\uFE0F");
   const [emojiTouched, setEmojiTouched] = useState(Boolean(initial.id || initial.emoji));
@@ -4314,6 +4397,15 @@ function RecipeForm({ initial, inventoryNames, onCancel, onSave }) {
     setEmojiTouched(true);
   };
   const updateIng = (idx, patch) => setIngredients(ingredients.map((ing, i) => i === idx ? { ...ing, ...patch } : ing));
+  const [suggestFor, setSuggestFor] = useState(null);
+  const suggestionsFor = (text) => {
+    const q = norm(text);
+    const pool = inventoryItems || [];
+    if (!q) return pool.slice(0, 5);
+    const starts = pool.filter((i) => norm(i.name).startsWith(q));
+    const contains = pool.filter((i) => !norm(i.name).startsWith(q) && (norm(i.name).includes(q) || namesMatch(i.name, text)));
+    return [...starts, ...contains].slice(0, 5);
+  };
   const updateStep = (idx, val) => setSteps(steps.map((s, i) => i === idx ? val : s));
   const moveStep = (idx, direction) => {
     const target = idx + direction;
@@ -4348,13 +4440,67 @@ function RecipeForm({ initial, inventoryNames, onCancel, onSave }) {
       /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsx(Field, { label: "Personen", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", type: "number", style: inputStyle, value: servings, onChange: (e) => setServings(e.target.value) }) }) })
     ] }),
     /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "10px 0 6px" }, children: "Ingredi\xEBnten" }),
-    ingredients.map((ing, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6, marginBottom: 6 }, children: [
-      /* @__PURE__ */ jsx("input", { autoComplete: "off", style: { ...inputStyle, flex: 2 }, list: "ing-names", placeholder: "Naam", value: ing.name, onChange: (e) => updateIng(idx, { name: e.target.value }) }),
-      /* @__PURE__ */ jsx("input", { autoComplete: "off", type: "number", style: { ...inputStyle, width: 64 }, placeholder: "Aantal", value: ing.amount, onChange: (e) => updateIng(idx, { amount: e.target.value }) }),
-      /* @__PURE__ */ jsx("select", { style: { ...inputStyle, width: 90 }, value: ing.unit, onChange: (e) => updateIng(idx, { unit: e.target.value }), children: UNITS.map((u) => /* @__PURE__ */ jsx("option", { value: u, children: u }, u)) }),
-      /* @__PURE__ */ jsx("button", { onClick: () => setIngredients(ingredients.filter((_, i) => i !== idx)), style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(X, { size: 16, color: C.inkSoft }) })
+    ingredients.map((ing, idx) => /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6, marginBottom: 6 }, children: [
+        /* @__PURE__ */ jsx("div", { style: { flex: 2, position: "relative" }, children: /* @__PURE__ */ jsx(
+          "input",
+          {
+            autoComplete: "off",
+            style: { ...inputStyle, width: "100%" },
+            placeholder: "Naam",
+            value: ing.name,
+            onFocus: () => setSuggestFor(idx),
+            onBlur: () => setTimeout(() => setSuggestFor((v) => v === idx ? null : v), 150),
+            onChange: (e) => updateIng(idx, { name: e.target.value, inventoryItemId: null })
+          }
+        ) }),
+        /* @__PURE__ */ jsx("input", { autoComplete: "off", type: "number", style: { ...inputStyle, width: 64 }, placeholder: "Aantal", value: ing.amount, onChange: (e) => updateIng(idx, { amount: e.target.value }) }),
+        /* @__PURE__ */ jsx("select", { style: { ...inputStyle, width: 90 }, value: ing.unit, onChange: (e) => updateIng(idx, { unit: e.target.value }), children: UNITS.map((u) => /* @__PURE__ */ jsx("option", { value: u, children: u }, u)) }),
+        /* @__PURE__ */ jsx("button", { onClick: () => setIngredients(ingredients.filter((_, i) => i !== idx)), style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(X, { size: 16, color: C.inkSoft }) })
+      ] }),
+      suggestFor === idx && suggestionsFor(ing.name).length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, marginBottom: 8, overflow: "hidden" }, children: [
+        /* @__PURE__ */ jsx("div", { style: { fontSize: 10.5, color: C.inkSoft, padding: "6px 10px 2px" }, children: "Uit je voorraad \u2014 tikken vult ook de eenheid in" }),
+        suggestionsFor(ing.name).map((item) => /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onMouseDown: (e) => e.preventDefault(),
+            onClick: () => {
+              updateIng(idx, { name: item.name, unit: item.unit, inventoryItemId: item.id });
+              setSuggestFor(null);
+            },
+            style: {
+              display: "flex",
+              width: "100%",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              background: "none",
+              border: "none",
+              borderTop: `1px solid ${C.ceramic}`,
+              padding: "8px 10px",
+              cursor: "pointer",
+              textAlign: "left",
+              fontFamily: FONT_BODY,
+              fontSize: 13
+            },
+            children: [
+              /* @__PURE__ */ jsx("span", { style: { color: C.ink }, children: item.name }),
+              /* @__PURE__ */ jsxs("span", { style: { fontFamily: FONT_MONO, fontSize: 11, color: C.inkSoft }, children: [
+                item.current,
+                " ",
+                item.unit,
+                " in huis"
+              ] })
+            ]
+          },
+          item.id
+        ))
+      ] }),
+      ing.inventoryItemId && suggestFor !== idx && /* @__PURE__ */ jsxs("div", { style: { fontSize: 10.5, color: C.sage, marginBottom: 6, marginTop: -2 }, children: [
+        /* @__PURE__ */ jsx(Check, { size: 10, style: { verticalAlign: -1, marginRight: 3 } }),
+        "Gekoppeld aan je voorraad"
+      ] })
     ] }, idx)),
-    /* @__PURE__ */ jsx("datalist", { id: "ing-names", children: inventoryNames.map((n) => /* @__PURE__ */ jsx("option", { value: n }, n)) }),
     /* @__PURE__ */ jsxs(GhostButton, { onClick: () => setIngredients([...ingredients, { name: "", amount: "", unit: "stuks" }]), children: [
       /* @__PURE__ */ jsx(Plus, { size: 14 }),
       " Ingredi\xEBnt"
