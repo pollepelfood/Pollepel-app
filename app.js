@@ -1851,6 +1851,138 @@ function LogoMark({ size = 26 }) {
     ] })
   ] });
 }
+function WelcomeTour({ onFinish }) {
+  const [step, setStep] = useState(0);
+  const LOOP = [
+    { emoji: "\u{1F4E6}", label: "Voorraad", color: C.sage, text: "Je legt vast wat er in huis hoort te zijn." },
+    { emoji: "\u{1F5D3}\uFE0F", label: "Weekmenu", color: C.blue, text: "Je plant welke avonden je wat eet." },
+    { emoji: "\u{1F6D2}", label: "Boodschappen", color: C.mustard, text: "De lijst vult zichzelf met wat je mist." },
+    { emoji: "\u{1F525}", label: "Koken", color: C.brick, text: "Na het koken gaat het van je voorraad af." }
+  ];
+  const steps = [
+    {
+      title: "Welkom bij Pollepel",
+      body: /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsx("p", { style: { fontSize: 14.5, color: C.ink, lineHeight: 1.6, margin: "0 0 14px" }, children: "Pollepel is geen verzameling lijstjes, maar \xE9\xE9n kringloop. Elke stap voedt de volgende." }),
+        /* @__PURE__ */ jsx("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: LOOP.map((s, i) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "flex-start", gap: 10 }, children: [
+          /* @__PURE__ */ jsx("div", { style: {
+            width: 34,
+            height: 34,
+            borderRadius: "50%",
+            background: s.color,
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 16,
+            flexShrink: 0
+          }, children: s.emoji }),
+          /* @__PURE__ */ jsxs("div", { style: { paddingTop: 2 }, children: [
+            /* @__PURE__ */ jsx("div", { style: { fontSize: 14, fontWeight: 600, color: s.color }, children: s.label }),
+            /* @__PURE__ */ jsx("div", { style: { fontSize: 12.5, color: C.inkSoft, lineHeight: 1.45 }, children: s.text })
+          ] }),
+          i < LOOP.length - 1 && null
+        ] }, s.label)) }),
+        /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.inkSoft, margin: "14px 0 0", lineHeight: 1.5 }, children: "En dan begint hij opnieuw: wat opraakt staat vanzelf weer op je boodschappenlijst." })
+      ] })
+    },
+    {
+      title: "Je eerste avond",
+      body: /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsx("p", { style: { fontSize: 14.5, color: C.ink, lineHeight: 1.6, margin: "0 0 14px" }, children: "Drie dingen, en de kringloop draait. Reken op een half uur." }),
+        [
+          ["Vijf recepten die je \xE9cht vaak maakt", "Niet je mooiste, je meest gemaakte. Typen mag, of laat Pollepel ze overnemen van een foto of een link."],
+          ["Je voorraadkast, nog niet je koelkast", "Begin met wat er altijd hoort te staan: pasta, rijst, olie, blik tomaat."],
+          ["Plan drie avonden, geen zeven", "Een half menu dat je volhoudt werkt beter dan een vol menu dat je woensdag loslaat."]
+        ].map(([kop, uitleg], i) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 11, marginBottom: 12 }, children: [
+          /* @__PURE__ */ jsx("div", { style: {
+            width: 24,
+            height: 24,
+            borderRadius: "50%",
+            background: C.blue,
+            color: "#fff",
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontFamily: FONT_MONO,
+            fontSize: 12
+          }, children: i + 1 }),
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("div", { style: { fontSize: 14, fontWeight: 600, color: C.ink }, children: kop }),
+            /* @__PURE__ */ jsx("div", { style: { fontSize: 12.5, color: C.inkSoft, lineHeight: 1.45 }, children: uitleg })
+          ] })
+        ] }, i))
+      ] })
+    },
+    {
+      title: "Twee dingen die het verschil maken",
+      body: /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsxs("div", { style: { background: C.paper, borderRadius: 14, padding: "12px 14px", marginBottom: 10 }, children: [
+          /* @__PURE__ */ jsx("div", { style: { fontSize: 14, fontWeight: 600, color: C.ink, marginBottom: 3 }, children: "Zet een minimum per product" }),
+          /* @__PURE__ */ jsx("div", { style: { fontSize: 12.5, color: C.inkSoft, lineHeight: 1.5 }, children: "Dit is de belangrijkste instelling in de app. Zak je eronder, dan komt het vanzelf op je boodschappenlijst. Zonder minimum blijft de lijst leeg." })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { style: { background: C.paper, borderRadius: 14, padding: "12px 14px", marginBottom: 14 }, children: [
+          /* @__PURE__ */ jsx("div", { style: { fontSize: 14, fontWeight: 600, color: C.ink, marginBottom: 3 }, children: "Tik na het eten op \u201CIk heb dit gekookt\u201D" }),
+          /* @__PURE__ */ jsx("div", { style: { fontSize: 12.5, color: C.inkSoft, lineHeight: 1.5 }, children: "Dit sluit de kringloop. Sla je het over, dan loopt je voorraad achter en klopt je lijst niet meer." })
+        ] }),
+        /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.inkSoft, margin: 0, lineHeight: 1.5 }, children: "Alles wat je invult deel je met je huisgenoten. Nodig ze uit via Instellingen, dan werken jullie in dezelfde gegevens." })
+      ] })
+    }
+  ];
+  const isLast = step === steps.length - 1;
+  return /* @__PURE__ */ jsx("div", { style: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 200,
+    background: "rgba(28,29,27,0.55)",
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "center"
+  }, children: /* @__PURE__ */ jsxs("div", { style: {
+    background: C.cardBg,
+    width: "100%",
+    maxWidth: 460,
+    borderRadius: "22px 22px 0 0",
+    padding: "22px 20px 18px",
+    maxHeight: "88vh",
+    overflowY: "auto"
+  }, children: [
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }, children: [
+      /* @__PURE__ */ jsx("span", { style: { fontSize: 22 }, children: "\u{1F944}" }),
+      /* @__PURE__ */ jsx("h2", { style: { fontFamily: FONT_DISPLAY, fontSize: 20, margin: 0, color: C.ink }, children: steps[step].title })
+    ] }),
+    /* @__PURE__ */ jsx("div", { style: { marginTop: 12 }, children: steps[step].body }),
+    /* @__PURE__ */ jsx("div", { style: { display: "flex", gap: 5, justifyContent: "center", margin: "18px 0 14px" }, children: steps.map((_, i) => /* @__PURE__ */ jsx("div", { style: {
+      width: i === step ? 20 : 7,
+      height: 7,
+      borderRadius: 4,
+      background: i === step ? C.mustard : C.ceramic,
+      transition: "width .2s"
+    } }, i)) }),
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+      step > 0 && /* @__PURE__ */ jsx(GhostButton, { onClick: () => setStep(step - 1), children: "Terug" }),
+      /* @__PURE__ */ jsx(PrimaryButton, { full: true, onClick: () => isLast ? onFinish() : setStep(step + 1), children: isLast ? "Aan de slag" : "Verder" })
+    ] }),
+    !isLast && /* @__PURE__ */ jsx(
+      "button",
+      {
+        onClick: onFinish,
+        style: {
+          display: "block",
+          margin: "10px auto 0",
+          background: "none",
+          border: "none",
+          color: C.inkSoft,
+          fontSize: 12.5,
+          cursor: "pointer",
+          fontFamily: FONT_BODY
+        },
+        children: "Overslaan"
+      }
+    )
+  ] }) });
+}
 function App({ household = null, members = [], onLogout = null, onRenameHousehold = null } = {}) {
   const [loading, setLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
@@ -2536,7 +2668,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     else persist("recipes", recipes.filter((r) => r.id !== id), setRecipes);
     setOpenRecipeId(null);
   };
-  const cookRecipe = (recipe, scale = 1) => {
+  const cookRecipe = (recipe, scale = 1, overrides = {}) => {
     const nextInventory = inventory.map((i) => ({ ...i }));
     let nextShopping = shoppingList.map((s) => ({ ...s }));
     const used = [];
@@ -2549,7 +2681,11 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       const item = nextInventory[idx];
       const cmp = stockVsNeed(item, ing, scale);
       if (!cmp) return;
-      const amountUsed = cmp.need;
+      const override = overrides[item.id];
+      const amountUsed = round2(
+        override != null ? Math.max(0, Number(override)) : Math.min(cmp.need, cmp.have)
+      );
+      if (amountUsed <= 0) return;
       const newCurrent = Math.max(0, round2(item.current - amountUsed));
       nextInventory[idx] = { ...item, current: newCurrent };
       used.push(item.name);
@@ -2563,12 +2699,15 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     if (newConsumptionEntries.length) {
       persist("consumptionLog", [...newConsumptionEntries, ...consumptionLog].slice(0, 500), setConsumptionLog);
     }
-    if (added.length) {
-      showToast(`Lekker gegeten! ${added.length} ingredient${added.length > 1 ? "en" : ""} toegevoegd aan de boodschappenlijst: ${added.join(", ")}.`);
-    } else if (used.length) {
-      showToast("Lekker gegeten! Voorraad bijgewerkt, nog genoeg in huis.");
+    if (!used.length) {
+      showToast("Lekker gegeten! Deze ingredi\xEBnten worden niet in je voorraad bijgehouden.");
     } else {
-      showToast("Lekker gegeten! (Deze ingredi\xEBnten worden niet in de voorraad bijgehouden.)");
+      showToast(`Lekker gegeten! Voorraad bijgewerkt (${used.length} product${used.length > 1 ? "en" : ""}).`);
+      if (added.length) {
+        setTimeout(() => {
+          showToast(`${added.join(", ")} ${added.length > 1 ? "zijn" : "is"} onder je minimum gezakt en op de boodschappenlijst gezet.`);
+        }, 2600);
+      }
     }
     const logEntry = { id: uid(), recipeId: recipe.id, recipeName: recipe.name, emoji: recipe.emoji, date: (/* @__PURE__ */ new Date()).toISOString(), servings: Math.round(recipe.servings * scale) };
     persist("cookLog", [logEntry, ...cookLog].slice(0, 200), setCookLog);
@@ -3061,6 +3200,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
     URL.revokeObjectURL(url);
     showToast("Backup gedownload.");
   };
+  const showWelcome = !loading && preferences && preferences.welcomeSeen !== true;
   if (loading) {
     return /* @__PURE__ */ jsxs("div", { style: { minHeight: 500, display: "flex", alignItems: "center", justifyContent: "center", background: C.ceramic, fontFamily: FONT_BODY }, children: [
       /* @__PURE__ */ jsx(Loader2, { className: "animate-spin", size: 22, color: C.blue }),
@@ -3077,6 +3217,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
         .no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
       ` }),
+    showWelcome && /* @__PURE__ */ jsx(WelcomeTour, { onFinish: () => updatePreferences({ welcomeSeen: true }) }),
     /* @__PURE__ */ jsxs("div", { style: {
       background: C.blue,
       padding: "16px 18px 20px",
@@ -3183,7 +3324,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           onToggleCommunity: () => toggleCommunity(openRecipe.id),
           onEdit: () => setEditingRecipe(openRecipe),
           onDelete: () => deleteRecipe(openRecipe.id),
-          onCook: (scale) => cookRecipe(openRecipe, scale),
+          onCook: (scale, overrides) => cookRecipe(openRecipe, scale, overrides),
           onDuplicate: () => duplicateToMyBook(openRecipe.id),
           onAddLeftover: addLeftover,
           onAddFreezerPortion: addFreezerPortion,
@@ -3336,6 +3477,10 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         onOpenTabletMode: () => {
           setSettingsOpen(false);
           setTabletModeOpen(true);
+        },
+        onShowWelcome: () => {
+          setSettingsOpen(false);
+          updatePreferences({ welcomeSeen: false });
         },
         onExportBackup: exportBackup,
         onToggleDarkMode: toggleDarkMode,
@@ -3971,6 +4116,7 @@ function NutritionLabel({ recipe, isMine, onRecalculate, busy }) {
 }
 function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onRecalculateNutrition, nutritionBusy }) {
   const [confirmCook, setConfirmCook] = useState(false);
+  const [usedAmounts, setUsedAmounts] = useState({});
   const [leftoverPortions, setLeftoverPortions] = useState(0);
   const [wantDoublePortion, setWantDoublePortion] = useState(!!doublePortionDefault);
   useEffect(() => {
@@ -4102,6 +4248,32 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
     };
   }, []);
   const scale = servings / recipe.servings;
+  const shortfallItems = (recipe.ingredients || []).map((ing) => {
+    const item = findInventoryMatch(inventory || [], ing);
+    if (!item) return null;
+    const cmp = stockVsNeed(item, ing, scale);
+    if (!cmp || cmp.have >= cmp.need) return null;
+    return { item, ing, have: cmp.have, need: cmp.need, unit: cmp.unit };
+  }).filter(Boolean);
+  const startCook = () => {
+    if (shortfallItems.length) {
+      const defaults = {};
+      shortfallItems.forEach((s) => {
+        defaults[s.item.id] = s.have;
+      });
+      setUsedAmounts(defaults);
+      setConfirmCook("shortfall");
+    } else {
+      setConfirmCook(true);
+    }
+  };
+  const finishCook = (overrides) => {
+    onCook(wantDoublePortion ? scale * 2 : scale, overrides || {});
+    if (wantDoublePortion) {
+      onAddFreezerPortion(recipe);
+      setConfirmCook(false);
+    } else setConfirmCook("leftover");
+  };
   const scaledIngredients = recipe.ingredients.map((ing) => ({ ...ing, scaledAmount: round2(ing.amount * scale) }));
   const readiness = recipeReadiness(recipe, inventory, scale);
   return /* @__PURE__ */ jsxs("div", { children: [
@@ -4301,17 +4473,95 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         /* @__PURE__ */ jsx("div", { style: { fontSize: 13, color: C.ink, whiteSpace: "pre-wrap" }, children: recipe.notes })
       ] })
     ] }),
-    isMine && confirmCook === false && /* @__PURE__ */ jsxs(PrimaryButton, { tone: "sage", full: true, onClick: () => setConfirmCook(true), children: [
-      /* @__PURE__ */ jsx(Flame, { size: 16 }),
-      " Ik heb dit gekookt"
+    isMine && confirmCook === false && /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: [
+      /* @__PURE__ */ jsxs(GhostButton, { full: true, onClick: () => setConfirmCook("prep"), children: [
+        /* @__PURE__ */ jsx(ShoppingCart, { size: 15 }),
+        " Ik ga dit koken \u2014 check mijn voorraad"
+      ] }),
+      /* @__PURE__ */ jsxs(PrimaryButton, { tone: "sage", full: true, onClick: startCook, children: [
+        /* @__PURE__ */ jsx(Flame, { size: 16 }),
+        " Ik heb dit gekookt"
+      ] })
     ] }),
-    isMine && confirmCook === true && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.sage}`, borderRadius: 14, padding: 12 }, children: [
-      /* @__PURE__ */ jsxs("p", { style: { fontSize: 13, margin: "0 0 10px", color: C.ink }, children: [
-        "Dit verlaagt de voorraad (voor ",
+    isMine && confirmCook === "prep" && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14, padding: 12 }, children: [
+      readiness.missing.length === 0 ? /* @__PURE__ */ jsxs("p", { style: { fontSize: 13, margin: "0 0 10px", color: C.ink }, children: [
+        /* @__PURE__ */ jsx(Check, { size: 14, color: C.sage, style: { verticalAlign: -2, marginRight: 4 } }),
+        "Je hebt alles in huis voor ",
         servings,
         " ",
         servings === 1 ? "persoon" : "personen",
-        ") en vult de boodschappenlijst automatisch aan waar nodig. Doorgaan?"
+        ". Veel kookplezier."
+      ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsxs("p", { style: { fontSize: 13, margin: "0 0 6px", color: C.ink }, children: [
+          "Voor ",
+          servings,
+          " ",
+          servings === 1 ? "persoon" : "personen",
+          " mis je nog:"
+        ] }),
+        /* @__PURE__ */ jsx("div", { style: { fontSize: 12.5, color: C.brick, marginBottom: 10, lineHeight: 1.5 }, children: readiness.missing.join(" \xB7 ") })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+        readiness.missing.length > 0 && onAddMissingToShopping && /* @__PURE__ */ jsxs(PrimaryButton, { onClick: () => {
+          onAddMissingToShopping(scale);
+          setConfirmCook(false);
+        }, children: [
+          /* @__PURE__ */ jsx(ShoppingCart, { size: 15 }),
+          " Op de lijst"
+        ] }),
+        /* @__PURE__ */ jsx(GhostButton, { onClick: () => setConfirmCook(false), children: "Sluiten" })
+      ] })
+    ] }),
+    isMine && confirmCook === "shortfall" && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14, padding: 12 }, children: [
+      /* @__PURE__ */ jsx("p", { style: { fontSize: 13, margin: "0 0 4px", color: C.ink }, children: "Volgens je voorraad had je van een paar dingen te weinig." }),
+      /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, margin: "0 0 10px", color: C.inkSoft }, children: "Hoeveel heb je er werkelijk van gebruikt? Zo blijft je voorraad kloppen." }),
+      shortfallItems.map((s) => /* @__PURE__ */ jsxs("div", { style: { borderTop: `1px solid ${C.ceramic}`, padding: "8px 0" }, children: [
+        /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 }, children: [
+          /* @__PURE__ */ jsx("span", { style: { color: C.ink, fontWeight: 600 }, children: s.item.name }),
+          /* @__PURE__ */ jsxs("span", { style: { fontFamily: FONT_MONO, fontSize: 11, color: C.inkSoft }, children: [
+            "recept ",
+            round2(s.need),
+            " \xB7 in huis ",
+            round2(s.have),
+            " ",
+            s.unit
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
+          /* @__PURE__ */ jsx(
+            "input",
+            {
+              autoComplete: "off",
+              type: "number",
+              style: { ...inputStyle, width: 100 },
+              value: usedAmounts[s.item.id] != null ? usedAmounts[s.item.id] : s.have,
+              onChange: (e) => setUsedAmounts({ ...usedAmounts, [s.item.id]: e.target.value })
+            }
+          ),
+          /* @__PURE__ */ jsxs("span", { style: { fontSize: 12, color: C.inkSoft }, children: [
+            s.unit,
+            " gebruikt"
+          ] })
+        ] })
+      ] }, s.item.id)),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginTop: 12 }, children: [
+        /* @__PURE__ */ jsx(PrimaryButton, { tone: "sage", onClick: () => {
+          const overrides = {};
+          Object.keys(usedAmounts).forEach((k) => {
+            overrides[k] = Number(usedAmounts[k]) || 0;
+          });
+          finishCook(overrides);
+        }, children: "Klopt, bijwerken" }),
+        /* @__PURE__ */ jsx(GhostButton, { onClick: () => setConfirmCook(false), children: "Annuleren" })
+      ] })
+    ] }),
+    isMine && confirmCook === true && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.sage}`, borderRadius: 14, padding: 12 }, children: [
+      /* @__PURE__ */ jsxs("p", { style: { fontSize: 13, margin: "0 0 10px", color: C.ink }, children: [
+        "Dit haalt de gebruikte ingredi\xEBnten van je voorraad af (voor ",
+        servings,
+        " ",
+        servings === 1 ? "persoon" : "personen",
+        "). Zakt iets daardoor onder je ingestelde minimum, dan zetten we dat apart op de boodschappenlijst. Doorgaan?"
       ] }),
       /* @__PURE__ */ jsxs(
         "button",
@@ -4336,15 +4586,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         }
       ),
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
-        /* @__PURE__ */ jsx(PrimaryButton, { tone: "sage", onClick: () => {
-          onCook(wantDoublePortion ? scale * 2 : scale);
-          if (wantDoublePortion) {
-            onAddFreezerPortion(recipe);
-            setConfirmCook(false);
-          } else {
-            setConfirmCook("leftover");
-          }
-        }, children: "Ja, bijwerken" }),
+        /* @__PURE__ */ jsx(PrimaryButton, { tone: "sage", onClick: () => finishCook({}), children: "Ja, bijwerken" }),
         /* @__PURE__ */ jsx(GhostButton, { onClick: () => setConfirmCook(false), children: "Annuleren" })
       ] })
     ] }),
@@ -4914,7 +5156,7 @@ function CookDislikeRow({ name, preferences, onUpdate }) {
     ] })
   ] });
 }
-function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onExportBackup, onToggleDarkMode, onMoveCategoryOrder, onUpdateCookDiets, onUpdateCookDislikes, onTogglePremium, onClose }) {
+function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onShowWelcome, onExportBackup, onToggleDarkMode, onMoveCategoryOrder, onUpdateCookDiets, onUpdateCookDislikes, onTogglePremium, onClose }) {
   const [name, setName] = useState(household?.name || "");
   const [savingName, setSavingName] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -5045,6 +5287,20 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
             /* @__PURE__ */ jsxs("span", { style: { display: "flex", flexDirection: "column" }, children: [
               /* @__PURE__ */ jsx("span", { style: { fontSize: 13.5, color: C.ink }, children: "Tabletmodus starten" }),
               /* @__PURE__ */ jsx("span", { style: { fontSize: 11, color: C.inkSoft }, children: "Scanstation voor de keuken \u2014 barcodes scannen om voorraad bij te werken" })
+            ] })
+          ]
+        }
+      ),
+      /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: onShowWelcome,
+          style: { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 12px", background: "none", border: "none", borderBottom: `1px solid ${C.ceramic}`, cursor: "pointer", textAlign: "left" },
+          children: [
+            /* @__PURE__ */ jsx(Sparkles, { size: 16, color: C.blueDeep }),
+            /* @__PURE__ */ jsxs("span", { style: { display: "flex", flexDirection: "column" }, children: [
+              /* @__PURE__ */ jsx("span", { style: { fontSize: 13.5, color: C.ink }, children: "Uitleg opnieuw bekijken" }),
+              /* @__PURE__ */ jsx("span", { style: { fontSize: 11, color: C.inkSoft }, children: "Hoe Pollepel werkt, in drie schermen" })
             ] })
           ]
         }
