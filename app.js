@@ -1851,6 +1851,84 @@ function LogoMark({ size = 26 }) {
     ] })
   ] });
 }
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    console.error("Onverwachte fout in de app:", error, info && info.componentStack);
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return /* @__PURE__ */ jsx("div", { style: {
+      minHeight: "100vh",
+      background: C.paper,
+      color: C.ink,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 24,
+      fontFamily: FONT_BODY
+    }, children: /* @__PURE__ */ jsxs("div", { style: { maxWidth: 420, textAlign: "center" }, children: [
+      /* @__PURE__ */ jsx("div", { style: { fontSize: 34, marginBottom: 10 }, children: "\u{1F944}" }),
+      /* @__PURE__ */ jsx("h1", { style: { fontFamily: FONT_DISPLAY, fontSize: 22, margin: "0 0 8px" }, children: "Er ging iets mis op dit scherm" }),
+      /* @__PURE__ */ jsx("p", { style: { fontSize: 14, color: C.inkSoft, lineHeight: 1.55, margin: "0 0 18px" }, children: "Je gegevens staan veilig opgeslagen. Ga terug naar het beginscherm om verder te gaan." }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }, children: [
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: () => this.setState({ error: null }),
+            style: {
+              background: C.blue,
+              color: "#fff",
+              border: "none",
+              borderRadius: 12,
+              padding: "10px 16px",
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: FONT_BODY
+            },
+            children: "Terug naar de app"
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: () => window.location.reload(),
+            style: {
+              background: "transparent",
+              color: C.blue,
+              border: `1.5px solid ${C.blue}`,
+              borderRadius: 12,
+              padding: "10px 16px",
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: FONT_BODY
+            },
+            children: "App herladen"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxs("details", { style: { marginTop: 18, textAlign: "left" }, children: [
+        /* @__PURE__ */ jsx("summary", { style: { fontSize: 12, color: C.inkSoft, cursor: "pointer" }, children: "Technische details" }),
+        /* @__PURE__ */ jsx("pre", { style: {
+          fontFamily: FONT_MONO,
+          fontSize: 11,
+          color: C.inkSoft,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          marginTop: 6
+        }, children: String(this.state.error && (this.state.error.stack || this.state.error.message)) })
+      ] })
+    ] }) });
+  }
+}
 function WelcomeTour({ onFinish }) {
   const [step, setStep] = useState(0);
   const LOOP = [
@@ -1983,8 +2061,9 @@ function WelcomeTour({ onFinish }) {
     )
   ] }) });
 }
-function App({ household = null, members = [], onLogout = null, onRenameHousehold = null } = {}) {
+function AppInner({ household = null, members = [], onLogout = null, onRenameHousehold = null } = {}) {
   const [loading, setLoading] = useState(true);
+  const [saveError, setSaveError] = useState(null);
   const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
   useEffect(() => {
     const goOffline = () => setIsOffline(true);
@@ -2080,8 +2159,12 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
       setLoading(false);
     })();
   }, []);
-  const persist = useCallback(async (key, value, setter) => {
-    setter(value);
+  const persist = useCallback(async (key, value, setter, vorigeWaarde) => {
+    let terugrolWaarde = vorigeWaarde;
+    setter((huidig) => {
+      if (terugrolWaarde === void 0) terugrolWaarde = huidig;
+      return value;
+    });
     setSaving(true);
     try {
       if (hasDataAPI) {
@@ -2089,11 +2172,18 @@ function App({ household = null, members = [], onLogout = null, onRenameHousehol
       } else {
         await saveKey(key, value);
       }
+      setSaveError(null);
     } catch (e) {
       console.error(`Opslaan van "${key}" mislukt:`, e);
+      if (terugrolWaarde !== void 0) setter(terugrolWaarde);
+      setSaveError({
+        key,
+        // Opnieuw proberen doet precies dezelfde handeling nog een keer.
+        opnieuw: () => persist(key, value, setter, terugrolWaarde)
+      });
     }
     setSaving(false);
-  }, [hasDataAPI, inventory, shoppingList, cooks, cookLog, consumptionLog, preferences]);
+  }, [hasDataAPI, inventory, shoppingList, cooks, cookLog, consumptionLog, preferences, recipes, weekmenu]);
   const syncToDataAPI = async (key, value) => {
     if (key === "inventory") {
       const prev = inventory;
@@ -3218,6 +3308,65 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         .no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
       ` }),
     showWelcome && /* @__PURE__ */ jsx(WelcomeTour, { onFinish: () => updatePreferences({ welcomeSeen: true }) }),
+    saveError && /* @__PURE__ */ jsxs(
+      "div",
+      {
+        role: "alert",
+        style: {
+          position: "fixed",
+          left: 12,
+          right: 12,
+          bottom: 12,
+          zIndex: 180,
+          maxWidth: 460,
+          margin: "0 auto",
+          background: C.brick,
+          color: "#fff",
+          borderRadius: 14,
+          padding: "11px 13px",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          boxShadow: "0 6px 20px rgba(0,0,0,0.18)"
+        },
+        children: [
+          /* @__PURE__ */ jsx(AlertTriangle, { size: 17, style: { flexShrink: 0 } }),
+          /* @__PURE__ */ jsx("span", { style: { flex: 1, fontSize: 13.5, lineHeight: 1.4 }, children: "Niet opgeslagen \u2014 je laatste wijziging is teruggedraaid." }),
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              onClick: () => {
+                const fn = saveError.opnieuw;
+                setSaveError(null);
+                fn();
+              },
+              style: {
+                background: "#fff",
+                color: C.brick,
+                border: "none",
+                borderRadius: 10,
+                padding: "7px 12px",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: FONT_BODY,
+                flexShrink: 0
+              },
+              children: "Opnieuw"
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              onClick: () => setSaveError(null),
+              "aria-label": "Melding sluiten",
+              style: { background: "none", border: "none", color: "#fff", opacity: 0.8, cursor: "pointer", padding: 0, flexShrink: 0 },
+              children: /* @__PURE__ */ jsx(X, { size: 16 })
+            }
+          )
+        ]
+      }
+    ),
     /* @__PURE__ */ jsxs("div", { style: {
       background: C.blue,
       padding: "16px 18px 20px",
@@ -6748,6 +6897,9 @@ function ManualAddForm({ newName, setNewName, newAmount, setNewAmount, newUnit, 
       /* @__PURE__ */ jsx(GhostButton, { onClick: onCancel, children: "Annuleren" })
     ] })
   ] });
+}
+function App(props) {
+  return /* @__PURE__ */ jsx(ErrorBoundary, { children: /* @__PURE__ */ jsx(AppInner, { ...props }) });
 }
 export {
   App as default

@@ -960,8 +960,76 @@
 
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/sw.js").catch(() => {});
+        navigator.serviceWorker.register("/sw.js").then((reg) => {
+          // Er staat al een nieuwe versie klaar bij het openen
+          if (reg.waiting && navigator.serviceWorker.controller) showUpdateBar(reg);
+
+          reg.addEventListener("updatefound", () => {
+            const nieuwe = reg.installing;
+            if (!nieuwe) return;
+            nieuwe.addEventListener("statechange", () => {
+              // Alleen melden als er al een versie draaide; bij een eerste
+              // bezoek is dit gewoon de installatie en valt er niets te melden.
+              if (nieuwe.state === "installed" && navigator.serviceWorker.controller) showUpdateBar(reg);
+            });
+          });
+        }).catch(() => {});
       });
+
+      let herladen = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (herladen) return;
+        herladen = true;
+        window.location.reload();
+      });
+    }
+
+    // Onopvallende balk onderin: de gebruiker bepaalt zelf wanneer hij vernieuwt,
+    // zodat een halfingevuld formulier niet zomaar verdwijnt.
+    function showUpdateBar(reg) {
+      if (document.getElementById("pollepel-update-bar")) return;
+      const bar = document.createElement("div");
+      bar.id = "pollepel-update-bar";
+      bar.setAttribute("role", "status");
+      bar.style.cssText = [
+        "position:fixed", "left:12px", "right:12px", "bottom:12px", "z-index:9999",
+        "background:#1F3F66", "color:#F6F4EE", "border-radius:14px",
+        "padding:12px 14px", "display:flex", "align-items:center", "gap:10px",
+        "font-family:'Work Sans',sans-serif", "font-size:14px",
+        "box-shadow:0 6px 20px rgba(0,0,0,0.18)", "max-width:460px", "margin:0 auto",
+      ].join(";");
+
+      const tekst = document.createElement("span");
+      tekst.textContent = "Er is een nieuwe versie van Pollepel.";
+      tekst.style.flex = "1";
+
+      const knop = document.createElement("button");
+      knop.textContent = "Vernieuwen";
+      knop.style.cssText = [
+        "background:#D9A441", "color:#fff", "border:none", "border-radius:10px",
+        "padding:8px 14px", "font-weight:600", "font-size:13.5px", "cursor:pointer",
+        "font-family:'Work Sans',sans-serif", "flex-shrink:0",
+      ].join(";");
+      knop.onclick = () => {
+        knop.disabled = true;
+        knop.textContent = "Bezig…";
+        if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
+        else window.location.reload();
+      };
+
+      const later = document.createElement("button");
+      later.textContent = "Later";
+      later.setAttribute("aria-label", "Melding sluiten");
+      later.style.cssText = [
+        "background:none", "border:none", "color:#F6F4EE", "opacity:0.7",
+        "font-size:13px", "cursor:pointer", "font-family:'Work Sans',sans-serif", "flex-shrink:0",
+      ].join(";");
+      later.onclick = () => bar.remove();
+
+      bar.appendChild(tekst);
+      bar.appendChild(later);
+      bar.appendChild(knop);
+      document.body.appendChild(bar);
     }
   </script>
 </body>
