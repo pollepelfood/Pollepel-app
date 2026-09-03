@@ -359,7 +359,13 @@
         realtime: {
           _channel: null,
           subscribe(onChange) {
-            if (this._channel) return () => {};
+            // Draait dit een tweede keer, dan het oude kanaal eerst opruimen.
+            // Alleen "return" zou een dood abonnement achterlaten waarbij
+            // wijzigingen stil niet meer binnenkomen.
+            if (this._channel) {
+              try { supabase.removeChannel(this._channel); } catch (e) { /* al weg */ }
+              this._channel = null;
+            }
             // Alleen de gedeelde tabellen: dat is waar samenwerking misgaat.
             const TABELLEN = [
               ["shopping_list_items", "shoppingList"],
@@ -861,8 +867,8 @@
         preferences: {
           async get() {
             const { data } = await supabase.from("household_preferences").select("*").eq("household_id", householdId).maybeSingle();
-            if (!data) return { darkMode: false, categoryOrder: null, diets: [], dislikes: [], premium: { photoInventory: true, predictiveDepletion: true, householdRSVP: true, sousChef: true } };
-            return { darkMode: data.dark_mode, categoryOrder: data.category_order, diets: data.diets || [], dislikes: data.dislikes || [], premium: data.premium || {} };
+            if (!data) return { darkMode: false, categoryOrder: null, diets: [], dislikes: [], premium: { photoInventory: true, predictiveDepletion: true, householdRSVP: true, sousChef: true }, welcomeSeen: false };
+            return { darkMode: data.dark_mode, categoryOrder: data.category_order, diets: data.diets || [], dislikes: data.dislikes || [], premium: data.premium || {}, welcomeSeen: data.welcome_seen === true };
           },
           async update(patch) {
             const dbPatch = {};
@@ -871,6 +877,14 @@
             if ("diets" in patch) dbPatch.diets = patch.diets;
             if ("dislikes" in patch) dbPatch.dislikes = patch.dislikes;
             if ("premium" in patch) dbPatch.premium = patch.premium;
+            if ("welcomeSeen" in patch) dbPatch.welcome_seen = patch.welcomeSeen;
+
+            // Waarschuw als er een voorkeur wordt opgeslagen die hier niet bekend is.
+            // Die verdween voorheen geruisloos, zoals welcomeSeen deed.
+            const BEKEND = ["darkMode", "categoryOrder", "diets", "dislikes", "premium", "welcomeSeen"];
+            Object.keys(patch).forEach((k) => {
+              if (!BEKEND.includes(k)) console.error(`Voorkeur "${k}" wordt niet opgeslagen: onbekend veld in preferences.update().`);
+            });
             const { error } = await supabase.from("household_preferences").upsert({ household_id: householdId, ...dbPatch }, { onConflict: "household_id" });
             if (error) throw error;
           },

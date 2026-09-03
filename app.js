@@ -693,6 +693,7 @@ function VoiceInputButton({ onResult, title, size = 15 }) {
   return /* @__PURE__ */ jsx(
     "button",
     {
+      "aria-label": "Invoeren met spraak",
       onClick: listening ? stop : start,
       title: title || "Spreek in",
       style: {
@@ -737,6 +738,11 @@ function resizeImageFile(file, maxDim = 1024, quality = 0.75) {
     };
     reader.readAsDataURL(file);
   });
+}
+function addToStock(item, erbij) {
+  const nieuw = round2(Number(item.current || 0) + Number(erbij || 0));
+  const max = Number(item.max || 0);
+  return max > 0 ? Math.min(max, nieuw) : nieuw;
 }
 function pushLowStockToShopping(shoppingArr, item, newCurrent) {
   if (newCurrent >= item.min) return { list: shoppingArr, added: false };
@@ -1639,6 +1645,7 @@ async function loadKey(key, seedFn) {
   try {
     await window.storage.set(key, JSON.stringify(seeded), true);
   } catch (e) {
+    console.error(`Startgegevens voor "${key}" konden niet worden opgeslagen:`, e);
   }
   return seeded;
 }
@@ -1808,7 +1815,7 @@ function Modal({ title, onClose, children, wide }) {
           children: [
             /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }, children: [
               /* @__PURE__ */ jsx("h2", { style: { fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 700, color: C.ink, margin: 0 }, children: title }),
-              /* @__PURE__ */ jsx("button", { onClick: onClose, style: { background: C.ceramic, border: "none", borderRadius: 12, padding: 7, cursor: "pointer" }, children: /* @__PURE__ */ jsx(X, { size: 18, color: C.ink }) })
+              /* @__PURE__ */ jsx("button", { "aria-label": "Sluiten", onClick: onClose, style: { background: C.ceramic, border: "none", borderRadius: 12, padding: 7, cursor: "pointer" }, children: /* @__PURE__ */ jsx(X, { size: 18, color: C.ink }) })
             ] }),
             children
           ]
@@ -2630,7 +2637,7 @@ Regels:
     results.filter((r) => r.include).forEach((r) => {
       const idx = nextInventory.findIndex((i) => i.id === r.matchedId);
       if (idx > -1) {
-        nextInventory[idx] = { ...nextInventory[idx], current: round2(Math.min(nextInventory[idx].max, nextInventory[idx].current + r.amount)) };
+        nextInventory[idx] = { ...nextInventory[idx], current: addToStock(nextInventory[idx], r.amount) };
         updated += 1;
       } else {
         nextInventory.push({
@@ -2961,7 +2968,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   const restockInventoryItem = (itemId, amount) => {
     const item = inventory.find((i) => i.id === itemId);
     if (!item) return;
-    const newCurrent = Math.min(item.max, round2(item.current + Number(amount || 0)));
+    const newCurrent = addToStock(item, amount);
     const updatedItem = { ...item, current: newCurrent };
     const nextInventory = inventory.map((i) => i.id === itemId ? updatedItem : i);
     const { list: nextShopping, changed } = reconcileShoppingForItem(shoppingList, updatedItem);
@@ -3030,6 +3037,26 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     if (skipped.length) parts.push(`${skipped.length} stond${skipped.length === 1 ? "" : "en"} er al op`);
     showToast(parts.join(" \u2014 ") + ".");
   };
+  const changeShoppingAmount = (id, richting) => {
+    const item = shoppingList.find((s) => s.id === id);
+    if (!item) return;
+    const eenheid = (item.unit || "").toLowerCase();
+    const stap = eenheid === "g" || eenheid === "ml" ? 50 : eenheid === "kg" || eenheid === "l" ? 0.5 : 1;
+    const nieuw = round2(Math.max(0, Number(item.amount || 0) + richting * stap));
+    if (nieuw === 0) {
+      removeShoppingItem(id);
+      return;
+    }
+    persist("shoppingList", shoppingList.map((s) => s.id === id ? { ...s, amount: nieuw } : s), setShoppingList);
+  };
+  const setShoppingAmount = (id, waarde) => {
+    const nieuw = round2(Math.max(0, Number(String(waarde).replace(",", ".")) || 0));
+    if (nieuw === 0) {
+      removeShoppingItem(id);
+      return;
+    }
+    persist("shoppingList", shoppingList.map((s) => s.id === id ? { ...s, amount: nieuw } : s), setShoppingList);
+  };
   const removeShoppingItem = (id) => {
     persist("shoppingList", shoppingList.filter((s) => s.id !== id), setShoppingList);
   };
@@ -3042,7 +3069,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       const idx = nextInventory.findIndex((i) => namesMatch(i.name, s.name) && i.unit === s.unit);
       if (idx > -1) {
         const item = nextInventory[idx];
-        nextInventory[idx] = { ...item, current: round2(Math.min(item.max, item.current + Number(s.amount || 0))) };
+        nextInventory[idx] = { ...item, current: addToStock(item, s.amount) };
       } else {
         const amount = Number(s.amount || 0) || 1;
         nextInventory.push({
@@ -3051,8 +3078,12 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
           category: s.category || guessCategory(s.name),
           unit: s.unit,
           current: amount,
-          min: round2(Math.max(amount * 0.4, 0.5)),
-          max: amount
+          // Bewust 0: dit product kocht je voor een recept, niet om op voorraad
+          // te houden. Met een minimum zou het na het koken meteen weer op je
+          // boodschappenlijst staan. Wil je het wél aanhouden, zet dan zelf een
+          // minimum en maximum bij het product.
+          min: 0,
+          max: 0
         });
         createdCount += 1;
       }
@@ -3575,6 +3606,8 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           onToggle: toggleChecked,
           onRemove: removeShoppingItem,
           onAddManual: addManualItem,
+          onChangeAmount: changeShoppingAmount,
+          onSetAmount: setShoppingAmount,
           onProcess: processChecked
         }
       ),
@@ -4531,8 +4564,8 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: 12 }, children: [
       /* @__PURE__ */ jsx("h1", { style: { fontFamily: FONT_DISPLAY, fontSize: 23, fontWeight: 700, color: C.ink, margin: 0 }, children: recipe.name }),
       isMine && /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, flexShrink: 0, marginLeft: 8 }, children: [
-        /* @__PURE__ */ jsx("button", { onClick: onToggleCommunity, title: recipe.community ? "Niet meer delen" : "Delen met community", style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(Users, { size: 20, fill: recipe.community ? C.blue : "none", color: recipe.community ? C.blue : C.ceramicDark }) }),
-        /* @__PURE__ */ jsx("button", { onClick: onToggleFav, style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(Star, { size: 22, fill: recipe.favorite ? C.mustard : "none", color: recipe.favorite ? C.mustard : C.ceramicDark }) })
+        /* @__PURE__ */ jsx("button", { "aria-label": "Recept delen met andere huishoudens", onClick: onToggleCommunity, title: recipe.community ? "Niet meer delen" : "Delen met community", style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(Users, { size: 20, fill: recipe.community ? C.blue : "none", color: recipe.community ? C.blue : C.ceramicDark }) }),
+        /* @__PURE__ */ jsx("button", { "aria-label": "Markeren als favoriet", onClick: onToggleFav, style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(Star, { size: 22, fill: recipe.favorite ? C.mustard : "none", color: recipe.favorite ? C.mustard : C.ceramicDark }) })
       ] })
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 10, marginTop: 6, marginBottom: 14, flexWrap: "wrap" }, children: [
@@ -5083,6 +5116,7 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, onPick
       /* @__PURE__ */ jsx(
         "button",
         {
+          "aria-label": "Willekeurige suggestie",
           onClick: onShuffle,
           title: "Shuffel de geplande gerechten door de dagen",
           style: { width: 42, background: C.cardBg, border: `1.5px solid ${C.blue}`, borderRadius: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
@@ -5355,7 +5389,7 @@ function CookDislikeRow({ name, preferences, onUpdate }) {
       ] }, item)) }),
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6 }, children: [
         /* @__PURE__ */ jsx("input", { style: { ...inputStyle, flex: 1, fontSize: 13, padding: "7px 10px" }, placeholder: "Bijv. paddenstoelen", value: newItem, onChange: (e) => setNewItem(e.target.value), onKeyDown: (e) => e.key === "Enter" && addItem() }),
-        /* @__PURE__ */ jsx("button", { onClick: addItem, disabled: !newItem.trim(), style: { background: C.blue, border: "none", borderRadius: 10, padding: "0 12px", cursor: newItem.trim() ? "pointer" : "default", opacity: newItem.trim() ? 1 : 0.5, display: "flex", alignItems: "center" }, children: /* @__PURE__ */ jsx(Plus, { size: 14, color: "#fff" }) })
+        /* @__PURE__ */ jsx("button", { "aria-label": "Toevoegen", onClick: addItem, disabled: !newItem.trim(), style: { background: C.blue, border: "none", borderRadius: 10, padding: "0 12px", cursor: newItem.trim() ? "pointer" : "default", opacity: newItem.trim() ? 1 : 0.5, display: "flex", alignItems: "center" }, children: /* @__PURE__ */ jsx(Plus, { size: 14, color: "#fff" }) })
       ] })
     ] })
   ] });
@@ -5364,13 +5398,19 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
   const [name, setName] = useState(household?.name || "");
   const [savingName, setSavingName] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [nameError, setNameError] = useState("");
   const saveName = async () => {
     if (!onRename || !name.trim() || name.trim() === household?.name) return;
     setSavingName(true);
+    setNameError("");
     try {
       await onRename(name.trim());
     } catch (e) {
+      console.error("Huishouden hernoemen mislukt:", e);
+      setNameError("De nieuwe naam kon niet worden opgeslagen. Controleer je verbinding en probeer opnieuw.");
+      setName(household?.name || "");
     }
     setSavingName(false);
   };
@@ -5381,6 +5421,8 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
       setCopied(true);
       setTimeout(() => setCopied(false), 2e3);
     } catch (e) {
+      console.error("Kopi\xEBren naar klembord mislukt:", e);
+      setCopyError(true);
     }
   };
   return /* @__PURE__ */ jsxs(Modal, { title: "Instellingen", onClose, children: [
@@ -5389,13 +5431,15 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
       /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, value: name, onChange: (e) => setName(e.target.value), placeholder: "Bijv. Familie Jansen" }),
       /* @__PURE__ */ jsx(PrimaryButton, { onClick: saveName, disabled: savingName || !name.trim() || name.trim() === household?.name, children: savingName ? /* @__PURE__ */ jsx(Loader2, { className: "animate-spin", size: 16 }) : /* @__PURE__ */ jsx(Check, { size: 16 }) })
     ] }),
+    nameError && /* @__PURE__ */ jsx("p", { role: "alert", style: { fontSize: 12, color: C.brick, margin: "-8px 0 14px", lineHeight: 1.45 }, children: nameError }),
     household?.invite_code && /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }, children: "Uitnodigingscode voor huisgenoten" }),
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: "10px 12px", marginBottom: 16 }, children: [
         /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_MONO, fontSize: 16, letterSpacing: 1, flex: 1 }, children: household.invite_code }),
-        /* @__PURE__ */ jsx("button", { onClick: copyCode, style: { background: C.ceramic, border: "none", borderRadius: 10, padding: 8, cursor: "pointer", display: "flex" }, children: /* @__PURE__ */ jsx(Copy, { size: 15, color: C.blueDeep }) })
+        /* @__PURE__ */ jsx("button", { "aria-label": "Kopi\xEBren", onClick: copyCode, style: { background: C.ceramic, border: "none", borderRadius: 10, padding: 8, cursor: "pointer", display: "flex" }, children: /* @__PURE__ */ jsx(Copy, { size: 15, color: C.blueDeep }) })
       ] }),
-      copied && /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.sage, marginTop: -10, marginBottom: 14 }, children: "Gekopieerd!" })
+      copied && /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.sage, marginTop: -10, marginBottom: 14 }, children: "Gekopieerd!" }),
+      copyError && /* @__PURE__ */ jsx("p", { role: "alert", style: { fontSize: 11.5, color: C.brick, marginTop: -10, marginBottom: 14 }, children: "Kopi\xEBren lukt niet in deze browser \u2014 neem de code hierboven over." })
     ] }),
     members && members.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }, children: "Wie kan inloggen" }),
@@ -6236,7 +6280,22 @@ function InventoryForm({ initial, onCancel, onSave }) {
     ] })
   ] });
 }
-function BoodschappenView({ list, categories, onToggle, onRemove, onAddManual, onProcess }) {
+const stepKnop = {
+  width: 22,
+  height: 22,
+  borderRadius: 7,
+  border: `1.5px solid ${C.ceramicDark}`,
+  background: C.cardBg,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
+  flexShrink: 0,
+  padding: 0
+};
+function BoodschappenView({ list, categories, onToggle, onRemove, onAddManual, onProcess, onChangeAmount, onSetAmount }) {
+  const [editAmountId, setEditAmountId] = useState(null);
+  const [editAmountValue, setEditAmountValue] = useState("");
   const cats = categories && categories.length ? categories : CATEGORIES;
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
@@ -6341,8 +6400,8 @@ ${body}
   }
   return /* @__PURE__ */ jsxs("div", { children: [
     /* @__PURE__ */ jsxs("div", { style: { marginBottom: 14, display: "flex", gap: 8 }, children: [
-      /* @__PURE__ */ jsx("button", { onClick: shareList, title: "Lijst delen / kopi\xEBren", style: { width: 42, height: 42, background: C.cardBg, border: `1.5px solid ${C.blue}`, borderRadius: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }, children: /* @__PURE__ */ jsx(Share2, { size: 17, color: C.blue }) }),
-      /* @__PURE__ */ jsx("button", { onClick: downloadList, title: "Downloaden als afvinklijst", style: { width: 42, height: 42, background: C.cardBg, border: `1.5px solid ${C.blue}`, borderRadius: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }, children: /* @__PURE__ */ jsx(Download, { size: 17, color: C.blue }) })
+      /* @__PURE__ */ jsx("button", { "aria-label": "Delen", onClick: shareList, title: "Lijst delen / kopi\xEBren", style: { width: 42, height: 42, background: C.cardBg, border: `1.5px solid ${C.blue}`, borderRadius: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }, children: /* @__PURE__ */ jsx(Share2, { size: 17, color: C.blue }) }),
+      /* @__PURE__ */ jsx("button", { "aria-label": "Downloaden", onClick: downloadList, title: "Downloaden als afvinklijst", style: { width: 42, height: 42, background: C.cardBg, border: `1.5px solid ${C.blue}`, borderRadius: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }, children: /* @__PURE__ */ jsx(Download, { size: 17, color: C.blue }) })
     ] }),
     shareMsg && /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, marginTop: -8, marginBottom: 10 }, children: shareMsg }),
     orderedCatsForDisplay.map((cat) => {
@@ -6375,12 +6434,79 @@ ${body}
             cursor: "pointer",
             flexShrink: 0
           }, children: item.checked && /* @__PURE__ */ jsx(Check, { size: 13, color: "#fff" }) }),
-          /* @__PURE__ */ jsxs("div", { style: { flex: 1, textDecoration: item.checked ? "line-through" : "none", opacity: item.checked ? 0.55 : 1 }, children: [
+          /* @__PURE__ */ jsxs("div", { style: { flex: 1, minWidth: 0, textDecoration: item.checked ? "line-through" : "none", opacity: item.checked ? 0.55 : 1 }, children: [
             /* @__PURE__ */ jsx("div", { style: { fontSize: 13.5, color: C.ink }, children: item.name }),
-            /* @__PURE__ */ jsxs("div", { style: { fontFamily: FONT_MONO, fontSize: 11, color: C.inkSoft }, children: [
-              item.amount,
-              " ",
-              item.unit
+            /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 4, marginTop: 2 }, children: [
+              /* @__PURE__ */ jsx(
+                "button",
+                {
+                  "aria-label": `Minder ${item.name}`,
+                  onClick: () => onChangeAmount(item.id, -1),
+                  style: stepKnop,
+                  children: /* @__PURE__ */ jsx(Minus, { size: 12, color: C.inkSoft })
+                }
+              ),
+              editAmountId === item.id ? /* @__PURE__ */ jsx(
+                "input",
+                {
+                  autoComplete: "off",
+                  type: "number",
+                  inputMode: "decimal",
+                  autoFocus: true,
+                  value: editAmountValue,
+                  onChange: (e) => setEditAmountValue(e.target.value),
+                  onBlur: () => {
+                    onSetAmount(item.id, editAmountValue);
+                    setEditAmountId(null);
+                  },
+                  onKeyDown: (e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                  },
+                  style: {
+                    width: 58,
+                    padding: "2px 6px",
+                    borderRadius: 8,
+                    border: `1.5px solid ${C.mustard}`,
+                    fontFamily: FONT_MONO,
+                    fontSize: 12,
+                    background: C.cardBg,
+                    color: C.ink
+                  }
+                }
+              ) : /* @__PURE__ */ jsxs(
+                "button",
+                {
+                  onClick: () => {
+                    setEditAmountId(item.id);
+                    setEditAmountValue(String(item.amount));
+                  },
+                  title: "Aantal aanpassen",
+                  style: {
+                    background: "none",
+                    border: "none",
+                    padding: "2px 4px",
+                    cursor: "pointer",
+                    fontFamily: FONT_MONO,
+                    fontSize: 11.5,
+                    color: C.inkSoft,
+                    borderBottom: `1px dashed ${C.ceramicDark}`
+                  },
+                  children: [
+                    item.amount,
+                    " ",
+                    item.unit
+                  ]
+                }
+              ),
+              /* @__PURE__ */ jsx(
+                "button",
+                {
+                  "aria-label": `Meer ${item.name}`,
+                  onClick: () => onChangeAmount(item.id, 1),
+                  style: stepKnop,
+                  children: /* @__PURE__ */ jsx(Plus, { size: 12, color: C.inkSoft })
+                }
+              )
             ] })
           ] }),
           item.auto && /* @__PURE__ */ jsx(Pill, { tone: "auto", children: "via voorraad" }),
