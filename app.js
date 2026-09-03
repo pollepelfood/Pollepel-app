@@ -204,8 +204,11 @@ function applyTheme(dark) {
   Object.assign(C, dark ? DARK_PALETTE : LIGHT_PALETTE);
   if (typeof document !== "undefined") {
     const bg = dark ? DARK_PALETTE.ceramic : LIGHT_PALETTE.ceramic;
+    const tekst = dark ? DARK_PALETTE.ink : LIGHT_PALETTE.ink;
     document.documentElement.style.background = bg;
     document.body.style.background = bg;
+    document.documentElement.style.color = tekst;
+    document.body.style.color = tekst;
   }
 }
 const FONT_DISPLAY = "'Fraunces', serif";
@@ -1775,13 +1778,19 @@ function Field({ label, children }) {
 const inputStyle = {
   width: "100%",
   boxSizing: "border-box",
-  border: `1.5px solid ${C.borderTint}`,
   borderRadius: 12,
   padding: "9px 11px",
   fontFamily: FONT_BODY,
   fontSize: 16,
-  background: C.cardBg,
-  color: C.ink
+  get border() {
+    return `1.5px solid ${C.borderTint}`;
+  },
+  get background() {
+    return C.cardBg;
+  },
+  get color() {
+    return C.ink;
+  }
 };
 function Modal({ title, onClose, children, wide }) {
   return /* @__PURE__ */ jsx(
@@ -4484,7 +4493,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       releaseWakeLock();
     };
   }, []);
-  const scale = servings / recipe.servings;
+  const scale = servings / (recipe.servings || 1);
   const shortfallItems = (recipe.ingredients || []).map((ing) => {
     const item = findInventoryMatch(inventory || [], ing);
     if (!item) return null;
@@ -6269,7 +6278,7 @@ function InventoryForm({ initial, onCancel, onSave }) {
         PrimaryButton,
         {
           disabled: !canSave,
-          onClick: () => onSave({ ...initial, name: name.trim(), category, unit, current: Number(current), min: Number(min), max: Number(max), barcode: barcode.trim(), expiryDate, onSale }),
+          onClick: () => onSave({ ...initial, name: name.trim(), category, unit, current: Number(current) || 0, min: Number(min) || 0, max: Number(max) || 0, barcode: barcode.trim(), expiryDate, onSale }),
           children: [
             /* @__PURE__ */ jsx(Check, { size: 16 }),
             " Opslaan"
@@ -6284,14 +6293,18 @@ const stepKnop = {
   width: 22,
   height: 22,
   borderRadius: 7,
-  border: `1.5px solid ${C.ceramicDark}`,
-  background: C.cardBg,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   cursor: "pointer",
   flexShrink: 0,
-  padding: 0
+  padding: 0,
+  get border() {
+    return `1.5px solid ${C.ceramicDark}`;
+  },
+  get background() {
+    return C.cardBg;
+  }
 };
 function BoodschappenView({ list, categories, onToggle, onRemove, onAddManual, onProcess, onChangeAmount, onSetAmount }) {
   const [editAmountId, setEditAmountId] = useState(null);
@@ -6327,7 +6340,7 @@ function BoodschappenView({ list, categories, onToggle, onRemove, onAddManual, o
   const checkedCount = list.filter((i) => i.checked).length;
   const submitManual = () => {
     if (!newName.trim() || newAmount === "") return;
-    onAddManual({ name: newName.trim(), amount: Number(newAmount), unit: newUnit, category: newCategory });
+    onAddManual({ name: newName.trim(), amount: Number(newAmount) || 1, unit: newUnit, category: newCategory });
     setNewName("");
     setNewAmount("");
     setCategoryTouched(false);
