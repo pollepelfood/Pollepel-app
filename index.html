@@ -353,6 +353,59 @@
           },
         },
 
+        // ---------- Kooksessies ----------
+        // Legt vast wie wanneer aan welk gerecht begint, met een verwachte
+        // klaartijd. Huisgenoten zien dat nu live in de app; straks is dit ook
+        // de bron voor de pushmelding in de app-versie.
+        cooking: {
+          async start({ recipeId, recipeName, emoji, servings, cookTimeMinutes, cookName }) {
+            const { data: userData } = await supabase.auth.getUser();
+            const userId = userData && userData.user ? userData.user.id : null;
+            const readyAt = cookTimeMinutes
+              ? new Date(Date.now() + Number(cookTimeMinutes) * 60000).toISOString()
+              : null;
+            const { data, error } = await supabase.from("cooking_sessions").insert({
+              household_id: householdId,
+              user_id: userId,
+              cook_name: cookName || null,
+              recipe_id: recipeId || null,
+              recipe_name: recipeName,
+              emoji: emoji || null,
+              servings: servings || null,
+              cook_time_minutes: cookTimeMinutes || null,
+              ready_at: readyAt,
+            }).select().single();
+            if (error) throw error;
+            return data;
+          },
+
+          // Alleen sessies van de afgelopen paar uur die nog niet zijn afgerond.
+          async active() {
+            const grens = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+            const { data } = await supabase
+              .from("cooking_sessions")
+              .select("*")
+              .is("finished_at", null)
+              .gt("started_at", grens)
+              .order("started_at", { ascending: false });
+            return (data || []).map((s) => ({
+              id: s.id, userId: s.user_id, cookName: s.cook_name,
+              recipeId: s.recipe_id, recipeName: s.recipe_name, emoji: s.emoji,
+              servings: s.servings, cookTimeMinutes: s.cook_time_minutes,
+              startedAt: s.started_at, readyAt: s.ready_at,
+            }));
+          },
+
+          async finish(recipeId) {
+            if (!recipeId) return;
+            await supabase.from("cooking_sessions")
+              .update({ finished_at: new Date().toISOString() })
+              .eq("household_id", householdId)
+              .eq("recipe_id", recipeId)
+              .is("finished_at", null);
+          },
+        },
+
         // ---------- Realtime: huisgenoten zien elkaars wijzigingen ----------
         // Zonder dit merk je pas na het herladen van de app dat je huisgenoot
         // iets op de boodschappenlijst heeft gezet — terwijl je in de winkel staat.
@@ -372,6 +425,7 @@
               ["inventory_items", "inventory"],
               ["weekmenu_days", "weekmenu"],
               ["recipes", "recipes"],
+              ["cooking_sessions", "cooking"],
             ];
             const channel = supabase.channel(`huishouden-${householdId}`);
             TABELLEN.forEach(([tabel, sleutel]) => {

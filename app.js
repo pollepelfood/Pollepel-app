@@ -232,8 +232,11 @@ const IRREGULAR_SINGULARS = {
   tenen: "teen",
   teentjes: "teentje"
 };
+const _variantCache = /* @__PURE__ */ new Map();
 function wordVariants(w) {
   if (!w) return [];
+  const uitCache = _variantCache.get(w);
+  if (uitCache) return uitCache;
   const out = /* @__PURE__ */ new Set([w]);
   if (IRREGULAR_SINGULARS[w]) out.add(IRREGULAR_SINGULARS[w]);
   if (w.length > 3) {
@@ -249,7 +252,9 @@ function wordVariants(w) {
       }
     }
   }
-  return [...out];
+  const lijst = [...out];
+  if (_variantCache.size < 5e3) _variantCache.set(w, lijst);
+  return lijst;
 }
 const INGREDIENT_SYNONYMS = [
   ["knoflook", "knoflookteen", "knoflooktenen", "knoflookteentje", "knoflookteentjes", "teentje knoflook"],
@@ -276,11 +281,31 @@ function wordsEqual(a, b) {
   const va = wordVariants(a), vb = wordVariants(b);
   return va.some((x) => vb.includes(x));
 }
+const SYNONYM_INDEX = (() => {
+  const index = /* @__PURE__ */ new Map();
+  INGREDIENT_SYNONYMS.forEach((group) => {
+    group.forEach((term) => {
+      if (!index.has(term)) index.set(term, group);
+      if (!term.includes(" ")) {
+        wordVariants(term).forEach((v) => {
+          if (!index.has(v)) index.set(v, group);
+        });
+      }
+    });
+  });
+  return index;
+})();
 function synonymGroup(words) {
   const joined = words.join(" ");
-  for (const group of INGREDIENT_SYNONYMS) {
-    if (group.includes(joined)) return group;
-    if (words.some((w) => group.some((g) => wordsEqual(g, w) && !g.includes(" ")))) return group;
+  const viaHeel = SYNONYM_INDEX.get(joined);
+  if (viaHeel) return viaHeel;
+  for (const w of words) {
+    const direct = SYNONYM_INDEX.get(w);
+    if (direct) return direct;
+    for (const v of wordVariants(w)) {
+      const via = SYNONYM_INDEX.get(v);
+      if (via) return via;
+    }
   }
   return null;
 }
@@ -1945,6 +1970,46 @@ class ErrorBoundary extends React.Component {
     ] }) });
   }
 }
+function KookMelding({ sessies, currentUserName, onOpen }) {
+  const vanAnderen = (sessies || []).filter((s) => (s.cookName || "") !== currentUserName);
+  if (!vanAnderen.length) return null;
+  return /* @__PURE__ */ jsx("div", { style: { marginBottom: 12 }, children: vanAnderen.map((s) => {
+    const klaar = s.readyAt ? new Date(s.readyAt) : null;
+    const nog = klaar ? Math.round((klaar - Date.now()) / 6e4) : null;
+    return /* @__PURE__ */ jsxs(
+      "button",
+      {
+        onClick: () => s.recipeId && onOpen && onOpen(s.recipeId),
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          width: "100%",
+          textAlign: "left",
+          background: C.noteBg,
+          border: `1.5px solid ${C.mustard}`,
+          borderRadius: 16,
+          padding: "11px 13px",
+          cursor: s.recipeId ? "pointer" : "default",
+          marginBottom: 8,
+          fontFamily: FONT_BODY
+        },
+        children: [
+          /* @__PURE__ */ jsx("span", { style: { fontSize: 22, flexShrink: 0 }, children: s.emoji || "\u{1F373}" }),
+          /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
+            /* @__PURE__ */ jsxs("span", { style: { display: "block", fontSize: 13.5, color: C.ink, fontWeight: 600 }, children: [
+              s.cookName || "Iemand",
+              " is begonnen aan ",
+              s.recipeName
+            ] }),
+            /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 11.5, color: C.inkSoft, marginTop: 1 }, children: klaar ? nog > 0 ? `Klaar rond ${klaar.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })} \u2014 nog ${nog} min` : "Zou nu klaar moeten zijn" : "Aan het koken" })
+          ] })
+        ]
+      },
+      s.id
+    );
+  }) });
+}
 function WelcomeTour({ onFinish }) {
   const [step, setStep] = useState(0);
   const LOOP = [
@@ -2080,6 +2145,8 @@ function WelcomeTour({ onFinish }) {
 function AppInner({ household = null, members = [], onLogout = null, onRenameHousehold = null } = {}) {
   const [loading, setLoading] = useState(true);
   const [saveError, setSaveError] = useState(null);
+  const [cookingSessions, setCookingSessions] = useState([]);
+  const [currentUserName, setCurrentUserName] = useState("");
   const savingRef = React.useRef(false);
   const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
   useEffect(() => {
@@ -2174,26 +2241,47 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       setWeekmenu(w);
       setCooks(c);
       setLoading(false);
+      if (hasDataAPI && window.dataAPI.cooking) {
+        try {
+          setCookingSessions(await window.dataAPI.cooking.active());
+        } catch (e) {
+        }
+      }
+      if (window.householdAPI && window.householdAPI.getCurrentUserEmail) {
+        try {
+          const email = await window.householdAPI.getCurrentUserEmail();
+          const lid = (members || []).find((m) => m.email === email);
+          setCurrentUserName(lid && (lid.displayName || lid.email) || (email || "").split("@")[0] || "Iemand");
+        } catch (e) {
+          setCurrentUserName("Iemand");
+        }
+      }
     })();
   }, []);
+  const laatsteRefresh = React.useRef(0);
   const refreshShared = useCallback(async (sleutels) => {
     if (!hasDataAPI) return;
     if (savingRef.current) {
       setTimeout(() => refreshShared(sleutels), 600);
       return;
     }
+    const nu = Date.now();
+    if (!sleutels && nu - laatsteRefresh.current < 3e3) return;
+    laatsteRefresh.current = nu;
     const wil = (k) => !sleutels || sleutels.includes(k);
     try {
-      const [i, s, w, r] = await Promise.all([
+      const [i, s, w, r, k] = await Promise.all([
         wil("inventory") ? window.dataAPI.inventory.list() : null,
         wil("shoppingList") ? window.dataAPI.shopping.list() : null,
         wil("weekmenu") ? window.dataAPI.weekmenu.list() : null,
-        wil("recipes") ? window.dataAPI.recipes.list() : null
+        wil("recipes") ? window.dataAPI.recipes.list() : null,
+        wil("cooking") && window.dataAPI.cooking ? window.dataAPI.cooking.active() : null
       ]);
       if (i) setInventory(i);
       if (s) setShoppingList(s);
       if (w) setWeekmenu(w);
       if (r && r.length) setRecipes(r);
+      if (k) setCookingSessions(k);
     } catch (e) {
       console.error("Verversen van gedeelde gegevens mislukt:", e);
     }
@@ -2709,19 +2797,16 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   }, [preferences.diets]);
   const filteredRecipes = useMemo(() => {
     const source = bookMode === "community" ? communitySourceRecipes : recipes;
-    return source.filter((r) => {
+    const zichtbaar = source.filter((r) => {
       if (bookMode === "community" && !hasCommunityBackend && !hasDataAPI && !r.community) return false;
       if (favOnly && !r.favorite) return false;
       if (makeOnly && maxCookTime && Number(r.cookTime || 999) > maxCookTime) return false;
       if (dietOnly && activeDietTags.length && !activeDietTags.every((tag) => (r.diets || []).includes(tag))) return false;
       if (query && !r.name.toLowerCase().includes(query.toLowerCase())) return false;
       return true;
-    }).sort((a, b) => {
-      if (!makeOnly) return 0;
-      const ma = recipeReadiness(a, inventory).missing.length;
-      const mb = recipeReadiness(b, inventory).missing.length;
-      return ma - mb;
     });
+    if (!makeOnly) return zichtbaar;
+    return zichtbaar.map((r) => ({ r, mist: recipeReadiness(r, inventory).missing.length })).sort((a, b) => a.mist - b.mist).map((x) => x.r);
   }, [recipes, communitySourceRecipes, bookMode, hasCommunityBackend, hasDataAPI, favOnly, makeOnly, maxCookTime, dietOnly, activeDietTags, query, inventory]);
   const lowStockCount = inventory.filter((i) => i.current < i.min).length;
   const shoppingCount = shoppingList.length;
@@ -2789,6 +2874,23 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     setEditingRecipe(null);
   };
   const [nutritionBusy, setNutritionBusy] = useState(false);
+  const startCookingSession = async (recipe, personen) => {
+    if (!hasDataAPI || !window.dataAPI.cooking) return;
+    try {
+      await window.dataAPI.cooking.start({
+        recipeId: recipe.id,
+        recipeName: recipe.name,
+        emoji: recipe.emoji || "",
+        servings: personen || recipe.servings,
+        cookTimeMinutes: Number(recipe.cookTime) || null,
+        cookName: currentUserName
+      });
+      const sessies = await window.dataAPI.cooking.active();
+      setCookingSessions(sessies);
+    } catch (e) {
+      console.error("Kookstart kon niet worden vastgelegd:", e);
+    }
+  };
   const recalculateNutrition = async (recipeId) => {
     if (!hasDataAPI || !window.dataAPI.nutrition) return;
     const recipe = recipes.find((r) => r.id === recipeId) || communityRecipes.find((r) => r.id === recipeId);
@@ -2830,6 +2932,9 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     setOpenRecipeId(null);
   };
   const cookRecipe = (recipe, scale = 1, overrides = {}) => {
+    if (hasDataAPI && window.dataAPI.cooking) {
+      window.dataAPI.cooking.finish(recipe.id).then(() => window.dataAPI.cooking.active()).then(setCookingSessions).catch((e) => console.error("Kooksessie afsluiten mislukt:", e));
+    }
     const nextInventory = inventory.map((i) => ({ ...i }));
     let nextShopping = shoppingList.map((s) => ({ ...s }));
     const used = [];
@@ -3528,6 +3633,17 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
       /* @__PURE__ */ jsx("span", { children: toast })
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { padding: 14 }, children: [
+      !openRecipe && /* @__PURE__ */ jsx(
+        KookMelding,
+        {
+          sessies: cookingSessions,
+          currentUserName,
+          onOpen: (id) => {
+            setTab("kookboek");
+            setOpenRecipeId(id);
+          }
+        }
+      ),
       tab === "kookboek" && !openRecipe && /* @__PURE__ */ jsx(
         KookboekView,
         {
@@ -3579,6 +3695,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           dislikeWarnings: getRecipeDislikeWarnings(openRecipe),
           doublePortionDefault,
           onAddMissingToShopping: (scale) => addMissingToShopping(openRecipe, scale),
+          onStartCooking: (personen) => startCookingSession(openRecipe, personen),
           onRecalculateNutrition: () => recalculateNutrition(openRecipe.id),
           nutritionBusy
         }
@@ -4360,7 +4477,7 @@ function NutritionLabel({ recipe, isMine, onRecalculate, busy }) {
     /* @__PURE__ */ jsx("div", { style: { fontSize: 10, color: C.inkSoft, marginTop: 8, lineHeight: 1.4 }, children: "Gebaseerd op gegevens van NEVO-online versie 2025/9.0, RIVM, Bilthoven." })
   ] });
 }
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onRecalculateNutrition, nutritionBusy }) {
+function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onRecalculateNutrition, nutritionBusy }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [usedAmounts, setUsedAmounts] = useState({});
   const [leftoverPortions, setLeftoverPortions] = useState(0);
@@ -4730,6 +4847,14 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       ] })
     ] }),
     isMine && confirmCook === "prep" && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14, padding: 12 }, children: [
+      recipe.cookTime > 0 && /* @__PURE__ */ jsxs("p", { style: { fontSize: 11.5, color: C.inkSoft, margin: "0 0 8px" }, children: [
+        /* @__PURE__ */ jsx(Clock, { size: 12, style: { verticalAlign: -1, marginRight: 4 } }),
+        "Begin je nu, dan sta je rond",
+        " ",
+        /* @__PURE__ */ jsx("strong", { style: { color: C.ink }, children: new Date(Date.now() + Number(recipe.cookTime) * 6e4).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" }) }),
+        " ",
+        "aan tafel. Je huisgenoten zien dat ook."
+      ] }),
       readiness.missing.length === 0 ? /* @__PURE__ */ jsxs("p", { style: { fontSize: 13, margin: "0 0 10px", color: C.ink }, children: [
         /* @__PURE__ */ jsx(Check, { size: 14, color: C.sage, style: { verticalAlign: -2, marginRight: 4 } }),
         "Je hebt alles in huis voor ",
@@ -4754,6 +4879,13 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         }, children: [
           /* @__PURE__ */ jsx(ShoppingCart, { size: 15 }),
           " Op de lijst"
+        ] }),
+        onStartCooking && /* @__PURE__ */ jsxs(PrimaryButton, { tone: "sage", onClick: () => {
+          onStartCooking(servings);
+          setConfirmCook(false);
+        }, children: [
+          /* @__PURE__ */ jsx(Flame, { size: 15 }),
+          " Ik begin"
         ] }),
         /* @__PURE__ */ jsx(GhostButton, { onClick: () => setConfirmCook(false), children: "Sluiten" })
       ] })
