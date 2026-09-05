@@ -843,39 +843,56 @@
 
         // ---------- Weekmenu ----------
         weekmenu: {
+          // Sleutel is nu de datum (YYYY-MM-DD) in plaats van een dagcode,
+          // zodat er vooruit gepland kan worden en het verleden blijft staan.
           async list(table) {
             const t = table || "weekmenu_days";
             const { data, error } = await supabase.from(t).select("*").eq("household_id", householdId);
             if (error || !data) return {};
             const obj = {};
-            data.forEach((d) => { obj[d.day_key] = { recipeId: d.recipe_id, cook: d.cook || "", attendees: d.attendees || [], offNight: !!d.off_night, doublePortion: !!d.double_portion }; });
+            data.forEach((d) => {
+              const sleutel = d.menu_date || d.day_key;
+              if (!sleutel) return;
+              obj[sleutel] = {
+                recipeId: d.recipe_id, cook: d.cook || "", attendees: d.attendees || [],
+                offNight: !!d.off_night, doublePortion: !!d.double_portion,
+              };
+            });
             return obj;
           },
-          async setDay(dayKey, entry, table) {
+          async setDay(datum, entry, table) {
             const t = table || "weekmenu_days";
             const { error } = await supabase.from(t).upsert({
-              household_id: householdId, day_key: dayKey, recipe_id: entry.recipeId || null,
+              household_id: householdId, menu_date: datum, recipe_id: entry.recipeId || null,
               cook: entry.cook || null, attendees: entry.attendees || [],
               off_night: !!entry.offNight, double_portion: !!entry.doublePortion,
-            }, { onConflict: "household_id,day_key" });
+            }, { onConflict: "household_id,menu_date" });
             if (error) throw error;
           },
-          async clearDay(dayKey, table) {
+          async clearDay(datum, table) {
             const t = table || "weekmenu_days";
-            await supabase.from(t).delete().eq("household_id", householdId).eq("day_key", dayKey);
+            await supabase.from(t).delete().eq("household_id", householdId).eq("menu_date", datum);
           },
           async replaceAll(days, table) {
             const t = table || "weekmenu_days";
             await supabase.from(t).delete().eq("household_id", householdId);
-            const rows = Object.entries(days).filter(([, v]) => v && (v.recipeId || v.offNight)).map(([dayKey, v]) => ({
-              household_id: householdId, day_key: dayKey, recipe_id: v.recipeId || null, cook: v.cook || null, attendees: v.attendees || [],
-              off_night: !!v.offNight, double_portion: !!v.doublePortion,
-            }));
+            const rows = Object.entries(days)
+              .filter(([, v]) => v && (v.recipeId || v.offNight))
+              .map(([datum, v]) => ({
+                household_id: householdId, menu_date: datum, recipe_id: v.recipeId || null,
+                cook: v.cook || null, attendees: v.attendees || [],
+                off_night: !!v.offNight, double_portion: !!v.doublePortion,
+              }));
             if (rows.length) await supabase.from(t).insert(rows);
+          },
+
+          // Periodes die allang voorbij zijn hoeven we niet te bewaren.
+          async opruimen(voorDatum) {
+            await supabase.from("weekmenu_days").delete()
+              .eq("household_id", householdId).lt("menu_date", voorDatum);
           },
         },
 
-        // ---------- Koks / huisgenoten-rooster ----------
         cooks: {
           async list() {
             const { data } = await supabase.from("cooks").select("name").eq("household_id", householdId);
@@ -921,8 +938,8 @@
         preferences: {
           async get() {
             const { data } = await supabase.from("household_preferences").select("*").eq("household_id", householdId).maybeSingle();
-            if (!data) return { darkMode: false, categoryOrder: null, diets: [], dislikes: [], premium: { photoInventory: true, predictiveDepletion: true, householdRSVP: true, sousChef: true }, welcomeSeen: false };
-            return { darkMode: data.dark_mode, categoryOrder: data.category_order, diets: data.diets || [], dislikes: data.dislikes || [], premium: data.premium || {}, welcomeSeen: data.welcome_seen === true };
+            if (!data) return { darkMode: false, categoryOrder: null, diets: [], dislikes: [], premium: { photoInventory: true, predictiveDepletion: true, householdRSVP: true, sousChef: true }, welcomeSeen: false, shoppingDay: 6 };
+            return { darkMode: data.dark_mode, categoryOrder: data.category_order, diets: data.diets || [], dislikes: data.dislikes || [], premium: data.premium || {}, welcomeSeen: data.welcome_seen === true, shoppingDay: data.shopping_day == null ? 6 : Number(data.shopping_day) };
           },
           async update(patch) {
             const dbPatch = {};
@@ -932,10 +949,11 @@
             if ("dislikes" in patch) dbPatch.dislikes = patch.dislikes;
             if ("premium" in patch) dbPatch.premium = patch.premium;
             if ("welcomeSeen" in patch) dbPatch.welcome_seen = patch.welcomeSeen;
+            if ("shoppingDay" in patch) dbPatch.shopping_day = patch.shoppingDay;
 
             // Waarschuw als er een voorkeur wordt opgeslagen die hier niet bekend is.
             // Die verdween voorheen geruisloos, zoals welcomeSeen deed.
-            const BEKEND = ["darkMode", "categoryOrder", "diets", "dislikes", "premium", "welcomeSeen"];
+            const BEKEND = ["darkMode", "categoryOrder", "diets", "dislikes", "premium", "welcomeSeen", "shoppingDay"];
             Object.keys(patch).forEach((k) => {
               if (!BEKEND.includes(k)) console.error(`Voorkeur "${k}" wordt niet opgeslagen: onbekend veld in preferences.update().`);
             });
