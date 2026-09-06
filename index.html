@@ -986,7 +986,7 @@
       window.householdAPI = {
         householdId,
         async getInfo() {
-          const { data, error } = await supabase.from("households").select("name, invite_code").eq("id", householdId).maybeSingle();
+          const { data, error } = await supabase.from("households").select("name, invite_code, calendar_token").eq("id", householdId).maybeSingle();
           if (error || !data) throw new Error("kon huishouden niet ophalen");
           return data;
         },

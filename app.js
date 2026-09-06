@@ -2020,6 +2020,112 @@ class ErrorBoundary extends React.Component {
     ] }) });
   }
 }
+function AgendaModal({ token, onClose, onDownload }) {
+  const [gekopieerd, setGekopieerd] = useState(false);
+  if (!token) {
+    return /* @__PURE__ */ jsx(Modal, { title: "Agenda", onClose, children: /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.inkSoft }, children: "Het agenda-adres is nog niet beschikbaar. Probeer de app te herladen." }) });
+  }
+  const https = `${window.location.origin}/agenda/weekmenu.ics?t=${token}`;
+  const webcal = https.replace(/^https?:/, "webcal:");
+  const knop = (kleur, icoon, titel, uitleg, actie) => /* @__PURE__ */ jsxs(
+    "button",
+    {
+      onClick: actie,
+      style: {
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 11,
+        width: "100%",
+        textAlign: "left",
+        background: C.cardBg,
+        border: `1.5px solid ${C.borderTint}`,
+        borderRadius: 14,
+        padding: "12px 13px",
+        marginBottom: 8,
+        cursor: "pointer",
+        fontFamily: FONT_BODY
+      },
+      children: [
+        /* @__PURE__ */ jsx("span", { style: { fontSize: 20, flexShrink: 0, lineHeight: 1.2 }, children: icoon }),
+        /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
+          /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 14, fontWeight: 600, color: kleur }, children: titel }),
+          /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 11.5, color: C.inkSoft, lineHeight: 1.45, marginTop: 1 }, children: uitleg })
+        ] })
+      ]
+    }
+  );
+  return /* @__PURE__ */ jsxs(Modal, { title: "Weekmenu in je agenda", onClose, children: [
+    /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.ink, marginTop: 0, lineHeight: 1.5 }, children: "Je abonneert je \xE9\xE9n keer. Daarna verschijnt elke wijziging in het weekmenu vanzelf in je agenda \u2014 je hoeft niets meer te downloaden." }),
+    knop(
+      C.ink,
+      "",
+      "Apple Agenda",
+      "Voor iPhone, iPad en Mac. E\xE9n tik en je bent geabonneerd.",
+      () => {
+        window.location.href = webcal;
+      }
+    ),
+    knop(
+      C.blue,
+      "\u{1F4C5}",
+      "Google Agenda",
+      "Werkt alleen via de website van Google Agenda, niet in de app. Google ververst ongeveer eens per etmaal.",
+      () => {
+        window.open(`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(https)}`, "_blank");
+      }
+    ),
+    knop(
+      C.blueDeep,
+      "\u{1F4E7}",
+      "Outlook",
+      "Voegt het menu toe als geabonneerde agenda.",
+      () => {
+        window.open(`https://outlook.live.com/calendar/0/addfromweb?url=${encodeURIComponent(https)}&name=${encodeURIComponent("Weekmenu Pollepel")}`, "_blank");
+      }
+    ),
+    /* @__PURE__ */ jsxs("div", { style: { borderTop: `1px solid ${C.ceramic}`, marginTop: 6, paddingTop: 12 }, children: [
+      /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, marginBottom: 6 }, children: "Andere agenda?" }),
+      /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, margin: "0 0 8px", lineHeight: 1.45 }, children: 'Kopieer dit adres en plak het bij "agenda toevoegen via internetadres".' }),
+      /* @__PURE__ */ jsx("div", { style: {
+        fontFamily: FONT_MONO,
+        fontSize: 10.5,
+        color: C.ink,
+        background: C.paper,
+        borderRadius: 10,
+        padding: "8px 10px",
+        wordBreak: "break-all",
+        marginBottom: 8
+      }, children: https }),
+      /* @__PURE__ */ jsxs(
+        GhostButton,
+        {
+          onClick: async () => {
+            try {
+              await navigator.clipboard.writeText(https);
+              setGekopieerd(true);
+              setTimeout(() => setGekopieerd(false), 2500);
+            } catch (e) {
+              setGekopieerd(false);
+            }
+          },
+          children: [
+            /* @__PURE__ */ jsx(Copy, { size: 14 }),
+            " ",
+            gekopieerd ? "Gekopieerd" : "Adres kopi\xEBren"
+          ]
+        }
+      )
+    ] }),
+    onDownload && /* @__PURE__ */ jsxs("div", { style: { borderTop: `1px solid ${C.ceramic}`, marginTop: 12, paddingTop: 12 }, children: [
+      /* @__PURE__ */ jsxs(GhostButton, { onClick: onDownload, children: [
+        /* @__PURE__ */ jsx(Download, { size: 14 }),
+        " Eenmalig bestand downloaden"
+      ] }),
+      /* @__PURE__ */ jsx("p", { style: { fontSize: 10.5, color: C.inkSoft, margin: "6px 0 0", lineHeight: 1.45 }, children: "Alleen de huidige periode, zonder latere wijzigingen. Op de iPhone werkt abonneren beter." })
+    ] }),
+    /* @__PURE__ */ jsx("p", { style: { fontSize: 10.5, color: C.inkSoft, marginTop: 14, lineHeight: 1.45 }, children: "Iedereen met dit adres kan jullie weekmenu zien. Deel het alleen met je huisgenoten." })
+  ] });
+}
 function KookMelding({ sessies, currentUserName, onOpen }) {
   const vanAnderen = (sessies || []).filter((s) => (s.cookName || "") !== currentUserName);
   if (!vanAnderen.length) return null;
@@ -2196,6 +2302,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   const [loading, setLoading] = useState(true);
   const [saveError, setSaveError] = useState(null);
   const [cookingSessions, setCookingSessions] = useState([]);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [periodIndex, setPeriodIndex] = useState(0);
   const [currentUserName, setCurrentUserName] = useState("");
   const savingRef = React.useRef(false);
@@ -2297,6 +2404,16 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
           setCookingSessions(await window.dataAPI.cooking.active());
         } catch (e) {
         }
+      }
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const receptId = params.get("recept");
+        if (receptId) {
+          setTab("kookboek");
+          setOpenRecipeId(receptId);
+          window.history.replaceState({}, "", window.location.pathname);
+        }
+      } catch (e) {
       }
       if (hasDataAPI && window.dataAPI.weekmenu.opruimen) {
         const grens = /* @__PURE__ */ new Date();
@@ -3598,6 +3715,10 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         .no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
       ` }),
     showWelcome && /* @__PURE__ */ jsx(WelcomeTour, { onFinish: () => updatePreferences({ welcomeSeen: true }) }),
+    calendarOpen && /* @__PURE__ */ jsx(AgendaModal, { token: household && household.calendar_token, onDownload: () => {
+      exportWeekmenuToCalendar();
+      setCalendarOpen(false);
+    }, onClose: () => setCalendarOpen(false) }),
     shoppingPeriodChoice && /* @__PURE__ */ jsxs(Modal, { title: "Voor welke periode?", onClose: () => setShoppingPeriodChoice(null), children: [
       /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.inkSoft, marginTop: 0 }, children: "Je hebt in meerdere periodes maaltijden gepland. Voor welke wil je boodschappen doen?" }),
       shoppingPeriodChoice.map((x) => /* @__PURE__ */ jsxs(
@@ -3893,7 +4014,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
             setDoublePortionDefault(!!dbl);
             setTab("kookboek");
           },
-          onExportCalendar: exportWeekmenuToCalendar,
+          onExportCalendar: () => setCalendarOpen(true),
           onQuickPlan: quickPlanExpiring
         }
       )
@@ -5425,7 +5546,7 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, period
     ] }),
     /* @__PURE__ */ jsx("div", { style: { marginBottom: 16 }, children: /* @__PURE__ */ jsxs(GhostButton, { onClick: onExportCalendar, children: [
       /* @__PURE__ */ jsx(CalendarClock, { size: 14 }),
-      " Weekmenu naar agenda (.ics)"
+      " Weekmenu in je agenda"
     ] }) }),
     /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 16, border: `1.5px solid ${C.borderTint}`, marginBottom: 16 }, children: periodDays.map((day, idx) => {
       const entry = dayEntry(day.key);
