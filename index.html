@@ -353,6 +353,16 @@
           },
         },
 
+        // Koppelt één receptingrediënt aan een voorraaditem. Blijft bewaard, ook
+        // als het recept een heel andere naam gebruikt dan jouw verpakking.
+        async linkIngredient(recipeId, ingredientName, inventoryItemId) {
+          const { error } = await supabase.from("recipe_ingredients")
+            .update({ inventory_item_id: inventoryItemId })
+            .eq("recipe_id", recipeId)
+            .eq("name", ingredientName);
+          if (error) throw error;
+        },
+
         // ---------- Kooksessies ----------
         // Legt vast wie wanneer aan welk gerecht begint, met een verwachte
         // klaartijd. Huisgenoten zien dat nu live in de app; straks is dit ook

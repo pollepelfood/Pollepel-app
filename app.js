@@ -359,17 +359,43 @@ function synonymGroup(words) {
   }
   return null;
 }
+const _matchCache = /* @__PURE__ */ new Map();
 function namesMatch(a, b) {
   const na = norm(a), nb = norm(b);
   if (!na || !nb) return false;
   if (na === nb) return true;
-  const wa = nameWords(a), wb = nameWords(b);
+  const sleutel = na < nb ? na + "\0" + nb : nb + "\0" + na;
+  const bekend = _matchCache.get(sleutel);
+  if (bekend !== void 0) return bekend;
+  const uitkomst = namesMatchBerekenen(na, nb);
+  if (_matchCache.size < 2e4) _matchCache.set(sleutel, uitkomst);
+  return uitkomst;
+}
+function namesMatchBerekenen(na, nb) {
+  const wa = nameWords(na), wb = nameWords(nb);
   if (!wa.length || !wb.length) return false;
   const ga = synonymGroup(wa), gb = synonymGroup(wb);
   if (ga && gb && ga === gb) return true;
   const shorter = wa.length <= wb.length ? wa : wb;
   const longer = shorter === wa ? wb : wa;
   if (shorter.every((s) => longer.some((l) => wordsEqual(s, l)))) return true;
+  if (aaneenMatch(wa, wb)) return true;
+  return false;
+}
+function aaneenMatch(wa, wb) {
+  const kort = wa.length <= wb.length ? wa : wb;
+  const lang = kort === wa ? wb : wa;
+  const doel = kort.join("");
+  if (doel.length < 6) return false;
+  for (let start = 0; start < lang.length; start++) {
+    let stuk = "";
+    for (let eind = start; eind < lang.length; eind++) {
+      stuk += lang[eind];
+      if (stuk.length > doel.length + 3) break;
+      if (stuk === doel) return true;
+      if (wordVariants(stuk).includes(doel) || wordVariants(doel).includes(stuk)) return true;
+    }
+  }
   return false;
 }
 const UNIT_BASE = { g: 1, kg: 1e3, ml: 1, l: 1e3 };
@@ -2020,6 +2046,108 @@ class ErrorBoundary extends React.Component {
     ] }) });
   }
 }
+function woordAfstand(a, b) {
+  a = norm(a);
+  b = norm(b);
+  if (a === b) return 0;
+  if (Math.abs(a.length - b.length) > 4) return 99;
+  const rij = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let vorige = rij[0];
+    rij[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tijdelijk = rij[j];
+      rij[j] = Math.min(
+        rij[j] + 1,
+        rij[j - 1] + 1,
+        vorige + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+      vorige = tijdelijk;
+    }
+  }
+  return rij[b.length];
+}
+function koppelSuggesties(ingredientNaam, inventory, zoek) {
+  const q = norm(zoek || "");
+  const basis = q ? inventory.filter((i) => norm(i.name).includes(q)) : inventory;
+  const woorden = nameWords(ingredientNaam);
+  return [...basis].map((item) => {
+    const itemWoorden = nameWords(item.name);
+    let score = 0;
+    if (namesMatch(item.name, ingredientNaam)) score += 100;
+    woorden.forEach((w) => {
+      if (itemWoorden.some((iw) => wordsEqual(iw, w))) score += 20;
+    });
+    woorden.forEach((w) => {
+      itemWoorden.forEach((iw) => {
+        const d = woordAfstand(w, iw);
+        if (d === 1) score += 14;
+        else if (d === 2) score += 7;
+      });
+    });
+    if (norm(item.name).startsWith(norm(ingredientNaam).slice(0, 4))) score += 5;
+    return { item, score };
+  }).sort((a, b) => b.score - a.score).slice(0, 40);
+}
+function KoppelModal({ ingredientNaam, inventory, onKies, onClose }) {
+  const [zoek, setZoek] = useState("");
+  const suggesties = koppelSuggesties(ingredientNaam, inventory, zoek);
+  return /* @__PURE__ */ jsxs(Modal, { title: "Koppel aan je voorraad", onClose, children: [
+    /* @__PURE__ */ jsxs("p", { style: { fontSize: 13, color: C.ink, marginTop: 0, lineHeight: 1.5 }, children: [
+      "Welk product uit je voorraad bedoelt het recept met",
+      " ",
+      /* @__PURE__ */ jsx("strong", { children: ingredientNaam }),
+      "?"
+    ] }),
+    /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, margin: "0 0 12px", lineHeight: 1.45 }, children: "Deze koppeling wordt onthouden, ook als de namen blijven verschillen." }),
+    /* @__PURE__ */ jsx(
+      "input",
+      {
+        autoComplete: "off",
+        style: { ...inputStyle, marginBottom: 10 },
+        placeholder: "Zoeken in je voorraad\u2026",
+        value: zoek,
+        onChange: (e) => setZoek(e.target.value)
+      }
+    ),
+    /* @__PURE__ */ jsxs("div", { style: { maxHeight: "45vh", overflowY: "auto" }, children: [
+      suggesties.length === 0 && /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.inkSoft }, children: "Niets gevonden in je voorraad." }),
+      suggesties.map(({ item, score }) => /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: () => onKies(item),
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            width: "100%",
+            textAlign: "left",
+            background: C.cardBg,
+            border: `1.5px solid ${score >= 10 ? C.sage : C.borderTint}`,
+            borderRadius: 12,
+            padding: "9px 11px",
+            marginBottom: 6,
+            cursor: "pointer",
+            fontFamily: FONT_BODY
+          },
+          children: [
+            /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
+              /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 13.5, color: C.ink }, children: item.name }),
+              /* @__PURE__ */ jsxs("span", { style: { display: "block", fontSize: 11, color: C.inkSoft, fontFamily: FONT_MONO }, children: [
+                item.current,
+                " ",
+                item.unit
+              ] })
+            ] }),
+            score >= 10 && /* @__PURE__ */ jsx(Pill, { tone: "ok", children: "waarschijnlijk" })
+          ]
+        },
+        item.id
+      ))
+    ] }),
+    /* @__PURE__ */ jsx("div", { style: { marginTop: 12 }, children: /* @__PURE__ */ jsx(GhostButton, { full: true, onClick: onClose, children: "Annuleren" }) })
+  ] });
+}
 function AgendaModal({ token, onClose, onDownload }) {
   const [gekopieerd, setGekopieerd] = useState(false);
   if (!token) {
@@ -2303,6 +2431,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   const [saveError, setSaveError] = useState(null);
   const [cookingSessions, setCookingSessions] = useState([]);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [koppelVoor, setKoppelVoor] = useState(null);
   const [periodIndex, setPeriodIndex] = useState(0);
   const [currentUserName, setCurrentUserName] = useState("");
   const savingRef = React.useRef(false);
@@ -3114,6 +3243,22 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       setNutritionBusy(false);
     }
   };
+  const koppelIngredient = async (recipeId, ingredientNaam, item) => {
+    setKoppelVoor(null);
+    setRecipes((prev) => prev.map((r) => r.id !== recipeId ? r : {
+      ...r,
+      ingredients: (r.ingredients || []).map((ing) => ing.name === ingredientNaam ? { ...ing, inventoryItemId: item.id } : ing)
+    }));
+    if (hasDataAPI && window.dataAPI.linkIngredient) {
+      try {
+        await window.dataAPI.linkIngredient(recipeId, ingredientNaam, item.id);
+        showToast(`${ingredientNaam} gekoppeld aan ${item.name}.`);
+      } catch (e) {
+        console.error("Koppelen mislukt:", e);
+        showToast("De koppeling kon niet worden opgeslagen. Probeer het opnieuw.");
+      }
+    }
+  };
   const deleteRecipe = (id) => {
     setRecipes(recipes.filter((r) => r.id !== id));
     if (hasDataAPI) window.dataAPI.recipes.remove(id).catch(() => {
@@ -3715,6 +3860,15 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         .no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
       ` }),
     showWelcome && /* @__PURE__ */ jsx(WelcomeTour, { onFinish: () => updatePreferences({ welcomeSeen: true }) }),
+    koppelVoor && /* @__PURE__ */ jsx(
+      KoppelModal,
+      {
+        ingredientNaam: koppelVoor.ingredientNaam,
+        inventory,
+        onKies: (item) => koppelIngredient(koppelVoor.recipeId, koppelVoor.ingredientNaam, item),
+        onClose: () => setKoppelVoor(null)
+      }
+    ),
     calendarOpen && /* @__PURE__ */ jsx(AgendaModal, { token: household && household.calendar_token, onDownload: () => {
       exportWeekmenuToCalendar();
       setCalendarOpen(false);
@@ -3942,6 +4096,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           doublePortionDefault,
           onAddMissingToShopping: (scale) => addMissingToShopping(openRecipe, scale),
           onStartCooking: (personen) => startCookingSession(openRecipe, personen),
+          onKoppel: (naam) => setKoppelVoor({ recipeId: openRecipe.id, ingredientNaam: naam }),
           onRecalculateNutrition: () => recalculateNutrition(openRecipe.id),
           nutritionBusy
         }
@@ -4731,7 +4886,7 @@ function NutritionLabel({ recipe, isMine, onRecalculate, busy }) {
     /* @__PURE__ */ jsx("div", { style: { fontSize: 10, color: C.inkSoft, marginTop: 8, lineHeight: 1.4 }, children: "Gebaseerd op gegevens van NEVO-online versie 2025/9.0, RIVM, Bilthoven." })
   ] });
 }
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onRecalculateNutrition, nutritionBusy }) {
+function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, onRecalculateNutrition, nutritionBusy }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [usedAmounts, setUsedAmounts] = useState({});
   const [leftoverPortions, setLeftoverPortions] = useState(0);
@@ -4970,7 +5125,26 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
     ] }),
     readiness.missing.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.warnBg, border: `1px solid ${C.mustardDeep}`, borderRadius: 14, padding: "10px 12px", marginBottom: 14 }, children: [
       /* @__PURE__ */ jsx("div", { style: { fontSize: 12.5, fontWeight: 600, color: C.ink, marginBottom: 4 }, children: "Hiervoor heb je nog nodig:" }),
-      /* @__PURE__ */ jsx("div", { style: { fontSize: 12.5, color: C.ink, lineHeight: 1.5 }, children: readiness.missing.join(" \xB7 ") }),
+      /* @__PURE__ */ jsx("div", { style: { display: "flex", flexWrap: "wrap", gap: 6 }, children: readiness.missing.map((naam) => /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: () => onKoppel && onKoppel(naam),
+          title: "Staat dit w\xE9l in je voorraad? Koppel het.",
+          style: {
+            background: C.cardBg,
+            border: `1px dashed ${C.mustardDeep}`,
+            borderRadius: 10,
+            padding: "4px 9px",
+            fontSize: 12.5,
+            color: C.ink,
+            cursor: onKoppel ? "pointer" : "default",
+            fontFamily: FONT_BODY
+          },
+          children: naam
+        },
+        naam
+      )) }),
+      onKoppel && /* @__PURE__ */ jsx("div", { style: { fontSize: 10.5, color: C.inkSoft, marginTop: 6 }, children: "Heb je het toch in huis onder een andere naam? Tik erop om het te koppelen." }),
       /* @__PURE__ */ jsxs("div", { style: { fontSize: 10.5, color: C.inkSoft, marginTop: 6, marginBottom: 8 }, children: [
         "Voor ",
         servings,
