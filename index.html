@@ -2,10 +2,13 @@
 <html lang="nl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Pollepel — Digitaal Kookboek</title>
   <meta name="description" content="Digitaal kookboek met voorraadbeheer en automatische boodschappenlijst." />
   <meta name="theme-color" content="#1F3F66" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" />
   <link rel="manifest" href="/manifest.json" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/icon.svg" />
@@ -25,7 +28,9 @@
 
   <style>
     html, body { margin: 0; padding: 0; background: #EAE7DC; font-family: 'Work Sans', sans-serif; }
-    #root { min-height: 100vh; }
+    #root { min-height: 100dvh; }
+    /* Vangnet voor browsers die dvh nog niet kennen */
+    @supports not (height: 100dvh) { #root { min-height: 100vh; } }
     * { box-sizing: border-box; }
     input, button { font-family: inherit; }
   </style>
