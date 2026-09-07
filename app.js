@@ -46,6 +46,7 @@ import {
   Moon,
   ChevronUp,
   ChevronDown,
+  ChevronRight,
   Tag,
   Mic,
   Timer as TimerIcon
@@ -1829,7 +1830,10 @@ function PrimaryButton({ children, onClick, tone = "blue", disabled, full, compa
         color: disabled ? "#fff" : tekstkleur,
         border: "none",
         borderRadius: 14,
-        padding: compact ? "9px 12px" : "10px 16px",
+        padding: compact ? "9px 14px" : "10px 16px",
+        // Aanraakvlak van minimaal 44 px: dit is de belangrijkste actie op elk
+        // scherm en was met 37 px kleiner dan een stapper die je zelden gebruikt.
+        minHeight: compact ? 40 : 44,
         fontFamily: FONT_BODY,
         fontWeight: 600,
         fontSize: compact ? 13 : 14,
@@ -1856,6 +1860,7 @@ function GhostButton({ children, onClick, danger, full, disabled }) {
         border: `1.5px solid ${danger ? C.brick : C.blue}`,
         borderRadius: 14,
         padding: "9px 14px",
+        minHeight: 44,
         fontFamily: FONT_BODY,
         fontWeight: 600,
         fontSize: 14,
@@ -2253,6 +2258,60 @@ function AgendaModal({ token, onClose, onDownload }) {
       /* @__PURE__ */ jsx("p", { style: { fontSize: 11, color: C.inkSoft, margin: "6px 0 0", lineHeight: 1.45 }, children: "Alleen de huidige periode, zonder latere wijzigingen. Op de iPhone werkt abonneren beter." })
     ] }),
     /* @__PURE__ */ jsx("p", { style: { fontSize: 11, color: C.inkSoft, marginTop: 14, lineHeight: 1.45 }, children: "Iedereen met dit adres kan jullie weekmenu zien. Deel het alleen met je huisgenoten." })
+  ] });
+}
+function VanavondStrook({ entry, recipe, readiness, cookNaam, onOpen, onVerrasMe, onNaarWeekmenu }) {
+  const basis = {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    width: "100%",
+    textAlign: "left",
+    borderRadius: 16,
+    padding: "12px 14px",
+    marginBottom: 12,
+    cursor: "pointer",
+    fontFamily: FONT_BODY,
+    border: `1.5px solid ${C.borderTint}`,
+    background: C.cardBg
+  };
+  if (entry && entry.offNight) {
+    return /* @__PURE__ */ jsxs("div", { style: { ...basis, cursor: "default" }, children: [
+      /* @__PURE__ */ jsx("span", { style: { fontSize: 24, flexShrink: 0 }, children: "\u{1F355}" }),
+      /* @__PURE__ */ jsxs("span", { children: [
+        /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 11, color: C.inkSoft, textTransform: "uppercase", letterSpacing: "0.04em" }, children: "Vanavond" }),
+        /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 14, color: C.ink, fontWeight: 600 }, children: "Niemand kookt" })
+      ] })
+    ] });
+  }
+  if (!recipe) {
+    return /* @__PURE__ */ jsxs("div", { style: { ...basis, cursor: "default", flexWrap: "wrap" }, children: [
+      /* @__PURE__ */ jsx("span", { style: { fontSize: 24, flexShrink: 0 }, children: "\u{1F914}" }),
+      /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 120 }, children: [
+        /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 11, color: C.inkSoft, textTransform: "uppercase", letterSpacing: "0.04em" }, children: "Vanavond" }),
+        /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 14, color: C.ink, fontWeight: 600 }, children: "Nog niets gepland" })
+      ] }),
+      /* @__PURE__ */ jsxs("span", { style: { display: "flex", gap: 6 }, children: [
+        /* @__PURE__ */ jsxs(PrimaryButton, { tone: "mustard", compact: true, onClick: onVerrasMe, children: [
+          /* @__PURE__ */ jsx(Shuffle, { size: 14 }),
+          " Verras me"
+        ] }),
+        /* @__PURE__ */ jsx(GhostButton, { onClick: onNaarWeekmenu, children: "Plannen" })
+      ] })
+    ] });
+  }
+  const mist = readiness ? readiness.missing.length : 0;
+  return /* @__PURE__ */ jsxs("button", { onClick: () => onOpen(recipe.id), style: { ...basis, borderColor: C.mustard }, children: [
+    /* @__PURE__ */ jsx("span", { style: { fontSize: 26, flexShrink: 0 }, children: recipe.emoji || "\u{1F37D}\uFE0F" }),
+    /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
+      /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 11, color: C.inkSoft, textTransform: "uppercase", letterSpacing: "0.04em" }, children: "Vanavond" }),
+      /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 15, color: C.ink, fontWeight: 600, lineHeight: 1.25 }, children: recipe.name }),
+      /* @__PURE__ */ jsxs("span", { style: { display: "block", fontSize: 12, color: mist ? C.brick : C.sage, marginTop: 2 }, children: [
+        cookNaam ? `${cookNaam} kookt \xB7 ` : "",
+        mist === 0 ? "alles in huis" : `nog ${mist} ${mist === 1 ? "ingredi\xEBnt" : "ingredi\xEBnten"} nodig`
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx(ChevronRight, { size: 18, color: C.inkSoft, style: { flexShrink: 0 } })
   ] });
 }
 function KookMelding({ sessies, currentUserName, onOpen }) {
@@ -3128,6 +3187,19 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       isBoodschappendag: d.getDay() === shoppingDay
     }));
   }, [activePeriod, shoppingDay]);
+  const vanavondEntry = weekmenu[dateKey(/* @__PURE__ */ new Date())];
+  const vanavondRecept = vanavondEntry && vanavondEntry.recipeId ? recipes.find((r) => r.id === vanavondEntry.recipeId) : null;
+  const verrasMeVanavond = () => {
+    if (!recipes.length) return;
+    const gescoord = recipes.map((r) => ({ r, mist: recipeReadiness(r, inventory).missing.length })).sort((a, b) => a.mist - b.mist);
+    const minste = gescoord[0].mist;
+    const pool = gescoord.filter((x) => x.mist === minste);
+    const keuze = pool[Math.floor(Math.random() * pool.length)];
+    if (minste > 0) {
+      showToast(`${keuze.r.name}: hiervoor mis je nog ${recipeReadiness(keuze.r, inventory).missing.join(", ")}.`);
+    }
+    setOpenRecipeId(keuze.r.id);
+  };
   const lowStockCount = inventory.filter((i) => i.current < i.min).length;
   const shoppingCount = shoppingList.length;
   const toggleFavorite = (id) => {
@@ -4033,6 +4105,18 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
       /* @__PURE__ */ jsx("span", { children: toast })
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { padding: 14 }, children: [
+      tab === "kookboek" && !openRecipe && !cookingSessions.length && /* @__PURE__ */ jsx(
+        VanavondStrook,
+        {
+          entry: weekmenu[dateKey(/* @__PURE__ */ new Date())],
+          recipe: vanavondRecept,
+          readiness: vanavondRecept ? recipeReadiness(vanavondRecept, inventory) : null,
+          cookNaam: (weekmenu[dateKey(/* @__PURE__ */ new Date())] || {}).cook,
+          onOpen: (id) => setOpenRecipeId(id),
+          onVerrasMe: verrasMeVanavond,
+          onNaarWeekmenu: () => setTab("weekmenu")
+        }
+      ),
       !openRecipe && /* @__PURE__ */ jsx(
         KookMelding,
         {
@@ -5075,7 +5159,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
           {
             onClick: () => setSousChefOpen(true),
             title: "Vraag de AI-souschef",
-            style: { display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 20, cursor: "pointer", border: `1.5px solid ${C.borderTint}`, background: C.cardBg, color: C.inkSoft },
+            style: { display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", minHeight: 34, borderRadius: 20, cursor: "pointer", border: `1.5px solid ${C.borderTint}`, background: C.cardBg, color: C.inkSoft },
             children: [
               /* @__PURE__ */ jsx("span", { style: { fontSize: 13 }, children: "\u{1F468}\u200D\u{1F373}" }),
               /* @__PURE__ */ jsx("span", { style: { fontSize: 12, fontWeight: 600 }, children: "Souschef" })
@@ -5091,7 +5175,8 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
               display: "flex",
               alignItems: "center",
               gap: 5,
-              padding: "5px 10px",
+              padding: "8px 12px",
+              minHeight: 34,
               borderRadius: 20,
               cursor: "pointer",
               border: `1.5px solid ${keepAwake ? C.mustard : C.borderTint}`,
@@ -5149,7 +5234,8 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
             background: C.cardBg,
             border: `1px dashed ${C.mustardDeep}`,
             borderRadius: 10,
-            padding: "4px 9px",
+            padding: "8px 11px",
+            minHeight: 34,
             fontSize: 13,
             color: C.ink,
             cursor: onKoppel ? "pointer" : "default",
@@ -5970,7 +6056,8 @@ function CookDietRow({ name, preferences, onUpdate }) {
       {
         onClick: () => toggleTag(tag),
         style: {
-          padding: "5px 10px",
+          padding: "8px 12px",
+          minHeight: 34,
           borderRadius: 16,
           fontSize: 11,
           cursor: "pointer",
@@ -6914,15 +7001,24 @@ function InventoryForm({ initial, onCancel, onSave }) {
   ] });
 }
 const stepKnop = {
-  width: 22,
-  height: 22,
-  borderRadius: 8,
+  width: 40,
+  height: 40,
+  padding: 0,
+  border: "none",
+  background: "transparent",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   cursor: "pointer",
-  flexShrink: 0,
-  padding: 0,
+  flexShrink: 0
+};
+const stepVlak = {
+  width: 24,
+  height: 24,
+  borderRadius: 8,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
   get border() {
     return `1.5px solid ${C.ceramicDark}`;
   },
@@ -7080,7 +7176,7 @@ ${body}
                   "aria-label": `Minder ${item.name}`,
                   onClick: () => onChangeAmount(item.id, -1),
                   style: stepKnop,
-                  children: /* @__PURE__ */ jsx(Minus, { size: 12, color: C.inkSoft })
+                  children: /* @__PURE__ */ jsx("span", { style: stepVlak, children: /* @__PURE__ */ jsx(Minus, { size: 13, color: C.inkSoft }) })
                 }
               ),
               editAmountId === item.id ? /* @__PURE__ */ jsx(
@@ -7141,7 +7237,7 @@ ${body}
                   "aria-label": `Meer ${item.name}`,
                   onClick: () => onChangeAmount(item.id, 1),
                   style: stepKnop,
-                  children: /* @__PURE__ */ jsx(Plus, { size: 12, color: C.inkSoft })
+                  children: /* @__PURE__ */ jsx("span", { style: stepVlak, children: /* @__PURE__ */ jsx(Plus, { size: 13, color: C.inkSoft }) })
                 }
               )
             ] })
