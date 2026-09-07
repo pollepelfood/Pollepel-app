@@ -136,13 +136,24 @@ function seasonalProduceNow() {
   return SEASONAL_PRODUCE[(/* @__PURE__ */ new Date()).getMonth()];
 }
 const CATEGORIES = [
-  "Groente & Fruit",
-  "Zuivel",
-  "Vlees & Vis",
-  "Bakkerij & Granen",
-  "Kruiden & Specerijen",
+  "Groente & fruit",
+  "Brood & bakkerij",
+  "Zuivel & eieren",
+  "Kaas",
+  "Vlees & vis",
+  "Vega & vleesvervangers",
+  "Maaltijden & salades",
+  "Pasta, rijst & wereldkeuken",
+  "Soepen, sauzen & conserven",
+  "Ontbijt & broodbeleg",
+  "Koek & snoep",
+  "Chips, noten & borrel",
+  "Dranken",
+  "Olie, azijn & basis",
+  "Bakken & zoetwaren",
+  "Kruiden & specerijen",
   "Diepvries",
-  "Drank",
+  "Huishouden",
   "Overig"
 ];
 const COMMON_GROCERY_ITEMS = [
@@ -380,7 +391,7 @@ function namesMatchBerekenen(na, nb) {
   if (ga && gb && ga === gb) return true;
   const shorter = wa.length <= wb.length ? wa : wb;
   const longer = shorter === wa ? wb : wa;
-  if (shorter.every((s) => longer.some((l) => wordsEqual(s, l)))) return true;
+  if (shorter.every((s) => longer.some((l) => wordsEqual(s, l))) && shorter.length * 2 >= longer.length) return true;
   if (aaneenMatch(wa, wb)) return true;
   return false;
 }
@@ -394,18 +405,43 @@ function aaneenMatch(wa, wb) {
     for (let eind = start; eind < lang.length; eind++) {
       stuk += lang[eind];
       if (stuk.length > doel.length + 3) break;
+      if (eind === start) continue;
       if (stuk === doel) return true;
       if (wordVariants(stuk).includes(doel) || wordVariants(doel).includes(stuk)) return true;
     }
   }
   return false;
 }
-const UNIT_BASE = { g: 1, kg: 1e3, ml: 1, l: 1e3 };
-const UNIT_KIND = { g: "massa", kg: "massa", ml: "volume", l: "volume" };
+const UNIT_BASE = {
+  g: 1,
+  kg: 1e3,
+  ml: 1,
+  l: 1e3,
+  eetlepel: 15,
+  theelepel: 5,
+  snufje: 0.5
+};
+const UNIT_KIND = {
+  g: "massa",
+  kg: "massa",
+  ml: "volume",
+  l: "volume",
+  // Een eetlepel meten we in milliliters, maar voor droge kruiden komt dat
+  // dicht genoeg bij grammen om bruikbaar te zijn.
+  eetlepel: "maat",
+  theelepel: "maat",
+  snufje: "maat"
+};
+function vergelijkbaar(a, b) {
+  const ka = UNIT_KIND[a], kb = UNIT_KIND[b];
+  if (!ka || !kb) return false;
+  if (ka === kb) return true;
+  return ka === "maat" || kb === "maat";
+}
 function convertAmount(amount, fromUnit, toUnit) {
   const f = (fromUnit || "").toLowerCase(), t = (toUnit || "").toLowerCase();
   if (f === t) return Number(amount || 0);
-  if (UNIT_KIND[f] && UNIT_KIND[f] === UNIT_KIND[t]) {
+  if (vergelijkbaar(f, t)) {
     return Number(amount || 0) * UNIT_BASE[f] / UNIT_BASE[t];
   }
   return null;
@@ -458,6 +494,195 @@ function suggestEmoji(name) {
   return "\u{1F37D}\uFE0F";
 }
 const CATEGORY_KEYWORDS = [
+  [["vriezer", "diepvries", "ijsje", "ijstaart"], "Diepvries"],
+  [[
+    "kruidenmix",
+    "kipkruiden",
+    "aardappelkruiden",
+    "gerookte paprika",
+    "paprika pikant",
+    "specerij",
+    "kruiden"
+  ], "Kruiden & specerijen"],
+  [[
+    "chocopasta",
+    "hagelslag",
+    "hagel",
+    "pindakaas",
+    "jam",
+    "honing",
+    "stroop",
+    "siroop",
+    "notenpasta",
+    "appelstroop",
+    "muisjes"
+  ], "Ontbijt & broodbeleg"],
+  [[
+    "spaghetti",
+    "macaroni",
+    "penne",
+    "tagliatelle",
+    "fusilli",
+    "tortelloni",
+    "lasagne",
+    "pasta",
+    "rijst",
+    "risotto",
+    "couscous",
+    "bulgur",
+    "quinoa",
+    "noedel",
+    "mihoen",
+    "wrap",
+    "tortilla"
+  ], "Pasta, rijst & wereldkeuken"],
+  [[
+    "kaas",
+    "parmezaan",
+    "boursin",
+    "mozzarella",
+    "feta",
+    "brie",
+    "camembert",
+    "roomkaas",
+    "geitenkaas"
+  ], "Kaas"],
+  [[
+    "tofu",
+    "tempeh",
+    "seitan",
+    "vegaburger",
+    "vegetarische",
+    "falafel",
+    "vleesvervanger"
+  ], "Vega & vleesvervangers"],
+  [[
+    "kip",
+    "gehakt",
+    "spek",
+    "worst",
+    "ham",
+    "zalm",
+    "tonijn",
+    "vis",
+    "garnaal",
+    "garnalen",
+    "kabeljauw",
+    "biefstuk",
+    "rund",
+    "varkens",
+    "kalkoen",
+    "spareribs",
+    "gehaktbal",
+    "vlees",
+    "bacon",
+    "filet",
+    "schnitzel",
+    "hamburger",
+    "makreel",
+    "haring",
+    "mosselen",
+    "fuet",
+    "salami",
+    "rookvlees"
+  ], "Vlees & vis"],
+  [[
+    "melk",
+    "boter",
+    "yoghurt",
+    "kwark",
+    "kookroom",
+    "slagroom",
+    "room",
+    "cr\xE8mefra\xEEche",
+    "margarine",
+    "ei",
+    "eieren",
+    "zuivel",
+    "vla",
+    "pudding",
+    "chocomel",
+    "skyr"
+  ], "Zuivel & eieren"],
+  [[
+    "brood",
+    "pita",
+    "kn\xE4ckebr\xF6d",
+    "beschuit",
+    "cracker",
+    "toast",
+    "croissant",
+    "bagel",
+    "stokbrood",
+    "bolletjes"
+  ], "Brood & bakkerij"],
+  [[
+    "bouillon",
+    "passata",
+    "tomatenpuree",
+    "blik",
+    "olijven",
+    "sojasaus",
+    "ketjap",
+    "saus",
+    "soep",
+    "augurk",
+    "zilverui",
+    "mais",
+    "bonen in blik",
+    "kokosmelk"
+  ], "Soepen, sauzen & conserven"],
+  [[
+    "chips",
+    "nootjes",
+    "noten",
+    "walnoot",
+    "walnut",
+    "amandel",
+    "pinda",
+    "cashew",
+    "borrelnoot",
+    "zoutje"
+  ], "Chips, noten & borrel"],
+  [["koekje", "koek", "speculaas", "biscuit", "chocolade", "snoep", "drop", "reep"], "Koek & snoep"],
+  [[
+    "cola",
+    "sap",
+    "bier",
+    "wijn",
+    "koffie",
+    "thee",
+    "frisdrank",
+    "limonade",
+    "ranja",
+    "sinas",
+    "energiedrank",
+    "smoothie",
+    "drank",
+    "water"
+  ], "Dranken"],
+  [["olijfolie", "zonnebloemolie", "sesamolie", "bakolie", "olie", "azijn", "balsamico"], "Olie, azijn & basis"],
+  [[
+    "suiker",
+    "bloem",
+    "tarwemeel",
+    "bakpoeder",
+    "gist",
+    "vanillesuiker",
+    "cacao",
+    "amandelmeel"
+  ], "Bakken & zoetwaren"],
+  [[
+    "afwasmiddel",
+    "wasmiddel",
+    "vuilniszak",
+    "keukenrol",
+    "wc-papier",
+    "schoonmaak",
+    "aluminiumfolie",
+    "vaatwastablet"
+  ], "Huishouden"],
+  [["maaltijdsalade", "kant-en-klaar", "restje", "maaltijd"], "Maaltijden & salades"],
   [[
     "ui",
     "knoflook",
@@ -466,6 +691,7 @@ const CATEGORY_KEYWORDS = [
     "paprika",
     "komkommer",
     "wortel",
+    "peen",
     "prei",
     "broccoli",
     "bloemkool",
@@ -482,6 +708,7 @@ const CATEGORY_KEYWORDS = [
     "witlof",
     "pompoen",
     "aardappel",
+    "krieltjes",
     "courgette",
     "aubergine",
     "framboos",
@@ -510,91 +737,11 @@ const CATEGORY_KEYWORDS = [
     "abrikoos",
     "bosbes",
     "bramen",
-    "bes",
     "granaatappel",
     "groente",
     "fruit",
-    "salade"
-  ], "Groente & Fruit"],
-  [[
-    "melk",
-    "kaas",
-    "boter",
-    "yoghurt",
-    "kwark",
-    "kookroom",
-    "slagroom",
-    "room",
-    "cr\xE8mefra\xEEche",
-    "roomkaas",
-    "mozzarella",
-    "feta",
-    "margarine",
-    "ei",
-    "eieren",
-    "parmezaan",
-    "zuivel",
-    "vla",
-    "pudding",
-    "chocomel"
-  ], "Zuivel"],
-  [[
-    "kip",
-    "gehakt",
-    "spek",
-    "worst",
-    "ham",
-    "zalm",
-    "tonijn",
-    "vis",
-    "garnaal",
-    "garnalen",
-    "kabeljauw",
-    "tofu",
-    "biefstuk",
-    "rund",
-    "varkens",
-    "kalkoen",
-    "spareribs",
-    "gehaktbal",
-    "vlees",
-    "bacon",
-    "filet",
-    "schnitzel",
-    "hamburger",
-    "kroket",
-    "frikandel",
-    "makreel",
-    "haring",
-    "mosselen"
-  ], "Vlees & Vis"],
-  [[
-    "brood",
-    "pasta",
-    "spaghetti",
-    "macaroni",
-    "penne",
-    "rijst",
-    "bloem",
-    "noedel",
-    "couscous",
-    "wrap",
-    "pita",
-    "cornflakes",
-    "havermout",
-    "beschuit",
-    "cracker",
-    "risottorijst",
-    "lasagne",
-    "tortilla",
-    "muesli",
-    "graan",
-    "granen",
-    "toast",
-    "croissant",
-    "bagel",
-    "quinoa"
-  ], "Bakkerij & Granen"],
+    "kool"
+  ], "Groente & fruit"],
   [[
     "zout",
     "peper",
@@ -606,47 +753,17 @@ const CATEGORY_KEYWORDS = [
     "tijm",
     "laurier",
     "nootmuskaat",
-    "bouillon",
-    "currypasta",
-    "sojasaus",
-    "ketjap",
-    "mosterd",
-    "mayonaise",
-    "ketchup",
-    "azijn",
-    "olijfolie",
-    "zonnebloemolie",
-    "suiker",
-    "honing",
-    "jam",
-    "pindakaas",
-    "pesto",
-    "specerij",
-    "kruiden",
-    "kruidenmix",
-    "sambal",
-    "knoflookpasta",
-    "gemberpasta",
-    "saus",
-    "dressing",
-    "marinade"
-  ], "Kruiden & Specerijen"],
-  [["diepvries", "vriezer", "ijsje", "ijstaart", "diepvries"], "Diepvries"],
-  [[
-    "cola",
-    "sap",
-    "bier",
-    "wijn",
-    "koffie",
-    "thee",
-    "frisdrank",
-    "water",
-    "limonade",
-    "sinas",
-    "energiedrank",
-    "smoothie",
-    "drank"
-  ], "Drank"]
+    "kurkuma",
+    "kardemom",
+    "sumak",
+    "steranijs",
+    "foelie",
+    "jeneverbes",
+    "sesamzaad",
+    "chilivlokken",
+    "garam",
+    "masala"
+  ], "Kruiden & specerijen"]
 ];
 const OFF_CATEGORY_RULES = [
   [["fruit", "vegetable", "potato", "tomato", "onion", "fresh-produce", "salad", "herb-fresh"], "Groente & Fruit"],
@@ -736,7 +853,6 @@ function recipeReadiness(recipe, inventory, scale = 1) {
     const cmp = stockVsNeed(item, ing, scale);
     if (!cmp) {
       unknown.push(ing.name);
-      have += 1;
       return;
     }
     if (cmp.have >= cmp.need) have += 1;
@@ -748,9 +864,8 @@ function recipeReadiness(recipe, inventory, scale = 1) {
     missing,
     unknown,
     total: (recipe.ingredients || []).length,
-    complete: relevant > 0 && missing.length === 0,
-    canMake: relevant > 0 && missing.length === 0,
-    // behouden voor bestaande aanroepen
+    complete: relevant > 0 && missing.length === 0 && unknown.length === 0,
+    canMake: relevant > 0 && missing.length === 0 && unknown.length === 0,
     tracked: relevant
   };
 }
@@ -4806,7 +4921,7 @@ function KookboekView({ recipes, allRecipes, cookLog, query, setQuery, favOnly, 
                 /* @__PURE__ */ jsxs("div", { style: { marginTop: 4, fontSize: 12, color: readiness.complete ? C.sage : C.inkSoft, lineHeight: 1.35 }, children: [
                   r.cookTime,
                   "m",
-                  readiness.relevant > 0 && (readiness.complete ? " \xB7 compleet" : readiness.missing.length === 1 ? ` \xB7 nog ${readiness.missing[0].toLowerCase()}` : ` \xB7 nog ${readiness.missing.length} nodig`)
+                  readiness.relevant > 0 && (readiness.complete ? " \xB7 compleet" : readiness.missing.length === 0 ? " \xB7 voorraad onzeker" : readiness.missing.length === 1 ? ` \xB7 nog ${readiness.missing[0].toLowerCase()}` : ` \xB7 nog ${readiness.missing.length} nodig`)
                 ] }),
                 r.community && bookMode === "mine" && /* @__PURE__ */ jsx("div", { style: { marginTop: 5 }, children: /* @__PURE__ */ jsxs(Pill, { tone: "auto", children: [
                   /* @__PURE__ */ jsx(Users, { size: 10 }),
@@ -6892,25 +7007,68 @@ function getExpirySuggestions(inventory, recipes) {
 }
 function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiumOn, onEdit, onNew, onDelete, onScan, onOpenRecipe, onOpenShelfPhoto }) {
   const cats = categories && categories.length ? categories : CATEGORIES;
+  const [zoek, setZoek] = useState("");
+  const gefilterd = useMemo(() => {
+    const q = zoek.trim();
+    if (!q) return inventory;
+    const kort = norm(q);
+    return inventory.filter(
+      (i) => norm(i.name).includes(kort) || namesMatch(i.name, q)
+    );
+  }, [inventory, zoek]);
   const byCategory = useMemo(() => {
     const map = {};
     cats.forEach((c) => map[c] = []);
-    inventory.forEach((i) => {
+    gefilterd.forEach((i) => {
       (map[i.category] || (map[i.category] = [])).push(i);
     });
     Object.keys(map).forEach((c) => {
       map[c] = [...map[c]].sort((a, b) => (a.name || "").localeCompare(b.name || "", "nl", { sensitivity: "base" }));
     });
     return map;
-  }, [inventory, cats]);
+  }, [gefilterd, cats]);
   const expirySuggestions = useMemo(() => getExpirySuggestions(inventory, recipes), [inventory, recipes]);
   const depletionForecast = useMemo(
     () => isPremiumOn("predictiveDepletion") ? getDepletionForecast(inventory, consumptionLog) : [],
     [inventory, consumptionLog, isPremiumOn]
   );
   return /* @__PURE__ */ jsxs("div", { children: [
-    /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.inkSoft, marginTop: 0 }, children: "Stel per ingredi\xEBnt een minimum en maximum in. Zodra de voorraad onder het minimum komt, verschijnt het automatisch op de boodschappenlijst." }),
-    depletionForecast.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.successBg, border: `1.5px solid ${C.sage}`, borderRadius: 16, padding: 12, marginBottom: 16 }, children: [
+    /* @__PURE__ */ jsxs("div", { style: { position: "relative", marginBottom: 12 }, children: [
+      /* @__PURE__ */ jsx(Search, { size: 15, color: C.inkSoft, style: { position: "absolute", left: 10, top: 13 } }),
+      /* @__PURE__ */ jsx(
+        "input",
+        {
+          autoComplete: "off",
+          style: { ...inputStyle, paddingLeft: 30, paddingRight: zoek ? 36 : 11 },
+          placeholder: `Zoek in ${inventory.length} producten\u2026`,
+          value: zoek,
+          onChange: (e) => setZoek(e.target.value)
+        }
+      ),
+      zoek && /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: () => setZoek(""),
+          "aria-label": "Zoekterm wissen",
+          style: {
+            position: "absolute",
+            right: 4,
+            top: 4,
+            width: 36,
+            height: 36,
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center"
+          },
+          children: /* @__PURE__ */ jsx(X, { size: 15, color: C.inkSoft })
+        }
+      )
+    ] }),
+    zoek ? /* @__PURE__ */ jsx("p", { style: { fontSize: 12, color: C.inkSoft, margin: "0 0 12px" }, children: gefilterd.length === 0 ? `Niets gevonden voor \u201C${zoek}\u201D.` : `${gefilterd.length} ${gefilterd.length === 1 ? "product" : "producten"} gevonden.` }) : /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.inkSoft, marginTop: 0 }, children: "Stel per ingredi\xEBnt een minimum en maximum in. Zodra de voorraad onder het minimum komt, verschijnt het automatisch op de boodschappenlijst." }),
+    !zoek && depletionForecast.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.successBg, border: `1.5px solid ${C.sage}`, borderRadius: 16, padding: 12, marginBottom: 16 }, children: [
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }, children: [
         /* @__PURE__ */ jsx("span", { style: { fontSize: 14 }, children: "\u{1F4C9}" }),
         /* @__PURE__ */ jsx("span", { style: { fontSize: 13, fontWeight: 700, color: C.sage }, children: "Voorspelde uitputting" }),
@@ -6927,7 +7085,7 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
         " op."
       ] }, f.item.id))
     ] }),
-    expirySuggestions.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 16, padding: 12, marginBottom: 16 }, children: [
+    !zoek && expirySuggestions.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 16, padding: 12, marginBottom: 16 }, children: [
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }, children: [
         /* @__PURE__ */ jsx(CalendarClock, { size: 15, color: C.mustardDeep }),
         /* @__PURE__ */ jsx("span", { style: { fontSize: 13, fontWeight: 700, color: C.mustardDeep }, children: "Bijna over de datum" })
