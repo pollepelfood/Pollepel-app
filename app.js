@@ -49,7 +49,8 @@ import {
   ChevronRight,
   Tag,
   Mic,
-  Timer as TimerIcon
+  Timer as TimerIcon,
+  SlidersHorizontal
 } from "lucide-react";
 const UNITS = ["stuks", "g", "kg", "ml", "l", "eetlepel", "theelepel", "snufje"];
 const WEEK_DAYS = [
@@ -2533,6 +2534,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [koppelVoor, setKoppelVoor] = useState(null);
   const [periodIndex, setPeriodIndex] = useState(0);
+  const [bookView, setBookView] = useState("alles");
   const [currentUserName, setCurrentUserName] = useState("");
   const savingRef = React.useRef(false);
   const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
@@ -2566,7 +2568,6 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   const [communityRecipes, setCommunityRecipes] = useState([]);
   const hasCommunityBackend = typeof window !== "undefined" && !!window.communityStore;
   const hasDataAPI = typeof window !== "undefined" && !!window.dataAPI;
-  const [makeOnly, setMakeOnly] = useState(false);
   const [maxCookTime, setMaxCookTime] = useState(null);
   const [openRecipeId, setOpenRecipeId] = useState(null);
   const [doublePortionDefault, setDoublePortionDefault] = useState(false);
@@ -3200,17 +3201,19 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   }, [preferences.diets]);
   const filteredRecipes = useMemo(() => {
     const source = bookMode === "community" ? communitySourceRecipes : recipes;
+    const seizoensIds = new Set(getSeasonalRecipeSuggestions(recipes).map((r) => r.id));
     const zichtbaar = source.filter((r) => {
       if (bookMode === "community" && !hasCommunityBackend && !hasDataAPI && !r.community) return false;
-      if (favOnly && !r.favorite) return false;
-      if (makeOnly && maxCookTime && Number(r.cookTime || 999) > maxCookTime) return false;
+      if (bookMode === "mine" && bookView === "favoriet" && !r.favorite) return false;
+      if (bookMode === "mine" && bookView === "seizoen" && !seizoensIds.has(r.id)) return false;
+      if (maxCookTime && Number(r.cookTime || 999) > maxCookTime) return false;
       if (dietOnly && activeDietTags.length && !activeDietTags.every((tag) => (r.diets || []).includes(tag))) return false;
       if (query && !r.name.toLowerCase().includes(query.toLowerCase())) return false;
       return true;
     });
-    if (!makeOnly) return zichtbaar;
+    if (bookView !== "kan" || bookMode !== "mine") return zichtbaar;
     return zichtbaar.map((r) => ({ r, mist: recipeReadiness(r, inventory).missing.length })).sort((a, b) => a.mist - b.mist).map((x) => x.r);
-  }, [recipes, communitySourceRecipes, bookMode, hasCommunityBackend, hasDataAPI, favOnly, makeOnly, maxCookTime, dietOnly, activeDietTags, query, inventory]);
+  }, [recipes, communitySourceRecipes, bookMode, bookView, hasCommunityBackend, hasDataAPI, favOnly, maxCookTime, dietOnly, activeDietTags, query, inventory]);
   const shoppingDay = preferences.shoppingDay == null ? 6 : Number(preferences.shoppingDay);
   const periods = useMemo(() => planningPeriods(shoppingDay, 4), [shoppingDay]);
   const activePeriod = periods[Math.min(periodIndex, periods.length - 1)];
@@ -4180,13 +4183,14 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         KookboekView,
         {
           recipes: filteredRecipes,
+          allRecipes: recipes,
+          view: bookView,
+          setView: setBookView,
           cookLog,
           query,
           setQuery,
           favOnly,
           setFavOnly,
-          makeOnly,
-          setMakeOnly,
           maxCookTime,
           setMaxCookTime,
           dietOnly,
@@ -4426,6 +4430,11 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         initial: editingRecipe,
         inventoryNames: [.../* @__PURE__ */ new Set([...inventory.map((i) => i.name), ...COMMON_GROCERY_ITEMS])],
         inventoryItems: inventory,
+        onImport: () => {
+          setEditingRecipe(null);
+          setImportError("");
+          setImportOpen(true);
+        },
         onCancel: () => setEditingRecipe(null),
         onSave: saveRecipe
       }
@@ -4602,282 +4611,260 @@ function SeasonalAndSurpriseBar({ recipes, inventory, onOpen, showToast }) {
     ] })
   ] });
 }
-function KookboekView({ recipes, cookLog, query, setQuery, favOnly, setFavOnly, makeOnly, setMakeOnly, maxCookTime, setMaxCookTime, dietOnly, setDietOnly, activeDietTags, bookMode, setBookMode, inventory, onOpen, onToggleFav, onNew, onImport, onDuplicate, showToast }) {
+function KookboekView({ recipes, allRecipes, cookLog, query, setQuery, favOnly, setFavOnly, maxCookTime, setMaxCookTime, dietOnly, setDietOnly, activeDietTags, bookMode, setBookMode, view, setView, inventory, onOpen, onToggleFav, onNew, onImport, onDuplicate, showToast }) {
+  const [filterOpen, setFilterOpen] = useState(false);
+  const zoekt = query.trim().length > 0;
+  const tellingen = useMemo(() => {
+    const eigen = allRecipes || [];
+    return {
+      alles: eigen.length,
+      kan: eigen.filter((r) => recipeReadiness(r, inventory).complete).length,
+      favoriet: eigen.filter((r) => r.favorite).length,
+      seizoen: getSeasonalRecipeSuggestions(eigen).length
+    };
+  }, [allRecipes, inventory]);
+  const INGANGEN = [
+    { key: "alles", label: "Alles", telling: tellingen.alles },
+    { key: "kan", label: "\u{1F373} Kan ik maken", telling: tellingen.kan },
+    { key: "favoriet", label: "\u2605 Favoriet", telling: tellingen.favoriet },
+    { key: "seizoen", label: "\u{1F331} Seizoen", telling: tellingen.seizoen }
+  ];
+  const chip = (actief, inhoud, onClick, gedimd) => /* @__PURE__ */ jsx(
+    "button",
+    {
+      onClick,
+      style: {
+        flexShrink: 0,
+        borderRadius: 20,
+        padding: "9px 14px",
+        minHeight: 38,
+        fontSize: 13,
+        fontWeight: actief ? 700 : 500,
+        cursor: "pointer",
+        fontFamily: FONT_BODY,
+        whiteSpace: "nowrap",
+        background: actief ? C.blue : C.cardBg,
+        color: actief ? "#fff" : gedimd ? C.inkSoft : C.ink,
+        border: `1.5px solid ${actief ? C.blue : C.borderTint}`,
+        opacity: gedimd && !actief ? 0.6 : 1
+      },
+      children: inhoud
+    },
+    inhoud
+  );
   return /* @__PURE__ */ jsxs("div", { children: [
-    /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6, marginBottom: 12 }, children: [
-      /* @__PURE__ */ jsxs(
-        "button",
+    /* @__PURE__ */ jsx("div", { style: { display: "flex", gap: 8, marginBottom: 10 }, children: /* @__PURE__ */ jsxs("div", { style: { flex: 1, position: "relative" }, children: [
+      /* @__PURE__ */ jsx(Search, { size: 15, color: C.inkSoft, style: { position: "absolute", left: 10, top: 13 } }),
+      /* @__PURE__ */ jsx(
+        "input",
         {
-          onClick: () => setBookMode("mine"),
-          style: {
-            flex: 1,
-            padding: "8px 4px",
-            borderRadius: 12,
-            cursor: "pointer",
-            border: `1.5px solid ${bookMode === "mine" ? C.blue : C.borderTint}`,
-            background: bookMode === "mine" ? C.blue : C.cardBg,
-            color: bookMode === "mine" ? "#fff" : C.ink,
-            fontWeight: 600,
-            fontSize: 12,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 4
-          },
-          children: [
-            /* @__PURE__ */ jsx(ChefHat, { size: 12 }),
-            " Mijn kookboek"
-          ]
-        }
-      ),
-      /* @__PURE__ */ jsxs(
-        "button",
-        {
-          onClick: () => setBookMode("community"),
-          style: {
-            flex: 1,
-            padding: "8px 4px",
-            borderRadius: 12,
-            cursor: "pointer",
-            border: `1.5px solid ${bookMode === "community" ? C.blue : C.borderTint}`,
-            background: bookMode === "community" ? C.blue : C.cardBg,
-            color: bookMode === "community" ? "#fff" : C.ink,
-            fontWeight: 600,
-            fontSize: 12,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 4
-          },
-          children: [
-            /* @__PURE__ */ jsx(Users, { size: 12 }),
-            " Community"
-          ]
-        }
-      ),
-      /* @__PURE__ */ jsxs(
-        "button",
-        {
-          onClick: () => setBookMode("history"),
-          style: {
-            flex: 1,
-            padding: "8px 4px",
-            borderRadius: 12,
-            cursor: "pointer",
-            border: `1.5px solid ${bookMode === "history" ? C.blue : C.borderTint}`,
-            background: bookMode === "history" ? C.blue : C.cardBg,
-            color: bookMode === "history" ? "#fff" : C.ink,
-            fontWeight: 600,
-            fontSize: 12,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 4
-          },
-          children: [
-            /* @__PURE__ */ jsx(Clock, { size: 12 }),
-            " Historie"
-          ]
+          autoComplete: "off",
+          style: { ...inputStyle, paddingLeft: 30 },
+          placeholder: "Zoek een gerecht\u2026",
+          value: query,
+          onChange: (e) => setQuery(e.target.value)
         }
       )
-    ] }),
-    bookMode === "community" && /* @__PURE__ */ jsx("p", { style: { fontSize: 12, color: C.inkSoft, marginTop: -6, marginBottom: 10 }, children: 'Recepten die huishoudens gedeeld hebben. Tik "voeg toe" om een eigen bewerkbare kopie in je kookboek te zetten.' }),
-    bookMode === "history" ? /* @__PURE__ */ jsx(CookHistoryList, { cookLog, onOpen }) : /* @__PURE__ */ jsxs(Fragment, { children: [
-      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginBottom: 12 }, children: [
-        /* @__PURE__ */ jsxs("div", { style: { flex: 1, position: "relative" }, children: [
-          /* @__PURE__ */ jsx(Search, { size: 15, color: C.inkSoft, style: { position: "absolute", left: 10, top: 11 } }),
-          /* @__PURE__ */ jsx(
-            "input",
-            {
-              autoComplete: "off",
-              style: { ...inputStyle, paddingLeft: 30 },
-              placeholder: "Zoek een gerecht\u2026",
-              value: query,
-              onChange: (e) => setQuery(e.target.value)
-            }
-          )
-        ] }),
-        /* @__PURE__ */ jsx(
-          "button",
-          {
-            onClick: () => setFavOnly((v) => !v),
-            title: "Alleen favorieten",
-            style: {
-              border: `1.5px solid ${favOnly ? C.mustard : C.borderTint}`,
-              background: favOnly ? C.mustard : C.cardBg,
-              borderRadius: 12,
-              width: 42,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer"
-            },
-            children: /* @__PURE__ */ jsx(Star, { size: 17, fill: favOnly ? "#fff" : "none", color: favOnly ? "#fff" : C.inkSoft })
-          }
-        ),
-        /* @__PURE__ */ jsx(
-          "button",
-          {
-            onClick: () => setMakeOnly((v) => {
-              if (v) setMaxCookTime(null);
-              return !v;
-            }),
-            title: "Alleen wat ik kan maken",
-            style: {
-              border: `1.5px solid ${makeOnly ? C.sage : C.borderTint}`,
-              background: makeOnly ? C.sage : C.cardBg,
-              borderRadius: 12,
-              width: 42,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer"
-            },
-            children: /* @__PURE__ */ jsx(ChefHat, { size: 17, color: makeOnly ? "#fff" : C.inkSoft })
-          }
-        ),
-        activeDietTags && activeDietTags.length > 0 && /* @__PURE__ */ jsx(
+    ] }) }),
+    /* @__PURE__ */ jsx("div", { style: {
+      position: "sticky",
+      top: 0,
+      zIndex: 20,
+      background: C.paper,
+      paddingTop: 4,
+      paddingBottom: 8,
+      marginBottom: 4,
+      borderBottom: `1px solid ${C.ceramic}`
+    }, children: /* @__PURE__ */ jsxs("div", { className: "no-scrollbar", style: { display: "flex", gap: 7, overflowX: "auto" }, children: [
+      INGANGEN.map(
+        (i) => chip(
+          view === i.key && bookMode === "mine",
+          zoekt ? i.label : `${i.label} ${i.telling}`,
+          () => {
+            setBookMode("mine");
+            setView(i.key);
+          },
+          i.telling === 0
+        )
+      ),
+      /* @__PURE__ */ jsx("span", { style: { flexShrink: 0, width: 1, background: C.ceramicDark, margin: "4px 2px" } }),
+      chip(bookMode === "community", "Community", () => setBookMode("community")),
+      chip(bookMode === "history", "Historie", () => setBookMode("history")),
+      /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: () => setFilterOpen(true),
+          "aria-label": "Meer filters",
+          style: {
+            flexShrink: 0,
+            borderRadius: 20,
+            padding: "9px 12px",
+            minHeight: 38,
+            cursor: "pointer",
+            background: dietOnly || maxCookTime ? C.sage : C.cardBg,
+            border: `1.5px solid ${dietOnly || maxCookTime ? C.sage : C.borderTint}`,
+            display: "flex",
+            alignItems: "center"
+          },
+          children: /* @__PURE__ */ jsx(SlidersHorizontal, { size: 15, color: dietOnly || maxCookTime ? "#fff" : C.ink })
+        }
+      )
+    ] }) }),
+    filterOpen && /* @__PURE__ */ jsxs(Modal, { title: "Filteren", onClose: () => setFilterOpen(false), children: [
+      /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, marginBottom: 8 }, children: "Kooktijd" }),
+      /* @__PURE__ */ jsx("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }, children: [["Alles", null], ["Tot 20 min", 20], ["Tot 45 min", 45]].map(([label, val]) => /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: () => setMaxCookTime(val),
+          style: {
+            padding: "8px 12px",
+            minHeight: 34,
+            borderRadius: 20,
+            fontSize: 12.5,
+            cursor: "pointer",
+            fontFamily: FONT_BODY,
+            background: maxCookTime === val ? C.blue : C.cardBg,
+            color: maxCookTime === val ? "#fff" : C.ink,
+            border: `1.5px solid ${maxCookTime === val ? C.blue : C.borderTint}`
+          },
+          children: label
+        },
+        label
+      )) }),
+      activeDietTags && activeDietTags.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, marginBottom: 8 }, children: "Dieetwensen" }),
+        /* @__PURE__ */ jsxs(
           "button",
           {
             onClick: () => setDietOnly((v) => !v),
-            title: `Past bij: ${activeDietTags.join(", ")}`,
             style: {
-              border: `1.5px solid ${dietOnly ? C.sage : C.borderTint}`,
+              width: "100%",
+              textAlign: "left",
+              padding: "11px 13px",
+              borderRadius: 14,
+              cursor: "pointer",
+              fontFamily: FONT_BODY,
+              fontSize: 13,
+              marginBottom: 16,
               background: dietOnly ? C.sage : C.cardBg,
-              borderRadius: 12,
-              width: 42,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer"
+              color: dietOnly ? "#fff" : C.ink,
+              border: `1.5px solid ${dietOnly ? C.sage : C.borderTint}`
             },
-            children: /* @__PURE__ */ jsx(StickyNote, { size: 17, color: dietOnly ? "#fff" : C.inkSoft })
+            children: [
+              "Alleen wat past bij ",
+              activeDietTags.join(", ")
+            ]
           }
         )
       ] }),
-      makeOnly && /* @__PURE__ */ jsxs("div", { style: { marginTop: -6, marginBottom: 10 }, children: [
-        /* @__PURE__ */ jsxs("p", { style: { fontSize: 12, color: C.inkSoft, margin: "0 0 6px" }, children: [
-          "Gesorteerd op wat je in huis hebt: compleet bovenaan, daaronder wat je nog moet halen",
-          maxCookTime ? `, binnen ${maxCookTime} minuten` : "",
-          ". Basis zoals zout, peper en olie wordt als aanwezig beschouwd."
-        ] }),
-        /* @__PURE__ */ jsx("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" }, children: [["20 min", 20], ["45 min", 45], ["Geen limiet", null]].map(([label, val]) => /* @__PURE__ */ jsxs(
-          "button",
-          {
-            onClick: () => setMaxCookTime(val),
-            style: {
-              padding: "5px 11px",
-              borderRadius: 16,
-              fontSize: 12,
-              cursor: "pointer",
-              border: `1.5px solid ${maxCookTime === val ? C.sage : C.borderTint}`,
-              background: maxCookTime === val ? C.sage : C.cardBg,
-              color: maxCookTime === val ? "#fff" : C.inkSoft,
-              fontWeight: maxCookTime === val ? 600 : 400
-            },
-            children: [
-              /* @__PURE__ */ jsx(Clock, { size: 10, style: { verticalAlign: -1, marginRight: 3 } }),
-              label
-            ]
-          },
-          label
-        )) })
-      ] }),
-      bookMode === "mine" && /* @__PURE__ */ jsxs("div", { style: { marginBottom: 12, display: "flex", gap: 8 }, children: [
-        /* @__PURE__ */ jsxs(PrimaryButton, { onClick: onNew, full: true, children: [
-          /* @__PURE__ */ jsx(Plus, { size: 16 }),
-          " Nieuw recept"
-        ] }),
-        /* @__PURE__ */ jsxs(GhostButton, { onClick: onImport, children: [
-          /* @__PURE__ */ jsx(Sparkles, { size: 15 }),
-          " Importeren"
-        ] })
-      ] }),
-      bookMode === "mine" && /* @__PURE__ */ jsx(SeasonalAndSurpriseBar, { recipes, inventory, onOpen, showToast }),
-      /* @__PURE__ */ jsx("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }, children: recipes.map((r) => {
+      /* @__PURE__ */ jsx(PrimaryButton, { full: true, onClick: () => setFilterOpen(false), children: "Klaar" })
+    ] }),
+    bookMode === "history" ? /* @__PURE__ */ jsx(CookHistoryList, { cookLog, onOpen }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+      view === "kan" && bookMode === "mine" && (() => {
+        const compleet = recipes.filter((r) => recipeReadiness(r, inventory).complete);
+        return compleet.length === 0 && recipes.length > 0 ? /* @__PURE__ */ jsx("div", { style: { background: C.noteBg, border: `1px solid ${C.mustard}`, borderRadius: 14, padding: "10px 12px", marginBottom: 12, fontSize: 12.5, color: C.ink, lineHeight: 1.5 }, children: "Op dit moment is niets helemaal compleet. Deze komen het dichtst in de buurt." }) : null;
+      })(),
+      /* @__PURE__ */ jsx("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }, children: recipes.map((r, idx) => {
         const readiness = recipeReadiness(r, inventory);
-        return /* @__PURE__ */ jsxs(
-          "div",
-          {
-            onClick: () => onOpen(r.id),
-            style: { background: C.cardBg, borderRadius: 16, padding: 8, cursor: "pointer", border: `1.5px solid ${C.borderTint}`, position: "relative" },
-            children: [
-              /* @__PURE__ */ jsx("div", { style: { position: "absolute", top: 5, left: 5, width: 6, height: 6, borderRadius: 2, background: C.blue, opacity: 0.18, transform: "rotate(45deg)" } }),
-              /* @__PURE__ */ jsx("div", { style: { position: "absolute", bottom: 5, right: 5, width: 6, height: 6, borderRadius: 2, background: C.blue, opacity: 0.18, transform: "rotate(45deg)" } }),
-              /* @__PURE__ */ jsx(TileThumb, { recipe: r }),
-              /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: 8 }, children: [
-                /* @__PURE__ */ jsx("span", { style: {
-                  fontFamily: FONT_DISPLAY,
-                  fontWeight: 600,
-                  fontSize: 14,
-                  color: C.ink,
-                  lineHeight: 1.25,
-                  // Afkappen na twee regels: een lange naam maakte de tegel
-                  // hoger dan zijn buurman en trok het raster scheef.
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical",
-                  overflow: "hidden",
-                  wordBreak: "break-word"
-                }, children: r.name }),
-                bookMode === "mine" && /* @__PURE__ */ jsx("button", { onClick: (e) => {
-                  e.stopPropagation();
-                  onToggleFav(r.id);
-                }, style: { background: "none", border: "none", cursor: "pointer", flexShrink: 0, padding: 0, marginLeft: 4 }, children: /* @__PURE__ */ jsx(Star, { size: 16, fill: r.favorite ? C.mustard : "none", color: r.favorite ? C.mustard : C.ceramicDark }) })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginTop: 6, fontSize: 11, color: C.inkSoft, fontFamily: FONT_MONO }, children: [
-                /* @__PURE__ */ jsxs("span", { style: { display: "flex", alignItems: "center", gap: 3 }, children: [
-                  /* @__PURE__ */ jsx(Clock, { size: 11 }),
-                  r.cookTime,
-                  "m"
+        const vorige = idx > 0 ? recipes[idx - 1] : null;
+        const toonScheiding = view === "kan" && bookMode === "mine" && idx > 0 && !readiness.complete && vorige && recipeReadiness(vorige, inventory).complete;
+        return /* @__PURE__ */ jsxs(React.Fragment, { children: [
+          toonScheiding && /* @__PURE__ */ jsxs("div", { style: { gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 9, margin: "6px 0 2px" }, children: [
+            /* @__PURE__ */ jsx("span", { style: { height: 1, background: C.ceramicDark, flex: 1 } }),
+            /* @__PURE__ */ jsx("span", { style: { fontSize: 12, color: C.inkSoft }, children: "Bijna compleet" }),
+            /* @__PURE__ */ jsx("span", { style: { height: 1, background: C.ceramicDark, flex: 1 } })
+          ] }),
+          /* @__PURE__ */ jsxs(
+            "div",
+            {
+              onClick: () => onOpen(r.id),
+              style: { background: C.cardBg, borderRadius: 16, padding: 8, cursor: "pointer", border: `1.5px solid ${C.borderTint}`, position: "relative" },
+              children: [
+                /* @__PURE__ */ jsx("div", { style: { position: "absolute", top: 5, left: 5, width: 6, height: 6, borderRadius: 2, background: C.blue, opacity: 0.18, transform: "rotate(45deg)" } }),
+                /* @__PURE__ */ jsx("div", { style: { position: "absolute", bottom: 5, right: 5, width: 6, height: 6, borderRadius: 2, background: C.blue, opacity: 0.18, transform: "rotate(45deg)" } }),
+                /* @__PURE__ */ jsx(TileThumb, { recipe: r }),
+                /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: 8 }, children: [
+                  /* @__PURE__ */ jsx("span", { style: {
+                    fontFamily: FONT_DISPLAY,
+                    fontWeight: 600,
+                    fontSize: 14,
+                    color: C.ink,
+                    lineHeight: 1.25,
+                    // Afkappen na twee regels: een lange naam maakte de tegel
+                    // hoger dan zijn buurman en trok het raster scheef.
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                    wordBreak: "break-word"
+                  }, children: r.name }),
+                  bookMode === "mine" && /* @__PURE__ */ jsx("button", { onClick: (e) => {
+                    e.stopPropagation();
+                    onToggleFav(r.id);
+                  }, style: { background: "none", border: "none", cursor: "pointer", flexShrink: 0, padding: 0, marginLeft: 4 }, children: /* @__PURE__ */ jsx(Star, { size: 16, fill: r.favorite ? C.mustard : "none", color: r.favorite ? C.mustard : C.ceramicDark }) })
                 ] }),
-                /* @__PURE__ */ jsxs("span", { style: { display: "flex", alignItems: "center", gap: 3 }, children: [
-                  /* @__PURE__ */ jsx(Users, { size: 11 }),
-                  r.servings
-                ] })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }, children: [
-                readiness.relevant > 0 && (readiness.complete ? /* @__PURE__ */ jsxs(Pill, { tone: "ok", children: [
-                  /* @__PURE__ */ jsx(Check, { size: 10 }),
-                  " Compleet"
-                ] }) : /* @__PURE__ */ jsxs(Pill, { tone: "warn", children: [
-                  "Nog ",
-                  readiness.missing.length,
-                  " nodig"
-                ] })),
-                r.community && bookMode === "mine" && /* @__PURE__ */ jsxs(Pill, { tone: "auto", children: [
+                /* @__PURE__ */ jsxs("div", { style: { marginTop: 4, fontSize: 12, color: readiness.complete ? C.sage : C.inkSoft, lineHeight: 1.35 }, children: [
+                  r.cookTime,
+                  "m",
+                  readiness.relevant > 0 && (readiness.complete ? " \xB7 compleet" : readiness.missing.length === 1 ? ` \xB7 nog ${readiness.missing[0].toLowerCase()}` : ` \xB7 nog ${readiness.missing.length} nodig`)
+                ] }),
+                r.community && bookMode === "mine" && /* @__PURE__ */ jsx("div", { style: { marginTop: 5 }, children: /* @__PURE__ */ jsxs(Pill, { tone: "auto", children: [
                   /* @__PURE__ */ jsx(Users, { size: 10 }),
                   " Gedeeld"
-                ] })
-              ] }),
-              readiness.missing.length > 0 && readiness.missing.length <= 3 && /* @__PURE__ */ jsxs("div", { style: { marginTop: 6, fontSize: 11, color: C.inkSoft, lineHeight: 1.35 }, children: [
-                "Nog nodig: ",
-                /* @__PURE__ */ jsx("span", { style: { color: C.brick }, children: readiness.missing.join(", ") })
-              ] }),
-              bookMode === "community" && /* @__PURE__ */ jsxs(
-                "button",
-                {
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    onDuplicate(r.id);
-                  },
-                  style: { marginTop: 8, width: "100%", padding: "6px 8px", borderRadius: 10, border: "none", background: C.mustard, color: "#2A1F06", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 },
-                  children: [
-                    /* @__PURE__ */ jsx(Plus, { size: 12 }),
-                    " Voeg toe"
-                  ]
-                }
-              )
-            ]
-          },
-          r.id
-        );
+                ] }) }),
+                bookMode === "community" && /* @__PURE__ */ jsxs(
+                  "button",
+                  {
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      onDuplicate(r.id);
+                    },
+                    style: { marginTop: 8, width: "100%", padding: "6px 8px", borderRadius: 10, border: "none", background: C.mustard, color: "#2A1F06", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 },
+                    children: [
+                      /* @__PURE__ */ jsx(Plus, { size: 12 }),
+                      " Voeg toe"
+                    ]
+                  }
+                )
+              ]
+            }
+          )
+        ] }, r.id);
       }) }),
       recipes.length === 0 && bookMode === "community" && /* @__PURE__ */ jsxs("div", { style: { textAlign: "center", padding: "40px 10px", color: C.inkSoft, fontSize: 13 }, children: [
         /* @__PURE__ */ jsx(Users, { size: 26, color: C.ceramicDark, style: { marginBottom: 8 } }),
         /* @__PURE__ */ jsx("p", { children: "Nog geen gedeelde recepten. Open een recept in je eigen kookboek en tik op het community-icoon om als eerste iets te delen." })
       ] }),
-      recipes.length === 0 && bookMode === "mine" && /* @__PURE__ */ jsx("div", { style: { textAlign: "center", padding: "40px 10px", color: C.inkSoft, fontSize: 13 }, children: "Geen gerechten gevonden. Voeg je eerste recept toe." })
+      recipes.length === 0 && bookMode === "mine" && /* @__PURE__ */ jsx("div", { style: { textAlign: "center", padding: "36px 14px", color: C.inkSoft, fontSize: 13, lineHeight: 1.55 }, children: zoekt ? /* @__PURE__ */ jsxs(Fragment, { children: [
+        "Geen gerecht gevonden voor \u201C",
+        query,
+        "\u201D."
+      ] }) : view === "favoriet" ? /* @__PURE__ */ jsx(Fragment, { children: "Nog geen favorieten. Tik op de ster bij een recept om het hier te bewaren." }) : view === "seizoen" ? /* @__PURE__ */ jsx(Fragment, { children: "Geen van je recepten gebruikt typische producten van deze maand." }) : view === "kan" ? /* @__PURE__ */ jsx(Fragment, { children: "Je kunt op dit moment niets volledig maken. Vul je voorraad aan, of kijk bij \u201CAlles\u201D wat er dichtbij komt." }) : /* @__PURE__ */ jsx(Fragment, { children: "Je kookboek is nog leeg. Tik op de plusknop om je eerste recept toe te voegen." }) }),
+      bookMode === "mine" && /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: onNew,
+          "aria-label": "Nieuw recept toevoegen",
+          style: {
+            position: "fixed",
+            right: 16,
+            zIndex: 60,
+            bottom: "calc(84px + env(safe-area-inset-bottom, 0px))",
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            border: "none",
+            background: C.blue,
+            color: "#fff",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 4px 14px rgba(21,44,72,0.28)"
+          },
+          children: /* @__PURE__ */ jsx(Plus, { size: 26 })
+        }
+      )
     ] })
   ] });
 }
@@ -5247,8 +5234,8 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: 12 }, children: [
       /* @__PURE__ */ jsx("h1", { style: { fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700, color: C.ink, margin: 0 }, children: recipe.name }),
       isMine && /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, flexShrink: 0, marginLeft: 8 }, children: [
-        /* @__PURE__ */ jsx("button", { "aria-label": "Recept delen met andere huishoudens", onClick: onToggleCommunity, title: recipe.community ? "Niet meer delen" : "Delen met community", style: { background: "none", border: "none", cursor: "pointer" }, style: { padding: 8, margin: -8, background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(Users, { size: 20, fill: recipe.community ? C.blue : "none", color: recipe.community ? C.blue : C.ceramicDark }) }),
-        /* @__PURE__ */ jsx("button", { "aria-label": "Markeren als favoriet", onClick: onToggleFav, style: { background: "none", border: "none", cursor: "pointer" }, style: { padding: 8, margin: -8, background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(Star, { size: 22, fill: recipe.favorite ? C.mustard : "none", color: recipe.favorite ? C.mustard : C.ceramicDark }) })
+        /* @__PURE__ */ jsx("button", { "aria-label": "Recept delen met andere huishoudens", onClick: onToggleCommunity, title: recipe.community ? "Niet meer delen" : "Delen met community", style: { padding: 8, margin: -8, background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(Users, { size: 20, fill: recipe.community ? C.blue : "none", color: recipe.community ? C.blue : C.ceramicDark }) }),
+        /* @__PURE__ */ jsx("button", { "aria-label": "Markeren als favoriet", onClick: onToggleFav, style: { padding: 8, margin: -8, background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(Star, { size: 22, fill: recipe.favorite ? C.mustard : "none", color: recipe.favorite ? C.mustard : C.ceramicDark }) })
       ] })
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 10, marginTop: 6, marginBottom: 14, flexWrap: "wrap" }, children: [
@@ -5588,7 +5575,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
     sousChefOpen && /* @__PURE__ */ jsx(SousChefModal, { recipe, onAsk: onAskSousChef, onClose: () => setSousChefOpen(false) })
   ] });
 }
-function RecipeForm({ initial, inventoryNames, inventoryItems = [], onCancel, onSave }) {
+function RecipeForm({ initial, inventoryNames, inventoryItems = [], onImport, onCancel, onSave }) {
   const [name, setName] = useState(initial.name || "");
   const [emoji, setEmoji] = useState(initial.emoji || "\u{1F37D}\uFE0F");
   const [emojiTouched, setEmojiTouched] = useState(Boolean(initial.id || initial.emoji));
@@ -5641,6 +5628,33 @@ function RecipeForm({ initial, inventoryNames, inventoryItems = [], onCancel, on
     });
   };
   return /* @__PURE__ */ jsxs(Modal, { title: initial.id ? "Recept bewerken" : "Nieuw recept", onClose: onCancel, wide: true, children: [
+    !initial.id && onImport && /* @__PURE__ */ jsxs(
+      "button",
+      {
+        onClick: onImport,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 9,
+          width: "100%",
+          textAlign: "left",
+          background: C.noteBg,
+          border: `1.5px solid ${C.mustard}`,
+          borderRadius: 14,
+          padding: "11px 13px",
+          marginBottom: 16,
+          cursor: "pointer",
+          fontFamily: FONT_BODY
+        },
+        children: [
+          /* @__PURE__ */ jsx(Sparkles, { size: 17, color: C.mustardDeep }),
+          /* @__PURE__ */ jsxs("span", { children: [
+            /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 13.5, color: C.ink, fontWeight: 600 }, children: "Liever overnemen van een foto of link?" }),
+            /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 11.5, color: C.inkSoft }, children: "Pollepel leest het recept uit en vult dit formulier alvast in." })
+          ] })
+        ]
+      }
+    ),
     /* @__PURE__ */ jsx(Field, { label: "Naam", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, value: name, onChange: (e) => handleNameChange(e.target.value), placeholder: "Bijv. Groentecurry" }) }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 10 }, children: [
       /* @__PURE__ */ jsx("div", { style: { width: 70 }, children: /* @__PURE__ */ jsx(Field, { label: "Emoji", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, value: emoji, onChange: (e) => handleEmojiChange(e.target.value) }) }) }),
@@ -6694,11 +6708,78 @@ function FridgeMagnetView({ household, onClose }) {
 function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose }) {
   const [query, setQuery] = useState("");
   const filtered = recipes.filter((r) => r.name.toLowerCase().includes(query.toLowerCase()));
+  const [rouletteBezig, setRouletteBezig] = useState(false);
+  const [gerold, setGerold] = useState(null);
+  const rol = () => {
+    if (!recipes.length) return;
+    setRouletteBezig(true);
+    setGerold(null);
+    setTimeout(() => {
+      const gescoord = recipes.map((r) => ({ r, mist: inventory ? recipeReadiness(r, inventory).missing.length : 0 })).sort((a, b) => a.mist - b.mist);
+      const minste = gescoord[0].mist;
+      const pool = gescoord.filter((x) => x.mist === minste);
+      const keuze = pool[Math.floor(Math.random() * pool.length)];
+      setGerold(keuze);
+      setRouletteBezig(false);
+    }, 900);
+  };
   const leftovers = useMemo(() => {
     if (!inventory) return [];
     return inventory.filter((i) => i.sourceRecipeId && i.current > 0).map((i) => ({ item: i, recipe: recipes.find((r) => r.id === i.sourceRecipeId), daysLeft: daysUntil(i.expiryDate) })).filter((l) => l.recipe);
   }, [inventory, recipes]);
   return /* @__PURE__ */ jsxs(Modal, { title: "Kies een recept", onClose, children: [
+    !query && !gerold && !rouletteBezig && /* @__PURE__ */ jsxs(
+      "button",
+      {
+        onClick: rol,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 11,
+          width: "100%",
+          textAlign: "left",
+          background: C.noteBg,
+          border: `1.5px solid ${C.mustard}`,
+          borderRadius: 14,
+          padding: "12px 13px",
+          marginBottom: 12,
+          cursor: "pointer",
+          fontFamily: FONT_BODY
+        },
+        children: [
+          /* @__PURE__ */ jsx("span", { style: { fontSize: 24, flexShrink: 0 }, children: "\u{1F3B2}" }),
+          /* @__PURE__ */ jsxs("span", { children: [
+            /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 14.5, color: C.ink, fontWeight: 600 }, children: "Verrassing" }),
+            /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 11.5, color: C.inkSoft }, children: "Laat Pollepel kiezen \u2014 met voorrang voor wat je in huis hebt" })
+          ] })
+        ]
+      }
+    ),
+    rouletteBezig && /* @__PURE__ */ jsx("div", { style: { background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14, padding: "18px 13px", marginBottom: 12 }, children: /* @__PURE__ */ jsx(PollepelLoader, { tekst: "Even roeren\u2026", size: 40, delay: 0 }) }),
+    gerold && !rouletteBezig && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14, padding: "13px", marginBottom: 12 }, children: [
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 11, marginBottom: 11 }, children: [
+        /* @__PURE__ */ jsx("span", { style: { fontSize: 28, flexShrink: 0 }, children: gerold.r.emoji || "\u{1F37D}\uFE0F" }),
+        /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
+          /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 11, color: C.inkSoft, letterSpacing: "0.04em" }, children: "HET WORDT\u2026" }),
+          /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 15.5, color: C.ink, fontWeight: 600, lineHeight: 1.25 }, children: gerold.r.name }),
+          /* @__PURE__ */ jsxs("span", { style: { display: "block", fontSize: 12, color: gerold.mist ? C.brick : C.sage, marginTop: 2 }, children: [
+            gerold.r.cookTime,
+            "m \xB7 ",
+            gerold.mist === 0 ? "alles in huis" : `nog ${gerold.mist} nodig`
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+        /* @__PURE__ */ jsxs(PrimaryButton, { tone: "sage", onClick: () => onPick(gerold.r.id), children: [
+          /* @__PURE__ */ jsx(Check, { size: 15 }),
+          " Deze wordt het"
+        ] }),
+        /* @__PURE__ */ jsxs(GhostButton, { onClick: rol, children: [
+          /* @__PURE__ */ jsx(Shuffle, { size: 14 }),
+          " Nog eens"
+        ] })
+      ] })
+    ] }),
     !query && /* @__PURE__ */ jsxs(
       "button",
       {
