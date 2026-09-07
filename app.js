@@ -2260,6 +2260,46 @@ function AgendaModal({ token, onClose, onDownload }) {
     /* @__PURE__ */ jsx("p", { style: { fontSize: 11, color: C.inkSoft, marginTop: 14, lineHeight: 1.45 }, children: "Iedereen met dit adres kan jullie weekmenu zien. Deel het alleen met je huisgenoten." })
   ] });
 }
+function PollepelLoader({ tekst, size = 44, delay = 350, inline = false }) {
+  const [zichtbaar, setZichtbaar] = useState(delay === 0);
+  useEffect(() => {
+    if (delay === 0) return;
+    const t = setTimeout(() => setZichtbaar(true), delay);
+    return () => clearTimeout(t);
+  }, [delay]);
+  if (!zichtbaar) return null;
+  return /* @__PURE__ */ jsxs(
+    "div",
+    {
+      role: "status",
+      "aria-live": "polite",
+      style: {
+        display: "flex",
+        flexDirection: inline ? "row" : "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: inline ? 8 : 10,
+        padding: inline ? 0 : "24px 12px"
+      },
+      children: [
+        /* @__PURE__ */ jsx(
+          "span",
+          {
+            style: {
+              display: "inline-flex",
+              // Draait om het uiteinde van de steel, zodat de bak van de lepel
+              // roert in plaats van dat het geheel om zijn as tolt.
+              animation: "pollepelRoeren 1.4s linear infinite",
+              transformOrigin: "72% 50%"
+            },
+            children: /* @__PURE__ */ jsx(LogoMark, { size })
+          }
+        ),
+        tekst && /* @__PURE__ */ jsx("span", { style: { fontSize: 12.5, color: C.inkSoft, fontFamily: FONT_BODY }, children: tekst })
+      ]
+    }
+  );
+}
 function VanavondStrook({ entry, recipe, readiness, cookNaam, onOpen, onVerrasMe, onNaarWeekmenu }) {
   const basis = {
     display: "flex",
@@ -3917,10 +3957,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
   };
   const showWelcome = !loading && preferences && preferences.welcomeSeen !== true;
   if (loading) {
-    return /* @__PURE__ */ jsxs("div", { style: { minHeight: 500, display: "flex", alignItems: "center", justifyContent: "center", background: C.ceramic, fontFamily: FONT_BODY }, children: [
-      /* @__PURE__ */ jsx(Loader2, { className: "animate-spin", size: 22, color: C.blue }),
-      /* @__PURE__ */ jsx("span", { style: { marginLeft: 8, color: C.blueDeep }, children: "Kookboek wordt geladen\u2026" })
-    ] });
+    return /* @__PURE__ */ jsx("div", { style: { minHeight: 500, display: "flex", alignItems: "center", justifyContent: "center", background: C.ceramic, fontFamily: FONT_BODY }, children: /* @__PURE__ */ jsx(PollepelLoader, { tekst: "Kookboek wordt geladen\u2026", size: 52, delay: 0 }) });
   }
   return /* @__PURE__ */ jsxs("div", { style: { fontFamily: FONT_BODY, background: C.ceramic, minHeight: "100dvh", maxWidth: 480, margin: "0 auto", position: "relative", paddingBottom: "calc(72px + env(safe-area-inset-bottom, 0px))" }, children: [
     /* @__PURE__ */ jsx("style", { children: `
@@ -3928,6 +3965,17 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         input, select, textarea { font-size: 16px !important; }
         input:focus, textarea:focus, select:focus { outline: 2px solid ${C.mustard}; outline-offset: 1px; }
         button:focus-visible { outline: 2px solid ${C.mustard}; outline-offset: 2px; }
+        @keyframes pollepelRoeren {
+          0%   { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          /* Wie beweging heeft uitgezet krijgt een rustige pulsering. */
+          @keyframes pollepelRoeren {
+            0%, 100% { transform: rotate(0deg); opacity: 1; }
+            50%      { transform: rotate(0deg); opacity: 0.45; }
+          }
+        }
         .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
         .no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
       ` }),
@@ -4905,10 +4953,7 @@ function SousChefModal({ recipe, onAsk, onClose }) {
       msg.role === "chef" && /* @__PURE__ */ jsx("span", { style: { marginRight: 5 }, children: "\u{1F468}\u200D\u{1F373}" }),
       msg.text
     ] }) }, idx)) }),
-    asking && /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }, children: [
-      /* @__PURE__ */ jsx(Loader2, { className: "animate-spin", size: 15, color: C.blue }),
-      /* @__PURE__ */ jsx("span", { style: { fontSize: 13, color: C.inkSoft }, children: "Souschef denkt na\u2026" })
-    ] }),
+    asking && /* @__PURE__ */ jsx("div", { style: { marginBottom: 10 }, children: /* @__PURE__ */ jsx(PollepelLoader, { tekst: "Souschef denkt na\u2026", size: 22, inline: true }) }),
     error && /* @__PURE__ */ jsx("p", { style: { fontSize: 12, color: C.brick, marginTop: -4, marginBottom: 10 }, children: error }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
       /* @__PURE__ */ jsx(
@@ -4935,7 +4980,10 @@ function NutritionLabel({ recipe, isMine, onRecalculate, busy }) {
   if (!n) {
     return /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 16, padding: 14, marginBottom: 16 }, children: [
       /* @__PURE__ */ jsx("div", { style: { fontSize: 13, color: C.inkSoft, marginBottom: isMine ? 8 : 0 }, children: "Voedingswaarden nog niet berekend." }),
-      isMine && /* @__PURE__ */ jsx(GhostButton, { onClick: onRecalculate, disabled: busy, full: true, children: busy ? "Bezig met berekenen\u2026" : "Bereken voedingswaarden" })
+      isMine && /* @__PURE__ */ jsxs(GhostButton, { onClick: onRecalculate, disabled: busy, full: true, children: [
+        busy && /* @__PURE__ */ jsx(PollepelLoader, { size: 16, inline: true, delay: 0 }),
+        busy ? "Bezig met berekenen\u2026" : "Bereken voedingswaarden"
+      ] })
     ] });
   }
   const stale = n.fingerprint && n.fingerprint !== nutritionFingerprint(recipe);
@@ -5727,6 +5775,7 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, period
     if (typeof raw === "string") return { recipeId: raw, cook: "" };
     return raw;
   };
+  const [toolsOpen, setToolsOpen] = useState(false);
   const plannedCount = periodDays.filter((d) => dayEntry(d.key)?.recipeId).length;
   const hasEmptyDay = periodDays.some((d) => {
     const e = dayEntry(d.key);
@@ -5791,38 +5840,6 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, period
         )) })
       ] }, item.id))
     ] }),
-    /* @__PURE__ */ jsx("div", { style: { marginBottom: 14 }, children: /* @__PURE__ */ jsxs(PrimaryButton, { tone: "mustard", full: true, onClick: onAIGenerate, children: [
-      /* @__PURE__ */ jsx(Wand2, { size: 16 }),
-      " AI: genereer weekmenu"
-    ] }) }),
-    /* @__PURE__ */ jsx("div", { style: { marginBottom: 14 }, children: /* @__PURE__ */ jsxs(GhostButton, { full: true, onClick: onPatternGenerate, children: [
-      /* @__PURE__ */ jsx(Sparkles, { size: 14 }),
-      " Stel voor zoals wij normaal eten"
-    ] }) }),
-    /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginBottom: 14 }, children: [
-      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(GhostButton, { onClick: onDuplicate, children: [
-        /* @__PURE__ */ jsx(Copy, { size: 13 }),
-        " Dupliceer"
-      ] }) }),
-      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(GhostButton, { onClick: onApplyTemplate, children: [
-        /* @__PURE__ */ jsx(CalendarDays, { size: 13 }),
-        " Vorig weekmenu"
-      ] }) }),
-      /* @__PURE__ */ jsx(
-        "button",
-        {
-          "aria-label": "Willekeurige suggestie",
-          onClick: onShuffle,
-          title: "Shuffel de geplande gerechten door de dagen",
-          style: { width: 42, background: C.cardBg, border: `1.5px solid ${C.blue}`, borderRadius: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
-          children: /* @__PURE__ */ jsx(Shuffle, { size: 15, color: C.blue })
-        }
-      )
-    ] }),
-    /* @__PURE__ */ jsx("div", { style: { marginBottom: 16 }, children: /* @__PURE__ */ jsxs(GhostButton, { onClick: onExportCalendar, children: [
-      /* @__PURE__ */ jsx(CalendarClock, { size: 14 }),
-      " Weekmenu in je agenda"
-    ] }) }),
     /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 16, border: `1.5px solid ${C.borderTint}`, marginBottom: 16 }, children: periodDays.map((day, idx) => {
       const entry = dayEntry(day.key);
       const recipe = entry?.recipeId ? findRecipe(entry.recipeId) : null;
@@ -5936,8 +5953,77 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, period
     }) }),
     /* @__PURE__ */ jsxs(PrimaryButton, { tone: "mustard", full: true, disabled: plannedCount === 0, onClick: onGenerate, children: [
       /* @__PURE__ */ jsx(ClipboardList, { size: 16 }),
-      " Boodschappenlijst genereren voor deze week"
-    ] })
+      " Boodschappenlijst genereren"
+    ] }),
+    /* @__PURE__ */ jsxs(
+      "button",
+      {
+        onClick: () => setToolsOpen((v) => !v),
+        style: {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
+          width: "100%",
+          marginTop: 12,
+          background: "none",
+          border: "none",
+          color: C.blue,
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: "pointer",
+          fontFamily: FONT_BODY,
+          minHeight: 44
+        },
+        children: [
+          /* @__PURE__ */ jsx(Sparkles, { size: 14 }),
+          " Deze week snel vullen",
+          toolsOpen ? /* @__PURE__ */ jsx(ChevronUp, { size: 15 }) : /* @__PURE__ */ jsx(ChevronDown, { size: 15 })
+        ]
+      }
+    ),
+    toolsOpen && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 16, padding: 12, marginTop: 4 }, children: [
+      /* @__PURE__ */ jsx("div", { style: { marginBottom: 8 }, children: /* @__PURE__ */ jsxs(PrimaryButton, { full: true, onClick: onAIGenerate, children: [
+        /* @__PURE__ */ jsx(Wand2, { size: 16 }),
+        " Laat de AI een week bedenken"
+      ] }) }),
+      /* @__PURE__ */ jsx("div", { style: { marginBottom: 8 }, children: /* @__PURE__ */ jsxs(GhostButton, { full: true, onClick: onPatternGenerate, children: [
+        /* @__PURE__ */ jsx(Sparkles, { size: 14 }),
+        " Zoals wij normaal eten"
+      ] }) }),
+      /* @__PURE__ */ jsx("div", { style: { marginBottom: 8 }, children: /* @__PURE__ */ jsxs(GhostButton, { full: true, onClick: onApplyTemplate, children: [
+        /* @__PURE__ */ jsx(CalendarDays, { size: 14 }),
+        " Vorige week overnemen"
+      ] }) }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(GhostButton, { full: true, onClick: onDuplicate, children: [
+          /* @__PURE__ */ jsx(Copy, { size: 13 }),
+          " Dupliceren"
+        ] }) }),
+        /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(GhostButton, { full: true, onClick: onShuffle, children: [
+          /* @__PURE__ */ jsx(Shuffle, { size: 13 }),
+          " Door elkaar"
+        ] }) })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx("div", { style: { textAlign: "center", marginTop: 14 }, children: /* @__PURE__ */ jsx(
+      "button",
+      {
+        onClick: onExportCalendar,
+        style: {
+          background: "none",
+          border: "none",
+          color: C.inkSoft,
+          fontSize: 12.5,
+          cursor: "pointer",
+          fontFamily: FONT_BODY,
+          minHeight: 44,
+          textDecoration: "underline",
+          textUnderlineOffset: 3
+        },
+        children: "Weekmenu in je agenda zetten"
+      }
+    ) })
   ] });
 }
 function AttendeesPickerModal({ cooks, current, onSave, onAddCook, onClose }) {
@@ -6323,10 +6409,7 @@ function ShelfPhotoModal({ scanning, error, results, onScan, onToggleInclude, on
       /* @__PURE__ */ jsx("p", { style: { fontSize: 11, color: C.inkSoft, marginTop: -4 }, children: `Lukt "Direct camera" niet (sommige browsers blokkeren dit)? Maak de foto dan eerst met je gewone camera-app, en kies 'm daarna via "Foto kiezen".` })
     ] }),
     preview && /* @__PURE__ */ jsx("img", { src: preview, alt: "Kast", style: { width: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 14, border: `1.5px solid ${C.borderTint}`, background: C.ceramic, marginBottom: 12 } }),
-    scanning && /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, justifyContent: "center", padding: 20 }, children: [
-      /* @__PURE__ */ jsx(Loader2, { className: "animate-spin", size: 18, color: C.blue }),
-      /* @__PURE__ */ jsx("span", { style: { fontSize: 13, color: C.inkSoft }, children: "Producten herkennen\u2026" })
-    ] }),
+    scanning && /* @__PURE__ */ jsx(PollepelLoader, { tekst: "Producten herkennen\u2026", size: 40 }),
     error && !scanning && /* @__PURE__ */ jsx("div", { style: { background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 12, padding: "8px 10px", fontSize: 13, color: C.brick, marginBottom: 10 }, children: error }),
     !scanning && results.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsxs("p", { style: { fontSize: 12, color: C.inkSoft }, children: [
@@ -7402,7 +7485,7 @@ function ImportModal({ importing, error, onCancel, onImportText, onImportUrl, on
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginTop: 6 }, children: [
       /* @__PURE__ */ jsxs(PrimaryButton, { tone: "mustard", disabled: !canSubmit || importing, onClick: handleSubmit, children: [
-        importing ? /* @__PURE__ */ jsx(Loader2, { className: "animate-spin", size: 16 }) : /* @__PURE__ */ jsx(Sparkles, { size: 16 }),
+        importing ? /* @__PURE__ */ jsx(PollepelLoader, { size: 18, inline: true, delay: 0 }) : /* @__PURE__ */ jsx(Sparkles, { size: 16 }),
         importing ? "Bezig met herkennen\u2026" : "Recept herkennen"
       ] }),
       /* @__PURE__ */ jsx(GhostButton, { onClick: onCancel, children: "Annuleren" })
