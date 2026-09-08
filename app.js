@@ -329,7 +329,7 @@ const INGREDIENT_SYNONYMS = [
   ["gehakt", "rundergehakt", "varkensgehakt"],
   ["spek", "spekjes", "katenspek", "ontbijtspek"],
   ["wortel", "wortels", "winterpeen", "bospeen", "worteltjes"],
-  ["aardappel", "aardappelen", "krieltjes"],
+  ["aardappel", "aardappelen"],
   ["boter", "roomboter"],
   ["olie", "olijfolie", "zonnebloemolie", "bakolie"],
   ["bouillon", "bouillonblokje", "bouillonblokjes"],
@@ -412,6 +412,131 @@ function aaneenMatch(wa, wb) {
   }
   return false;
 }
+const STUK_GEWICHTEN = [
+  ["teentje knoflook", 5],
+  ["teen knoflook", 5],
+  ["knoflookteen", 5],
+  ["knoflookteentje", 5],
+  ["laurierblad", 0.2],
+  ["kruidnagel", 0.1],
+  ["bosje peterselie", 30],
+  ["bosje bieslook", 15],
+  ["bosje koriander", 30],
+  ["chilipeper", 15],
+  ["rode peper", 15],
+  ["spaanse peper", 15],
+  ["sjalotje", 25],
+  ["sjalot", 25],
+  ["lente-ui", 15],
+  ["bosui", 15],
+  ["rode ui", 100],
+  ["ui", 100],
+  ["uien", 100],
+  ["eidooier", 18],
+  ["eiwit", 33],
+  ["eieren", 55],
+  ["ei", 55],
+  ["trostomaat", 100],
+  ["cherrytomaatje", 15],
+  ["cherrytomaat", 15],
+  ["tomaat", 120],
+  ["tomaten", 120],
+  ["aardappel", 150],
+  ["aardappelen", 150],
+  ["wortel", 80],
+  ["wortels", 80],
+  ["winterpeen", 200],
+  ["paprika", 150],
+  ["courgette", 250],
+  ["prei", 150],
+  ["komkommer", 300],
+  ["bleekselderij", 60],
+  ["stengel bleekselderij", 60],
+  ["venkelknol", 300],
+  ["aubergine", 250],
+  ["citroen", 100],
+  ["limoen", 70],
+  ["sinaasappel", 200],
+  ["appel", 150],
+  ["peer", 170],
+  ["banaan", 120],
+  ["avocado", 200],
+  ["kipfilet", 150],
+  ["kipfilets", 150],
+  ["knoflook", 5],
+  ["knoflookbol", 50],
+  ["zalmfilet", 125],
+  ["visfilet", 125],
+  ["kabeljauwfilet", 125],
+  ["witvis", 125],
+  ["kipdijfilet", 100],
+  ["kippenpoot", 200],
+  ["drumstick", 100],
+  ["speklap", 40],
+  ["schnitzel", 120],
+  ["hamburger", 100],
+  ["gehaktbal", 90],
+  ["braadworst", 90],
+  ["rookworst", 275],
+  ["knakworst", 25],
+  ["cordon bleu", 150],
+  ["saucijs", 90],
+  ["plak ham", 20],
+  ["ham", 20],
+  ["witlof", 100],
+  ["witlofstronk", 100],
+  ["stronk witlof", 100],
+  ["broccoli", 400],
+  ["bloemkool", 800],
+  ["spitskool", 700],
+  ["venkel", 300],
+  ["mais", 200],
+  ["maiskolf", 200],
+  ["radijs", 8],
+  ["biet", 150],
+  ["rode biet", 150],
+  ["pastinaak", 150],
+  ["knolselderij", 700],
+  ["koolrabi", 300],
+  ["artisjok", 300],
+  ["mozzarella", 125],
+  ["bol mozzarella", 125],
+  ["burrata", 125],
+  ["wrap", 40],
+  ["tortilla", 40],
+  ["pitabroodje", 60],
+  ["pita", 60],
+  ["boterham", 35],
+  ["snee brood", 35],
+  ["broodje", 60],
+  ["bagel", 85],
+  ["beschuit", 10],
+  ["cracker", 8],
+  ["rijstwafel", 8],
+  ["bouillonblokje", 4],
+  ["bouillonblokjes", 4],
+  ["stockcube", 4],
+  ["blik", 400],
+  ["blikje", 400],
+  ["pot", 350],
+  ["potje", 350],
+  ["pak", 500],
+  ["tomatenblokjes", 400],
+  ["kokosmelk", 400]
+];
+function stukGewicht(naam) {
+  const woorden = nameWords(naam);
+  if (!woorden.length) return null;
+  let beste = null;
+  for (const [sleutel, gram] of STUK_GEWICHTEN) {
+    const sleutelWoorden = sleutel.split(" ");
+    const raak = sleutelWoorden.every(
+      (sw) => woorden.some((w) => wordsEqual(w, sw))
+    );
+    if (raak && (!beste || sleutel.length > beste.sleutel.length)) beste = { sleutel, gram };
+  }
+  return beste ? beste.gram : null;
+}
 const UNIT_BASE = {
   g: 1,
   kg: 1e3,
@@ -452,17 +577,43 @@ function findInventoryMatch(inventory, ing) {
     const linked = inventory.find((i) => i.id === ing.inventoryItemId);
     if (linked) return linked;
   }
-  const byNameAndUnit = inventory.find(
-    (i) => namesMatch(i.name, ing.name) && convertAmount(1, ing.unit, i.unit) !== null
-  );
-  if (byNameAndUnit) return byNameAndUnit;
-  return inventory.find((i) => namesMatch(i.name, ing.name)) || null;
+  const kandidaten = inventory.filter((i) => namesMatch(i.name, ing.name));
+  if (!kandidaten.length) return null;
+  if (kandidaten.length === 1) return kandidaten[0];
+  const gevraagd = norm(ing.name);
+  const score = (item) => {
+    let s = 0;
+    const naam = norm(item.name);
+    if (naam === gevraagd) s += 100;
+    else if (nameWords(naam).length === nameWords(gevraagd).length) s += 20;
+    if (convertAmount(1, ing.unit, item.unit) !== null) s += 30;
+    if (Number(item.current || 0) > 0) s += 15;
+    s -= Math.abs(naam.length - gevraagd.length) * 0.2;
+    return s;
+  };
+  return [...kandidaten].sort((a, b) => score(b) - score(a))[0];
 }
 function stockVsNeed(item, ing, scale = 1) {
   if (!item) return null;
-  const need = convertAmount(Number(ing.amount || 0) * scale, ing.unit, item.unit);
-  if (need === null) return null;
-  return { have: Number(item.current || 0), need, unit: item.unit };
+  const gevraagd = Number(ing.amount || 0) * scale;
+  const need = convertAmount(gevraagd, ing.unit, item.unit);
+  if (need !== null) return { have: Number(item.current || 0), need, unit: item.unit };
+  const ingUnit = (ing.unit || "").toLowerCase();
+  const itemUnit = (item.unit || "").toLowerCase();
+  const gram = stukGewicht(ing.name) || stukGewicht(item.name);
+  if (!gram) return null;
+  if (ingUnit === "stuks" && UNIT_KIND[itemUnit]) {
+    const inGram = gevraagd * gram;
+    const need2 = convertAmount(inGram, "g", itemUnit);
+    if (need2 === null) return null;
+    return { have: Number(item.current || 0), need: need2, unit: itemUnit, geschat: true };
+  }
+  if (itemUnit === "stuks" && UNIT_KIND[ingUnit]) {
+    const inGram = convertAmount(gevraagd, ingUnit, "g");
+    if (inGram === null) return null;
+    return { have: Number(item.current || 0), need: inGram / gram, unit: "stuks", geschat: true };
+  }
+  return null;
 }
 const EMOJI_KEYWORDS = [
   [["spaghetti", "pasta", "macaroni", "lasagne", "penne", "tagliatelle"], "\u{1F35D}"],
@@ -840,6 +991,7 @@ function isPantryBasic(name) {
 function recipeReadiness(recipe, inventory, scale = 1) {
   const missing = [];
   const unknown = [];
+  const estimated = [];
   let have = 0;
   let relevant = 0;
   (recipe.ingredients || []).forEach((ing) => {
@@ -855,6 +1007,7 @@ function recipeReadiness(recipe, inventory, scale = 1) {
       unknown.push(ing.name);
       return;
     }
+    if (cmp.geschat) estimated.push(ing.name);
     if (cmp.have >= cmp.need) have += 1;
     else missing.push(ing.name);
   });
@@ -863,6 +1016,7 @@ function recipeReadiness(recipe, inventory, scale = 1) {
     relevant,
     missing,
     unknown,
+    estimated,
     total: (recipe.ingredients || []).length,
     complete: relevant > 0 && missing.length === 0 && unknown.length === 0,
     canMake: relevant > 0 && missing.length === 0 && unknown.length === 0,
@@ -5443,7 +5597,12 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         servings,
         " ",
         servings === 1 ? "persoon" : "personen",
-        ". Basis zoals zout, peper en olie is niet meegerekend."
+        ". Basis zoals zout, peper en olie is niet meegerekend.",
+        readiness.estimated && readiness.estimated.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
+          " Bij ",
+          readiness.estimated.join(", "),
+          " is gerekend met een gemiddeld gewicht per stuk."
+        ] })
       ] }),
       onAddMissingToShopping && /* @__PURE__ */ jsxs(
         "button",
