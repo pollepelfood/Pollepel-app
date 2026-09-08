@@ -2648,6 +2648,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   const [cookingSessions, setCookingSessions] = useState([]);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [koppelVoor, setKoppelVoor] = useState(null);
+  const [leftoverContext, setLeftoverContext] = useState(null);
   const [periodIndex, setPeriodIndex] = useState(0);
   const [bookView, setBookView] = useState("alles");
   const [currentUserName, setCurrentUserName] = useState("");
@@ -3598,14 +3599,16 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     });
     return warnings;
   };
-  const addLeftover = (recipe, portions) => {
+  const addLeftover = (recipe, portions, bewaarplek = "koelkast") => {
     if (!portions || portions <= 0) return;
+    const naarVriezer = bewaarplek === "vriezer";
+    const dagen = naarVriezer ? 90 : 3;
     const expiry = /* @__PURE__ */ new Date();
-    expiry.setDate(expiry.getDate() + 3);
+    expiry.setDate(expiry.getDate() + dagen);
     const newItem = {
       id: uid(),
-      name: `Restje ${recipe.name}`,
-      category: "Overig",
+      name: naarVriezer ? `Vriezer: ${recipe.name}` : `Restje ${recipe.name}`,
+      category: naarVriezer ? "Diepvries" : "Maaltijden & salades",
       unit: "stuks",
       current: portions,
       min: 0,
@@ -3614,7 +3617,25 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       sourceRecipeId: recipe.id
     };
     persist("inventory", [...inventory, newItem], setInventory);
-    showToast(`${portions} portie${portions > 1 ? "s" : ""} kliekjes toegevoegd aan je voorraad (THT over 3 dagen).`);
+    showToast(
+      naarVriezer ? `${portions} portie${portions > 1 ? "s" : ""} in de vriezer gezet (houdbaar tot over 3 maanden).` : `${portions} portie${portions > 1 ? "s" : ""} in de koelkast gezet (eet binnen 3 dagen op).`
+    );
+  };
+  const eatLeftover = (inventoryItemId, porties, recipe) => {
+    const item = inventory.find((i) => i.id === inventoryItemId);
+    if (!item) {
+      showToast("Dit kliekje staat niet meer in je voorraad.");
+      return;
+    }
+    const gebruikt = Math.min(Number(porties) || 1, Number(item.current) || 0);
+    const rest = round2(Math.max(0, Number(item.current || 0) - gebruikt));
+    const next = rest > 0 ? inventory.map((i) => i.id === item.id ? { ...i, current: rest } : i) : inventory.filter((i) => i.id !== item.id);
+    persist("inventory", next, setInventory);
+    if (recipe) {
+      const entry = { id: uid(), recipeId: recipe.id, recipeName: recipe.name, emoji: recipe.emoji || "", servings: recipe.servings, date: (/* @__PURE__ */ new Date()).toISOString(), leftover: true };
+      persist("cookLog", [entry, ...cookLog], setCookLog);
+    }
+    showToast(rest > 0 ? `Opgegeten. Er ${rest === 1 ? "is nog 1 portie" : `zijn nog ${rest} porties`} over.` : "Opgegeten \u2014 het kliekje is op.");
   };
   const addFreezerPortion = (recipe) => {
     const portions = recipe.servings || 1;
@@ -3782,8 +3803,11 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     const e = dayEntry(day);
     return !e || !e.recipeId && !e.offNight;
   };
-  const setDayRecipe = (day, recipeId) => {
-    const next = { ...weekmenu, [day]: { ...dayEntry(day), recipeId, offNight: false } };
+  const setDayRecipe = (day, recipeId, leftoverItemId = null) => {
+    const next = {
+      ...weekmenu,
+      [day]: { ...dayEntry(day), recipeId, offNight: false, leftoverItemId: leftoverItemId || null }
+    };
     persist("weekmenu", next, setWeekmenu);
     setPickerDay(null);
   };
@@ -3922,7 +3946,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   const generateWeekShoppingList = (welkeIndex) => {
     const periode = periods[welkeIndex == null ? periodIndex : welkeIndex];
     const dagen = periode.dagen.map((d) => ({ key: dateKey(d) }));
-    const plannedEntries = dagen.map((d) => dayEntry(d.key)).filter((e) => e && e.recipeId).map((e) => {
+    const plannedEntries = dagen.map((d) => dayEntry(d.key)).filter((e) => e && e.recipeId && !e.leftoverItemId).map((e) => {
       const recipe = recipes.find((r) => r.id === e.recipeId);
       if (!recipe) return null;
       const attendeeScale = isPremiumOn("householdRSVP") && e.attendees && e.attendees.length ? e.attendees.length / (recipe.servings || 1) : 1;
@@ -4006,7 +4030,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
       if (!candidates.length) {
         const overallCounts = /* @__PURE__ */ new Map();
         cookLog.forEach((entry) => {
-          if (entry.recipeId) overallCounts.set(entry.recipeId, (overallCounts.get(entry.recipeId) || 0) + 1);
+          if (entry.recipeId && !entry.leftover) overallCounts.set(entry.recipeId, (overallCounts.get(entry.recipeId) || 0) + 1);
         });
         const byFrequency = Array.from(overallCounts.entries()).filter(([id]) => recipes.some((r) => r.id === id) && !usedThisRun.includes(id)).sort((a, b) => b[1] - a[1]).map(([id]) => id);
         const favorites = recipes.filter((r) => r.favorite && !usedThisRun.includes(r.id)).map((r) => r.id);
@@ -4355,6 +4379,12 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           onAddMissingToShopping: (scale) => addMissingToShopping(openRecipe, scale),
           onStartCooking: (personen) => startCookingSession(openRecipe, personen),
           onKoppel: (naam) => setKoppelVoor({ recipeId: openRecipe.id, ingredientNaam: naam }),
+          leftoverItem: leftoverContext ? inventory.find((i) => i.id === leftoverContext) : null,
+          onEatLeftover: (porties) => {
+            eatLeftover(leftoverContext, porties, openRecipe);
+            setLeftoverContext(null);
+            setOpenRecipeId(null);
+          },
           onRecalculateNutrition: () => recalculateNutrition(openRecipe.id),
           nutritionBusy
         }
@@ -4371,9 +4401,10 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           onNew: () => setEditingItem({}),
           onDelete: deleteInventoryItem,
           onScan: () => setScanOpen(true),
-          onOpenRecipe: (id, dbl) => {
+          onOpenRecipe: (id, dbl, leftoverId) => {
             setOpenRecipeId(id);
             setDoublePortionDefault(!!dbl);
+            setLeftoverContext(leftoverId || null);
             setTab("kookboek");
           },
           onOpenShelfPhoto: () => {
@@ -4422,9 +4453,10 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           onDuplicate: duplicateWeekmenu,
           onApplyTemplate: applyWeekmenuTemplate,
           onShuffle: shuffleWeekmenu,
-          onOpenRecipe: (id, dbl) => {
+          onOpenRecipe: (id, dbl, leftoverId) => {
             setOpenRecipeId(id);
             setDoublePortionDefault(!!dbl);
+            setLeftoverContext(leftoverId || null);
             setTab("kookboek");
           },
           onExportCalendar: () => setCalendarOpen(true),
@@ -4463,7 +4495,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
       {
         recipes,
         inventory,
-        onPick: (recipeId) => setDayRecipe(pickerDay, recipeId),
+        onPick: (recipeId, leftoverItemId) => setDayRecipe(pickerDay, recipeId, leftoverItemId),
         onPickOffNight: () => setDayOffNight(pickerDay),
         onClose: () => setPickerDay(null)
       }
@@ -5012,13 +5044,14 @@ function CookHistoryList({ cookLog, onOpen }) {
       children: [
         /* @__PURE__ */ jsx("div", { style: { width: 32, height: 32, borderRadius: 8, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }, children: entry.emoji || "\u{1F37D}\uFE0F" }),
         /* @__PURE__ */ jsxs("div", { style: { flex: 1 }, children: [
-          /* @__PURE__ */ jsx("div", { style: { fontSize: 14, color: C.ink }, children: entry.recipeName }),
+          /* @__PURE__ */ jsxs("div", { style: { fontSize: 14, color: C.ink }, children: [
+            entry.leftover ? "\u{1F371} " : "",
+            entry.recipeName
+          ] }),
           /* @__PURE__ */ jsxs("div", { style: { fontSize: 11, color: C.inkSoft, fontFamily: FONT_MONO }, children: [
             new Date(entry.date).toLocaleDateString("nl-NL", { day: "numeric", month: "short" }),
-            " \xB7 ",
-            entry.servings,
-            " pers.",
-            counts[entry.recipeId] > 1 && ` \xB7 ${counts[entry.recipeId]}x gemaakt`
+            entry.leftover ? " \xB7 als kliekje" : ` \xB7 ${entry.servings} pers.`,
+            !entry.leftover && counts[entry.recipeId] > 1 && ` \xB7 ${counts[entry.recipeId]}x gemaakt`
           ] })
         ] })
       ]
@@ -5142,10 +5175,12 @@ function NutritionLabel({ recipe, isMine, onRecalculate, busy }) {
     /* @__PURE__ */ jsx("div", { style: { fontSize: 11, color: C.inkSoft, marginTop: 8, lineHeight: 1.4 }, children: "Gebaseerd op gegevens van NEVO-online versie 2025/9.0, RIVM, Bilthoven." })
   ] });
 }
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, onRecalculateNutrition, nutritionBusy }) {
+function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, onRecalculateNutrition, nutritionBusy }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [usedAmounts, setUsedAmounts] = useState({});
   const [leftoverPortions, setLeftoverPortions] = useState(0);
+  const [bewaarplek, setBewaarplek] = useState("koelkast");
+  const [eatPortions, setEatPortions] = useState(1);
   const [wantDoublePortion, setWantDoublePortion] = useState(!!doublePortionDefault);
   useEffect(() => {
     setWantDoublePortion(!!doublePortionDefault);
@@ -5522,7 +5557,53 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         /* @__PURE__ */ jsx("div", { style: { fontSize: 13, color: C.ink, whiteSpace: "pre-wrap" }, children: recipe.notes })
       ] })
     ] }),
-    isMine && confirmCook === false && /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: [
+    isMine && leftoverItem && confirmCook === false && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 16, padding: 13 }, children: [
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }, children: [
+        /* @__PURE__ */ jsx("span", { style: { fontSize: 22 }, children: "\u{1F371}" }),
+        /* @__PURE__ */ jsxs("span", { children: [
+          /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 14, fontWeight: 600, color: C.ink }, children: "Dit staat als kliekje gepland" }),
+          /* @__PURE__ */ jsxs("span", { style: { display: "block", fontSize: 12, color: C.inkSoft }, children: [
+            leftoverItem.name,
+            " \xB7 ",
+            leftoverItem.current,
+            " ",
+            leftoverItem.current === 1 ? "portie" : "porties",
+            " over"
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx("p", { style: { fontSize: 11.5, color: C.inkSoft, margin: "0 0 10px", lineHeight: 1.45 }, children: "Je hoeft niets af te boeken van je voorraad \u2014 dat is al gebeurd toen je dit kookte." }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginBottom: 11 }, children: [
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            "aria-label": "Minder porties",
+            onClick: () => setEatPortions((p) => Math.max(1, p - 1)),
+            style: { width: 44, height: 44, borderRadius: 8, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" },
+            children: /* @__PURE__ */ jsx(Minus, { size: 14 })
+          }
+        ),
+        /* @__PURE__ */ jsxs("span", { style: { fontFamily: FONT_MONO, fontSize: 15, minWidth: 92, textAlign: "center" }, children: [
+          eatPortions,
+          " ",
+          eatPortions === 1 ? "portie" : "porties"
+        ] }),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            "aria-label": "Meer porties",
+            onClick: () => setEatPortions((p) => Math.min(Number(leftoverItem.current) || 1, p + 1)),
+            style: { width: 44, height: 44, borderRadius: 8, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" },
+            children: /* @__PURE__ */ jsx(Plus, { size: 14 })
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxs(PrimaryButton, { tone: "sage", full: true, onClick: () => onEatLeftover(eatPortions), children: [
+        /* @__PURE__ */ jsx(Check, { size: 16 }),
+        " Opgegeten"
+      ] })
+    ] }),
+    isMine && !leftoverItem && confirmCook === false && /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: [
       /* @__PURE__ */ jsxs(GhostButton, { full: true, onClick: () => setConfirmCook("prep"), children: [
         /* @__PURE__ */ jsx(ShoppingCart, { size: 15 }),
         " Ik ga dit koken \u2014 check mijn voorraad"
@@ -5661,15 +5742,46 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_MONO, fontSize: 15, minWidth: 90, textAlign: "center" }, children: leftoverPortions === 0 ? "Niets over" : `${leftoverPortions} portie${leftoverPortions > 1 ? "s" : ""}` }),
         /* @__PURE__ */ jsx("button", { onClick: () => setLeftoverPortions((p) => p + 1), style: { width: 44, height: 44, borderRadius: 8, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }, children: /* @__PURE__ */ jsx(Plus, { size: 14 }) })
       ] }),
+      leftoverPortions > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsx("div", { style: { fontSize: 12, color: C.inkSoft, marginBottom: 6 }, children: "Waar bewaar je het?" }),
+        /* @__PURE__ */ jsx("div", { style: { display: "flex", gap: 8, marginBottom: 12 }, children: [
+          ["koelkast", "\u2744\uFE0F Koelkast", "eet binnen 3 dagen op"],
+          ["vriezer", "\u{1F9CA} Vriezer", "houdbaar tot 3 maanden"]
+        ].map(([waarde, label, uitleg]) => /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => setBewaarplek(waarde),
+            style: {
+              flex: 1,
+              padding: "10px 8px",
+              borderRadius: 14,
+              cursor: "pointer",
+              fontFamily: FONT_BODY,
+              textAlign: "center",
+              minHeight: 44,
+              background: bewaarplek === waarde ? C.blue : C.cardBg,
+              color: bewaarplek === waarde ? "#fff" : C.ink,
+              border: `1.5px solid ${bewaarplek === waarde ? C.blue : C.borderTint}`
+            },
+            children: [
+              /* @__PURE__ */ jsx("div", { style: { fontSize: 13, fontWeight: 600 }, children: label }),
+              /* @__PURE__ */ jsx("div", { style: { fontSize: 11, opacity: 0.85, marginTop: 1 }, children: uitleg })
+            ]
+          },
+          waarde
+        )) })
+      ] }),
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
         /* @__PURE__ */ jsx(PrimaryButton, { tone: "mustard", onClick: () => {
-          if (leftoverPortions > 0) onAddLeftover(recipe, leftoverPortions);
+          if (leftoverPortions > 0) onAddLeftover(recipe, leftoverPortions, bewaarplek);
           setConfirmCook(false);
           setLeftoverPortions(0);
-        }, children: leftoverPortions > 0 ? "Bewaren als kliekje" : "Klaar" }),
+          setBewaarplek("koelkast");
+        }, children: leftoverPortions > 0 ? "Bewaren" : "Klaar" }),
         leftoverPortions > 0 && /* @__PURE__ */ jsx(GhostButton, { onClick: () => {
           setConfirmCook(false);
           setLeftoverPortions(0);
+          setBewaarplek("koelkast");
         }, children: "Overslaan" })
       ] })
     ] }),
@@ -6005,13 +6117,34 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, period
                 /* @__PURE__ */ jsx(
                   "div",
                   {
-                    onClick: () => onOpenRecipe(recipe.id, entry?.doublePortion),
+                    onClick: () => onOpenRecipe(recipe.id, entry?.doublePortion, entry?.leftoverItemId),
                     title: "Open dit recept",
                     style: { width: 30, height: 30, borderRadius: 8, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0, cursor: "pointer" },
                     children: recipe.emoji || "\u{1F37D}\uFE0F"
                   }
                 ),
-                /* @__PURE__ */ jsx("div", { style: { flex: 1, fontSize: 14, color: C.ink, cursor: "pointer" }, onClick: () => onOpenRecipe(recipe.id, entry?.doublePortion), children: recipe.name }),
+                /* @__PURE__ */ jsxs("div", { style: { flex: 1, minWidth: 0, cursor: "pointer" }, onClick: () => onOpenRecipe(recipe.id, entry?.doublePortion, entry?.leftoverItemId), children: [
+                  /* @__PURE__ */ jsxs("div", { style: { fontSize: 14, color: C.ink }, children: [
+                    entry?.leftoverItemId ? "\u{1F371} " : "",
+                    recipe.name
+                  ] }),
+                  entry?.leftoverItemId && (() => {
+                    const restje = (inventory || []).find((i) => i.id === entry.leftoverItemId);
+                    if (!restje) {
+                      return /* @__PURE__ */ jsx("div", { style: { fontSize: 11.5, color: C.brick }, children: "Kliekje staat niet meer in je voorraad" });
+                    }
+                    const houdbaarTot = restje.expiryDate ? parseDateKey(restje.expiryDate) : null;
+                    const bederftEerder = houdbaarTot && dateKey(houdbaarTot) < day.key;
+                    const dagenOver = houdbaarTot ? Math.round((houdbaarTot - startOfDay(/* @__PURE__ */ new Date())) / 864e5) : null;
+                    return /* @__PURE__ */ jsxs("div", { style: { fontSize: 11.5, color: bederftEerder ? C.brick : C.mustardDeep }, children: [
+                      "Kliekje \xB7 ",
+                      restje.current,
+                      " ",
+                      restje.current === 1 ? "portie" : "porties",
+                      bederftEerder ? ` \xB7 let op: houdbaar tot ${houdbaarTot.getDate()}/${houdbaarTot.getMonth() + 1}` : dagenOver !== null ? ` \xB7 nog ${dagenOver} ${dagenOver === 1 ? "dag" : "dagen"} houdbaar` : ""
+                    ] });
+                  })()
+                ] }),
                 /* @__PURE__ */ jsx("button", { onClick: () => onPickDay(day.key), title: "Ander recept kiezen", style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(Pencil, { size: 13, color: C.inkSoft }) }),
                 /* @__PURE__ */ jsx("button", { onClick: () => onClearDay(day.key), style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(X, { size: 15, color: C.inkSoft }) })
               ] }) : /* @__PURE__ */ jsxs("button", { onClick: () => onPickDay(day.key), style: { flex: 1, display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: C.inkSoft, fontSize: 13, cursor: "pointer", padding: "4px 0" }, children: [
@@ -7048,7 +7181,7 @@ function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose
       leftovers.map(({ item, recipe, daysLeft }) => /* @__PURE__ */ jsxs(
         "button",
         {
-          onClick: () => onPick(recipe.id),
+          onClick: () => onPick(recipe.id, item.id),
           style: { display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: "8px 10px", marginBottom: 8, cursor: "pointer" },
           children: [
             /* @__PURE__ */ jsx("div", { style: { width: 32, height: 32, borderRadius: 8, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }, children: recipe.emoji || "\u{1F37D}\uFE0F" }),

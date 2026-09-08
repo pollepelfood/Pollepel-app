@@ -871,6 +871,7 @@
               obj[sleutel] = {
                 recipeId: d.recipe_id, cook: d.cook || "", attendees: d.attendees || [],
                 offNight: !!d.off_night, doublePortion: !!d.double_portion,
+                leftoverItemId: d.leftover_item_id || null,
               };
             });
             return obj;
@@ -881,6 +882,7 @@
               household_id: householdId, menu_date: datum, recipe_id: entry.recipeId || null,
               cook: entry.cook || null, attendees: entry.attendees || [],
               off_night: !!entry.offNight, double_portion: !!entry.doublePortion,
+              leftover_item_id: entry.leftoverItemId || null,
             }, { onConflict: "household_id,menu_date" });
             if (error) throw error;
           },
@@ -897,6 +899,7 @@
                 household_id: householdId, menu_date: datum, recipe_id: v.recipeId || null,
                 cook: v.cook || null, attendees: v.attendees || [],
                 off_night: !!v.offNight, double_portion: !!v.doublePortion,
+                leftover_item_id: v.leftoverItemId || null,
               }));
             if (rows.length) await supabase.from(t).insert(rows);
           },
@@ -925,12 +928,13 @@
         cookLog: {
           async list(limit) {
             const { data } = await supabase.from("cook_log").select("*").eq("household_id", householdId).order("cooked_at", { ascending: false }).limit(limit || 200);
-            return (data || []).map((e) => ({ id: e.id, recipeId: e.recipe_id, recipeName: e.recipe_name, emoji: e.emoji, servings: e.servings, date: e.cooked_at }));
+            return (data || []).map((e) => ({ id: e.id, recipeId: e.recipe_id, recipeName: e.recipe_name, emoji: e.emoji, servings: e.servings, date: e.cooked_at, leftover: !!e.leftover }));
           },
           async add(entry) {
             await supabase.from("cook_log").insert({
               household_id: householdId, recipe_id: entry.recipeId || null, recipe_name: entry.recipeName,
               emoji: entry.emoji, servings: entry.servings, cooked_at: entry.date || new Date().toISOString(),
+              leftover: !!entry.leftover,
             });
           },
         },
