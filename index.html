@@ -1031,6 +1031,15 @@
           const { data } = await supabase.auth.getSession();
           return data && data.session ? data.session.access_token : null;
         },
+        // Verwijdert het account onherroepelijk. Ben je de laatste in je
+        // huishouden, dan verdwijnt het hele huishouden mee.
+        async deleteAccount() {
+          const { data, error } = await supabase.rpc("delete_my_account");
+          if (error) throw error;
+          if (!data || !data.ok) throw new Error(data && data.reden ? data.reden : "verwijderen mislukt");
+          try { await supabase.auth.signOut(); } catch (e) { /* account is al weg */ }
+          return data;
+        },
         async signOut() {
           await supabase.auth.signOut();
           window.location.reload();

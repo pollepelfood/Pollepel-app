@@ -4043,7 +4043,13 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         const raw = await askClaude(buildWeekRecipePrompt(style, priorNames, recentNames, activeDietTags, saleNames));
         const parsed = sanitizeDraft(extractJson(raw));
         if (!parsed.ingredients.length || !parsed.steps.length) continue;
-        const recipeWithId = { ...parsed, id: uid(), favorite: false };
+        let recipeWithId;
+        if (hasDataAPI) {
+          const nieuwId = await window.dataAPI.recipes.create({ ...parsed, favorite: false, community: false });
+          recipeWithId = { ...parsed, id: nieuwId, favorite: false, community: false };
+        } else {
+          recipeWithId = { ...parsed, id: uid(), favorite: false };
+        }
         newRecipes.push(recipeWithId);
         nextWeekmenu[days[i].key] = { ...dayEntry(days[i].key), recipeId: recipeWithId.id };
       } catch (e) {
@@ -4052,7 +4058,8 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
     setAiWeekGenerating(false);
     setAiWeekProgress("");
     if (newRecipes.length) {
-      persist("recipes", [...recipes, ...newRecipes], setRecipes);
+      if (hasDataAPI) setRecipes((prev) => [...prev, ...newRecipes]);
+      else persist("recipes", [...recipes, ...newRecipes], setRecipes);
       persist("weekmenu", nextWeekmenu, setWeekmenu);
       setAiWeekOpen(false);
       showToast(`${newRecipes.length} AI-gerecht${newRecipes.length > 1 ? "en" : ""} toegevoegd aan het weekmenu en het kookboek.`);
@@ -6322,6 +6329,11 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
   const [nameError, setNameError] = useState("");
   const saveName = async () => {
     if (!onRename || !name.trim() || name.trim() === household?.name) return;
@@ -6506,7 +6518,129 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
     ] }) : /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexWrap: "wrap", gap: 8 }, children: [
       /* @__PURE__ */ jsx(GhostButton, { danger: true, onClick: onLogout, children: "Zeker weten, uitloggen" }),
       /* @__PURE__ */ jsx(GhostButton, { onClick: () => setConfirmLogout(false), children: "Annuleren" })
-    ] }) })
+    ] }) }),
+    /* @__PURE__ */ jsxs("div", { style: { marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.ceramic}` }, children: [
+      /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: () => setPrivacyOpen(true),
+          style: {
+            background: "none",
+            border: "none",
+            padding: "8px 0",
+            cursor: "pointer",
+            color: C.blue,
+            fontSize: 13,
+            fontFamily: FONT_BODY,
+            minHeight: 44,
+            textDecoration: "underline",
+            textUnderlineOffset: 3,
+            display: "block"
+          },
+          children: "Wat bewaart Pollepel over ons?"
+        }
+      ),
+      !confirmDelete ? /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: () => setConfirmDelete(true),
+          style: {
+            background: "none",
+            border: "none",
+            padding: "8px 0",
+            cursor: "pointer",
+            color: C.inkSoft,
+            fontSize: 12.5,
+            fontFamily: FONT_BODY,
+            minHeight: 44,
+            display: "block"
+          },
+          children: "Account verwijderen"
+        }
+      ) : /* @__PURE__ */ jsxs("div", { style: { background: C.warnBg, border: `1.5px solid ${C.brick}`, borderRadius: 14, padding: 13, marginTop: 8 }, children: [
+        /* @__PURE__ */ jsx("div", { style: { fontSize: 13.5, fontWeight: 600, color: C.brick, marginBottom: 6 }, children: "Weet je het zeker?" }),
+        /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.ink, margin: "0 0 10px", lineHeight: 1.5 }, children: "Je account wordt verwijderd. Ben je de laatste in dit huishouden, dan verdwijnen ook alle recepten, je voorraad, het weekmenu en de boodschappenlijst \u2014 voorgoed. Zijn er nog huisgenoten, dan blijft hun kookboek gewoon bestaan." }),
+        /* @__PURE__ */ jsxs("p", { style: { fontSize: 12, color: C.inkSoft, margin: "0 0 8px" }, children: [
+          "Typ ",
+          /* @__PURE__ */ jsx("strong", { children: "VERWIJDER" }),
+          " om te bevestigen:"
+        ] }),
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            autoComplete: "off",
+            style: { ...inputStyle, marginBottom: 10 },
+            value: deleteConfirmText,
+            onChange: (e) => setDeleteConfirmText(e.target.value),
+            placeholder: "VERWIJDER"
+          }
+        ),
+        deleteError && /* @__PURE__ */ jsx("p", { role: "alert", style: { fontSize: 12, color: C.brick, margin: "0 0 8px" }, children: deleteError }),
+        /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" }, children: [
+          /* @__PURE__ */ jsx(
+            PrimaryButton,
+            {
+              tone: "brick",
+              disabled: deleteConfirmText.trim().toUpperCase() !== "VERWIJDER" || deleting,
+              onClick: async () => {
+                setDeleting(true);
+                setDeleteError("");
+                try {
+                  await window.householdAPI.deleteAccount();
+                  window.location.reload();
+                } catch (e) {
+                  console.error("Account verwijderen mislukt:", e);
+                  setDeleteError("Het verwijderen is niet gelukt. Controleer je verbinding en probeer het opnieuw.");
+                  setDeleting(false);
+                }
+              },
+              children: deleting ? "Bezig\u2026" : "Definitief verwijderen"
+            }
+          ),
+          /* @__PURE__ */ jsx(GhostButton, { onClick: () => {
+            setConfirmDelete(false);
+            setDeleteConfirmText("");
+            setDeleteError("");
+          }, children: "Annuleren" })
+        ] })
+      ] })
+    ] }),
+    privacyOpen && /* @__PURE__ */ jsx(PrivacyModal, { onClose: () => setPrivacyOpen(false) })
+  ] });
+}
+function PrivacyModal({ onClose }) {
+  const kop = { fontFamily: FONT_DISPLAY, fontSize: 15, margin: "16px 0 4px", color: C.ink };
+  const tekst = { fontSize: 13, color: C.ink, lineHeight: 1.55, margin: "0 0 6px" };
+  const lijst = { fontSize: 13, color: C.ink, lineHeight: 1.55, margin: "0 0 6px", paddingLeft: 18 };
+  return /* @__PURE__ */ jsxs(Modal, { title: "Privacy", onClose, children: [
+    /* @__PURE__ */ jsx("p", { style: { ...tekst, marginTop: 0 }, children: "Pollepel is een kookapp voor je huishouden. Hieronder staat precies wat er bewaard wordt, waar het staat en hoe je ervan af komt." }),
+    /* @__PURE__ */ jsx("h3", { style: kop, children: "Wat we bewaren" }),
+    /* @__PURE__ */ jsxs("ul", { style: lijst, children: [
+      /* @__PURE__ */ jsx("li", { children: "Je e-mailadres, om in te loggen" }),
+      /* @__PURE__ */ jsx("li", { children: "De naam van je huishouden en wie er lid van zijn" }),
+      /* @__PURE__ */ jsx("li", { children: "Je recepten, voorraad, weekmenu en boodschappenlijst" }),
+      /* @__PURE__ */ jsx("li", { children: "Wat je gekookt hebt en wat er van je voorraad af ging" }),
+      /* @__PURE__ */ jsx("li", { children: "Foto's die je bij een recept zet" })
+    ] }),
+    /* @__PURE__ */ jsx("h3", { style: kop, children: "Wat we niet doen" }),
+    /* @__PURE__ */ jsxs("ul", { style: lijst, children: [
+      /* @__PURE__ */ jsx("li", { children: "Geen advertenties, en niets wordt verkocht of gedeeld met adverteerders" }),
+      /* @__PURE__ */ jsx("li", { children: "Geen volgtechnieken om je gedrag buiten de app te volgen" }),
+      /* @__PURE__ */ jsx("li", { children: "Geen toegang tot je gegevens door andere huishoudens" })
+    ] }),
+    /* @__PURE__ */ jsx("h3", { style: kop, children: "Met wie het gedeeld wordt" }),
+    /* @__PURE__ */ jsx("p", { style: tekst, children: "Alleen met je eigen huisgenoten. Deel je een recept met de community, dan is d\xE1t recept zichtbaar voor andere huishoudens \u2014 je voorraad en weekmenu nooit." }),
+    /* @__PURE__ */ jsx("p", { style: tekst, children: "Abonneer je op het weekmenu in je agenda, dan is dat menu leesbaar voor iedereen die het adres heeft. Deel dat adres dus alleen met je huisgenoten." }),
+    /* @__PURE__ */ jsx("h3", { style: kop, children: "Waar het staat" }),
+    /* @__PURE__ */ jsx("p", { style: tekst, children: "Op servers van Supabase binnen de Europese Unie. De verbinding is versleuteld." }),
+    /* @__PURE__ */ jsx("h3", { style: kop, children: "De AI-hulp" }),
+    /* @__PURE__ */ jsx("p", { style: tekst, children: "Vraag je de app om een recept te bedenken of een foto te lezen, dan gaat die vraag naar Anthropic om beantwoord te worden. Alleen wat nodig is voor die ene vraag wordt meegestuurd \u2014 niet je hele kookboek of voorraad." }),
+    /* @__PURE__ */ jsx("h3", { style: kop, children: "Je gegevens weghalen" }),
+    /* @__PURE__ */ jsx("p", { style: tekst, children: "Onderaan Instellingen staat \u201CAccount verwijderen\u201D. Ben je de laatste in je huishouden, dan wordt alles gewist. Zijn er nog huisgenoten, dan blijft hun kookboek bestaan en verdwijnt alleen jouw account." }),
+    /* @__PURE__ */ jsx("p", { style: tekst, children: "Wil je eerst een kopie? Met \u201CBackup downloaden\u201D haal je al je gegevens op." }),
+    /* @__PURE__ */ jsx("h3", { style: kop, children: "Vragen" }),
+    /* @__PURE__ */ jsx("p", { style: tekst, children: "Neem contact op met de beheerder van je huishouden of met de maker van deze app." }),
+    /* @__PURE__ */ jsx("div", { style: { marginTop: 18 }, children: /* @__PURE__ */ jsx(PrimaryButton, { full: true, onClick: onClose, children: "Sluiten" }) })
   ] });
 }
 function ShelfPhotoModal({ scanning, error, results, onScan, onToggleInclude, onApply, onClose }) {
@@ -7133,7 +7267,7 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
       " Koelkastscanner: hele voorraad bijwerken ",
       /* @__PURE__ */ jsx(Pill, { tone: "auto", children: "premium" })
     ] }) }),
-    cats.map((cat) => {
+    [...cats, ...Object.keys(byCategory).filter((c) => !cats.includes(c))].map((cat) => {
       const items = byCategory[cat];
       if (!items || !items.length) return null;
       return /* @__PURE__ */ jsxs("div", { style: { marginBottom: 16 }, children: [
@@ -7374,7 +7508,8 @@ function BoodschappenView({ list, categories, onToggle, onRemove, onAddManual, o
     return map;
   }, [list, cats]);
   const orderedCatsForDisplay = useMemo(() => {
-    const withItems = cats.filter((c) => byCategory[c] && byCategory[c].length > 0);
+    const alle = [...cats, ...Object.keys(byCategory).filter((c) => !cats.includes(c))];
+    const withItems = alle.filter((c) => byCategory[c] && byCategory[c].length > 0);
     const open = withItems.filter((c) => byCategory[c].some((i) => !i.checked));
     const done = withItems.filter((c) => byCategory[c].every((i) => i.checked));
     return [...open, ...done];
