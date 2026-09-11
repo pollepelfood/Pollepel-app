@@ -3246,7 +3246,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
         bodyText = (await response.text()).slice(0, 300);
       } catch (e) {
       }
-      const err = new Error(`API-fout ${response.status}`);
+      const err = new Error(response.status === 429 ? "limiet bereikt" : `API-fout ${response.status}`);
       err.status = response.status;
       err.body = bodyText;
       throw err;
@@ -3276,7 +3276,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
         bodyText = (await response.text()).slice(0, 300);
       } catch (e) {
       }
-      const err = new Error(`API-fout ${response.status}`);
+      const err = new Error(response.status === 429 ? "limiet bereikt" : `API-fout ${response.status}`);
       err.status = response.status;
       err.body = bodyText;
       throw err;
@@ -3846,7 +3846,12 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     const current = preferences.premium || {};
     updatePreferences({ premium: { ...current, [key]: !current[key] } });
   };
-  const isPremiumOn = (key) => preferences.premium ? preferences.premium[key] !== false : true;
+  const heeftPremium = !!(household && household.premium_until && new Date(household.premium_until) > /* @__PURE__ */ new Date());
+  const isPremiumOn = (key) => {
+    if (GRATIS_FEATURES.some((f) => f.key === key)) return true;
+    if (!heeftPremium) return false;
+    return preferences.premium ? preferences.premium[key] !== false : true;
+  };
   const moveCategoryOrder = (category, direction) => {
     const order = preferences.categoryOrder && preferences.categoryOrder.length === CATEGORIES.length ? [...preferences.categoryOrder] : [...CATEGORIES];
     const idx = order.indexOf(category);
@@ -4854,6 +4859,7 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
           setControleOpen(true);
         },
         aantalBevindingen: bevindingen.length,
+        heeftPremium,
         onMoveCategoryOrder: moveCategoryOrder,
         onUpdateCookDiets: updateCookDiets,
         onUpdateCookDislikes: updateCookDislikes,
@@ -6702,9 +6708,13 @@ function CookPickerModal({ cooks, current, onPick, onAddCook, onRemoveCook, onCl
 const DIET_TAGS = ["Vegetarisch", "Veganistisch", "Glutenvrij", "Lactosevrij", "Notenallergie", "Halal", "Suikervrij"];
 const PREMIUM_FEATURES = [
   { key: "photoInventory", label: "Koelkastscanner", description: "E\xE9n foto van een kast of koelkast, automatisch omgezet naar voorraaditems.", icon: "\u{1F4F8}" },
-  { key: "predictiveDepletion", label: "Voorspelde uitputting", description: "Slimme inschatting wanneer iets op is, op basis van jullie eigen verbruikspatroon.", icon: "\u{1F4C9}" },
-  { key: "householdRSVP", label: '"Wie eet er mee?"', description: "Per dag aangeven wie mee\xEBet \u2014 porties en boodschappen passen zich automatisch aan.", icon: "\u{1F64B}" },
-  { key: "sousChef", label: "AI-souschef", description: 'Stel tijdens het koken vragen zoals "kan ik room vervangen door melk?".', icon: "\u{1F468}\u200D\u{1F373}" }
+  { key: "sousChef", label: "AI-souschef", description: 'Stel tijdens het koken vragen zoals "kan ik room vervangen door melk?".', icon: "\u{1F468}\u200D\u{1F373}" },
+  { key: "aiImport", label: "Recepten overnemen met AI", description: "Een foto van een kookboekpagina of een link, automatisch omgezet naar een recept.", icon: "\u2728" },
+  { key: "aiWeekmenu", label: "AI-weekmenu", description: "Laat de app een hele week bedenken, afgestemd op jullie voorraad en voorkeuren.", icon: "\u{1FA84}" }
+];
+const GRATIS_FEATURES = [
+  { key: "predictiveDepletion", label: "Voorspelde uitputting", description: "Inschatting wanneer iets op is, op basis van jullie eigen verbruik.", icon: "\u{1F4C9}" },
+  { key: "householdRSVP", label: '"Wie eet er mee?"', description: "Per dag aangeven wie mee\xEBet \u2014 porties en boodschappen passen zich aan.", icon: "\u{1F64B}" }
 ];
 function CookDietRow({ name, preferences, onUpdate }) {
   const [open, setOpen] = useState(false);
@@ -6768,7 +6778,7 @@ function CookDislikeRow({ name, preferences, onUpdate }) {
     ] })
   ] });
 }
-function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onShowWelcome, onExportBackup, onToggleDarkMode, onSetShoppingDay, onOpenControle, aantalBevindingen = 0, onMoveCategoryOrder, onUpdateCookDiets, onUpdateCookDislikes, onTogglePremium, onClose }) {
+function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onShowWelcome, onExportBackup, onToggleDarkMode, onSetShoppingDay, onOpenControle, aantalBevindingen = 0, heeftPremium = false, onMoveCategoryOrder, onUpdateCookDiets, onUpdateCookDislikes, onTogglePremium, onClose }) {
   const [name, setName] = useState(household?.name || "");
   const [savingName, setSavingName] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -6890,11 +6900,22 @@ ${link}`;
         ]
       }
     ),
+    /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }, children: "Altijd gratis" }),
+    /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 6, overflow: "hidden" }, children: GRATIS_FEATURES.map((feat, idx) => /* @__PURE__ */ jsxs("div", { style: { padding: "11px 12px", borderBottom: idx < GRATIS_FEATURES.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: C.ink, fontWeight: 600 }, children: [
+        /* @__PURE__ */ jsx("span", { children: feat.icon }),
+        " ",
+        feat.label,
+        /* @__PURE__ */ jsx(Pill, { tone: "ok", children: "gratis" })
+      ] }),
+      /* @__PURE__ */ jsx("p", { style: { fontSize: 11, color: C.inkSoft, margin: "4px 0 0" }, children: feat.description })
+    ] }, feat.key)) }),
+    /* @__PURE__ */ jsx("p", { style: { fontSize: 11, color: C.inkSoft, margin: "0 0 16px", lineHeight: 1.45 }, children: "Dit is rekenwerk op gegevens die je zelf hebt ingevoerd. Dat kost niets om te draaien, dus dat blijft gratis." }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, margin: "0 0 8px" }, children: [
-      /* @__PURE__ */ jsx("span", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft }, children: "Premium functies" }),
-      /* @__PURE__ */ jsx(Pill, { tone: "auto", children: "nu gratis" })
+      /* @__PURE__ */ jsx("span", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft }, children: "Met Premium" }),
+      heeftPremium ? /* @__PURE__ */ jsx(Pill, { tone: "ok", children: "actief" }) : /* @__PURE__ */ jsx(Pill, { tone: "auto", children: "proefstand" })
     ] }),
-    /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 16, overflow: "hidden" }, children: PREMIUM_FEATURES.map((feat, idx) => {
+    /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 6, overflow: "hidden" }, children: PREMIUM_FEATURES.map((feat, idx) => {
       const on = preferences?.premium ? preferences.premium[feat.key] !== false : true;
       return /* @__PURE__ */ jsxs("div", { style: { padding: "11px 12px", borderBottom: idx < PREMIUM_FEATURES.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
         /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
@@ -6915,6 +6936,10 @@ ${link}`;
         /* @__PURE__ */ jsx("p", { style: { fontSize: 11, color: C.inkSoft, margin: "4px 0 0" }, children: feat.description })
       ] }, feat.key);
     }) }),
+    /* @__PURE__ */ jsxs("p", { style: { fontSize: 11, color: C.inkSoft, margin: "0 0 16px", lineHeight: 1.45 }, children: [
+      "Deze functies gebruiken AI, en dat kost per keer geld. Daarom zitten ze in het abonnement.",
+      heeftPremium ? " Jullie abonnement loopt \u2014 bedankt daarvoor." : " Zolang er nog geen abonnement is, kun je ze in deze proefstand gewoon gebruiken."
+    ] }),
     /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }, children: "Volgorde boodschappenlijst" }),
     /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 16 }, children: (preferences?.categoryOrder && preferences.categoryOrder.length === CATEGORIES.length ? preferences.categoryOrder : CATEGORIES).map((cat, idx, arr) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: idx < arr.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
       /* @__PURE__ */ jsx("span", { style: { fontSize: 13, color: C.ink, flex: 1 }, children: cat }),

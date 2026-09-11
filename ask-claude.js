@@ -96,10 +96,18 @@ export default async (req) => {
 
   const limiet = await binnenLimiet(authHeader);
   if (!limiet.toegestaan) {
-    const melding = limiet.reden === "uurlimiet"
-      ? "Je hebt de AI-hulp dit uur veel gebruikt. Probeer het over een uur opnieuw."
-      : "Je hebt de AI-hulp vandaag veel gebruikt. Morgen kun je weer verder.";
-    return json({ error: melding, reden: limiet.reden }, 429);
+    const meldingen = {
+      uurlimiet: "Je hebt de AI-hulp dit uur veel gebruikt. Probeer het over een uur opnieuw.",
+      daglimiet: "Je hebt de AI-hulp vandaag veel gebruikt. Morgen kun je weer verder.",
+      maandlimiet: "Jullie hebben de AI-hulp deze maand veel gebruikt. Volgende maand is de teller weer leeg.",
+      gratis_op: "Je gratis AI-proefbeurten zijn op. Met Pollepel Premium kun je onbeperkt recepten overnemen, weekmenu's laten bedenken en de souschef vragen stellen.",
+    };
+    return json({
+      error: meldingen[limiet.reden] || "De AI-hulp is tijdelijk niet beschikbaar.",
+      reden: limiet.reden,
+      premium: !!limiet.premium,
+      limiet: limiet.limiet,
+    }, 429);
   }
 
   // Model en omvang liggen hier vast; wat de browser meestuurt telt niet mee.
