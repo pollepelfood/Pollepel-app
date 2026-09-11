@@ -2268,8 +2268,8 @@ class ErrorBoundary extends React.Component {
       fontFamily: FONT_BODY
     }, children: /* @__PURE__ */ jsxs("div", { style: { maxWidth: 420, textAlign: "center" }, children: [
       /* @__PURE__ */ jsx("div", { style: { fontSize: 34, marginBottom: 10 }, children: "\u{1F944}" }),
-      /* @__PURE__ */ jsx("h1", { style: { fontFamily: FONT_DISPLAY, fontSize: 22, margin: "0 0 8px" }, children: "Er ging iets mis op dit scherm" }),
-      /* @__PURE__ */ jsx("p", { style: { fontSize: 14, color: C.inkSoft, lineHeight: 1.55, margin: "0 0 18px" }, children: "Je gegevens staan veilig opgeslagen. Ga terug naar het beginscherm om verder te gaan." }),
+      /* @__PURE__ */ jsx("h1", { style: { fontFamily: FONT_DISPLAY, fontSize: 22, margin: "0 0 8px" }, children: "Er ging iets mis" }),
+      /* @__PURE__ */ jsx("p", { style: { fontSize: 14, color: C.inkSoft, lineHeight: 1.55, margin: "0 0 18px" }, children: "Je gegevens staan veilig opgeslagen \u2014 er is niets kwijt. Probeer het opnieuw, of herlaad de app." }),
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }, children: [
         /* @__PURE__ */ jsx(
           "button",
@@ -2931,15 +2931,6 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   const [koppelVoor, setKoppelVoor] = useState(null);
   const [leftoverContext, setLeftoverContext] = useState(null);
   const [controleOpen, setControleOpen] = useState(false);
-  const bevindingen = useMemo(
-    () => loading ? [] : controleerGegevens({ inventory, weekmenu, recipes, shoppingList, categories: CATEGORIES }),
-    [loading, inventory, weekmenu, recipes, shoppingList]
-  );
-  const herstelBevinding = (b) => {
-    if (!b.herstel || !b.itemId) return;
-    persist("inventory", inventory.map((i) => i.id === b.itemId ? { ...i, ...b.herstel } : i), setInventory);
-    showToast("Rechtgezet.");
-  };
   const [periodIndex, setPeriodIndex] = useState(0);
   const [bookView, setBookView] = useState("alles");
   const [currentUserName, setCurrentUserName] = useState("");
@@ -3845,6 +3836,15 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   const togglePremiumFeature = (key) => {
     const current = preferences.premium || {};
     updatePreferences({ premium: { ...current, [key]: !current[key] } });
+  };
+  const bevindingen = useMemo(
+    () => loading ? [] : controleerGegevens({ inventory, weekmenu, recipes, shoppingList, categories: CATEGORIES }),
+    [loading, inventory, weekmenu, recipes, shoppingList]
+  );
+  const herstelBevinding = (b) => {
+    if (!b.herstel || !b.itemId) return;
+    persist("inventory", inventory.map((i) => i.id === b.itemId ? { ...i, ...b.herstel } : i), setInventory);
+    showToast("Rechtgezet.");
   };
   const heeftPremium = !!(household && household.premium_until && new Date(household.premium_until) > /* @__PURE__ */ new Date());
   const isPremiumOn = (key) => {
