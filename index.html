@@ -176,9 +176,18 @@
     }
 
     function HouseholdScreen({ onReady }) {
-      const [mode, setMode] = useState("create"); // create | join
+      // Kwam je binnen via een uitnodigingslink, dan staat de code al klaar.
+      // Overtypen uit een appje is precies de stap waarop mensen afhaken.
+      const uitnodiging = (() => {
+        try {
+          const p = new URLSearchParams(window.location.search);
+          return (p.get("uitnodiging") || p.get("invite") || "").trim().toUpperCase();
+        } catch (e) { return ""; }
+      })();
+
+      const [mode, setMode] = useState(uitnodiging ? "join" : "create");
       const [name, setName] = useState("Ons huishouden");
-      const [code, setCode] = useState("");
+      const [code, setCode] = useState(uitnodiging);
       const [error, setError] = useState("");
       const [loading, setLoading] = useState(false);
 
@@ -202,8 +211,12 @@
       };
 
       return React.createElement(Shell, null,
-        React.createElement("h1", { style: { fontSize: 20, fontWeight: 700, color: C.blueDeep, margin: "0 0 4px" } }, "Welkom bij Pollepel"),
-        React.createElement("p", { style: { fontSize: 13, color: C.inkSoft, margin: "0 0 18px" } }, "Begin een nieuw huishouden, of sluit aan bij je huisgenoten."),
+        React.createElement("h1", { style: { fontSize: 20, fontWeight: 700, color: C.blueDeep, margin: "0 0 4px" } },
+          uitnodiging ? "Je bent uitgenodigd" : "Welkom bij Pollepel"),
+        React.createElement("p", { style: { fontSize: 13, color: C.inkSoft, margin: "0 0 18px" } },
+          uitnodiging
+            ? "Tik op Aansluiten om mee te doen. Jullie delen dan recepten, voorraad, weekmenu en boodschappenlijst."
+            : "Begin een nieuw huishouden, of sluit aan bij je huisgenoten."),
         React.createElement("div", { style: { display: "flex", gap: 6, marginBottom: 14 } },
           React.createElement("button", {
             style: { flex: 1, padding: "8px", borderRadius: 10, border: `1.5px solid ${mode === "create" ? C.blue : "#ddd"}`, background: mode === "create" ? C.blue : "#fff", color: mode === "create" ? "#fff" : C.ink, fontWeight: 600, fontSize: 13, cursor: "pointer" },
