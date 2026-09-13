@@ -44,7 +44,7 @@ async function getUser(authHeader) {
 // Telt de aanroep mee en zegt of hij nog binnen de limiet valt.
 async function binnenLimiet(authHeader) {
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/check_and_log_ai_usage`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/check_ai_usage`, {
       method: "POST",
       headers: {
         Authorization: authHeader,
@@ -128,6 +128,17 @@ export default async (req) => {
       body: JSON.stringify(veiligBody),
     });
     const data = await response.text();
+
+    // Pas afschrijven als Anthropic werkelijk iets heeft geleverd. Ging het
+    // mis, dan hoort de beurt niet verloren te gaan.
+    if (response.ok) {
+      fetch(`${SUPABASE_URL}/rest/v1/rpc/log_ai_usage`, {
+        method: "POST",
+        headers: { Authorization: authHeader, apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+        body: "{}",
+      }).catch((e) => console.error("Verbruik vastleggen mislukt:", e.message));
+    }
+
     return new Response(data, {
       status: response.status,
       headers: { "Content-Type": "application/json" },
