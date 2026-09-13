@@ -15,7 +15,15 @@
 const SUPABASE_URL = "https://ucevkzircawpapsrywfv.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_t0F12XeC1bPLzmZgvLWUeQ_CPat-lMn";
 
-const TOEGESTAAN_MODEL = "claude-sonnet-5";
+// Twee modellen toegestaan, en de browser mag alleen uit deze lijst kiezen.
+// Haiku is aanzienlijk sneller en daarmee de enige manier om binnen de tien
+// seconden te blijven die Netlify een functie gunt. Voor het bedenken van een
+// avondgerecht is dat ruim voldoende; voor het lezen van een receptfoto niet.
+const MODELLEN = {
+  snel: "claude-haiku-4-5-20251001",
+  nauwkeurig: "claude-sonnet-5",
+};
+const STANDAARD_MODEL = MODELLEN.nauwkeurig;
 const MAX_TOKENS = 2048;
 const MAX_VERZOEK_BYTES = 200 * 1024; // ruim genoeg voor een recept met foto-tekst
 
@@ -111,9 +119,10 @@ export default async (req) => {
   }
 
   // Model en omvang liggen hier vast; wat de browser meestuurt telt niet mee.
+  const { snel: _snel, ...restBody } = body;
   const veiligBody = {
-    ...body,
-    model: TOEGESTAAN_MODEL,
+    ...restBody,
+    model: body.snel ? MODELLEN.snel : STANDAARD_MODEL,
     max_tokens: Math.min(Number(body.max_tokens) || MAX_TOKENS, MAX_TOKENS),
   };
 
