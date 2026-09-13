@@ -381,6 +381,38 @@
           if (error) throw error;
         },
 
+        // ---------- Extra gerechten naast het avondeten ----------
+        extras: {
+          async list() {
+            const { data } = await supabase.from("weekmenu_extras")
+              .select("*").eq("household_id", householdId)
+              .order("menu_date").order("sort_order");
+            return (data || []).map((e) => ({
+              id: e.id, date: e.menu_date, recipeId: e.recipe_id,
+              label: e.label || "Extra", servings: e.servings, sortOrder: e.sort_order,
+            }));
+          },
+          async add({ date, recipeId, label, servings, sortOrder }) {
+            const { data, error } = await supabase.from("weekmenu_extras").insert({
+              household_id: householdId, menu_date: date, recipe_id: recipeId || null,
+              label: label || "Extra", servings: servings || null, sort_order: sortOrder || 0,
+            }).select().single();
+            if (error) throw error;
+            return data.id;
+          },
+          async update(id, patch) {
+            const dbPatch = {};
+            if ("label" in patch) dbPatch.label = patch.label;
+            if ("servings" in patch) dbPatch.servings = patch.servings;
+            if ("recipeId" in patch) dbPatch.recipe_id = patch.recipeId;
+            const { error } = await supabase.from("weekmenu_extras").update(dbPatch).eq("id", id);
+            if (error) throw error;
+          },
+          async remove(id) {
+            await supabase.from("weekmenu_extras").delete().eq("id", id);
+          },
+        },
+
         // ---------- Kooksessies ----------
         // Legt vast wie wanneer aan welk gerecht begint, met een verwachte
         // klaartijd. Huisgenoten zien dat nu live in de app; straks is dit ook
@@ -454,6 +486,7 @@
               ["weekmenu_days", "weekmenu"],
               ["recipes", "recipes"],
               ["cooking_sessions", "cooking"],
+              ["weekmenu_extras", "extras"],
             ];
             const channel = supabase.channel(`huishouden-${householdId}`);
             TABELLEN.forEach(([tabel, sleutel]) => {
