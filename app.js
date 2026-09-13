@@ -4579,6 +4579,8 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
     setAiWeekGenerating(true);
     setAiWeekError("");
     const newRecipes = [];
+    const mislukt = [];
+    let limietBereikt = false;
     const nextWeekmenu = { ...weekmenu };
     for (let i = 0; i < days.length; i++) {
       setAiWeekProgress(`Gerecht ${i + 1} van ${days.length} bedenken (${style.label.toLowerCase()})\u2026`);
@@ -4586,7 +4588,11 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         const priorNames = newRecipes.map((r) => r.name);
         const raw = await askClaude(buildWeekRecipePrompt(style, priorNames, recentNames, activeDietTags, saleNames));
         const parsed = sanitizeDraft(extractJson(raw));
-        if (!parsed.ingredients.length || !parsed.steps.length) continue;
+        if (!parsed.ingredients.length || !parsed.steps.length) {
+          console.error(`Dag ${days[i].key}: antwoord niet te gebruiken.`, String(raw).slice(0, 300));
+          mislukt.push({ dag: days[i].key, reden: "onbruikbaar antwoord" });
+          continue;
+        }
         let recipeWithId;
         if (hasDataAPI) {
           const nieuwId = await window.dataAPI.recipes.create({ ...parsed, favorite: false, community: false });
@@ -4597,16 +4603,33 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
         newRecipes.push(recipeWithId);
         nextWeekmenu[days[i].key] = { ...dayEntry(days[i].key), recipeId: recipeWithId.id };
       } catch (e) {
+        console.error(`Dag ${days[i].key} mislukt:`, e.status || "", e.message, e.body || "");
+        if (e.status === 429) {
+          mislukt.push({ dag: days[i].key, reden: "limiet" });
+          limietBereikt = true;
+          break;
+        }
+        mislukt.push({ dag: days[i].key, reden: e.message || "onbekende fout" });
       }
     }
     setAiWeekGenerating(false);
     setAiWeekProgress("");
+    if (!newRecipes.length && mislukt.length) {
+      setAiWeekError(limietBereikt ? "Je AI-tegoed voor deze maand is op. Met Pollepel Premium kun je hele weekmenu's laten bedenken." : "Er kwam geen bruikbaar recept terug. Probeer het zo nog eens.");
+    }
     if (newRecipes.length) {
       if (hasDataAPI) setRecipes((prev) => [...prev, ...newRecipes]);
       else persist("recipes", [...recipes, ...newRecipes], setRecipes);
       persist("weekmenu", nextWeekmenu, setWeekmenu);
       setAiWeekOpen(false);
-      showToast(`${newRecipes.length} AI-gerecht${newRecipes.length > 1 ? "en" : ""} toegevoegd aan het weekmenu en het kookboek.`);
+      const gelukt = newRecipes.length;
+      if (mislukt.length === 0) {
+        showToast(`${gelukt} AI-gerecht${gelukt > 1 ? "en" : ""} toegevoegd aan het weekmenu en het kookboek.`);
+      } else if (limietBereikt) {
+        showToast(`${gelukt} van de ${days.length} dagen gelukt. Daarna was je AI-tegoed voor deze maand op.`);
+      } else {
+        showToast(`${gelukt} van de ${days.length} dagen gelukt; ${mislukt.length} gaven geen bruikbaar recept.`);
+      }
     } else {
       setAiWeekError("Kon geen AI-gerechten genereren \u2014 de AI-verbinding lijkt niet bereikbaar. Probeer het later opnieuw, of stel het weekmenu handmatig samen.");
     }
