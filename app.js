@@ -112,6 +112,22 @@ function periodeLabel(start, eind) {
   const eersteDeel = `${DAG_LANG[start.getDay()]} ${start.getDate()}${zelfdeMaand ? "" : " " + MAAND_LANG[start.getMonth()]}`;
   return `${eersteDeel} t/m ${DAG_LANG[eind.getDay()]} ${eind.getDate()} ${MAAND_LANG[eind.getMonth()]}`;
 }
+const GEVARIEERDE_VERDELING = [
+  "uitgebreid",
+  // zondag
+  "snel",
+  // maandag
+  "snel",
+  // dinsdag
+  "gezond",
+  // woensdag
+  "miseplace",
+  // donderdag
+  "gezond",
+  // vrijdag
+  "uitgebreid"
+  // zaterdag
+];
 const MEAL_STYLES = [
   { id: "snel", label: "Eenvoudig en snel", icon: "\u26A1", description: "klaar binnen circa 20-25 minuten, weinig ingredi\xEBnten en minimale voorbereiding" },
   { id: "gezond", label: "Gezond", icon: "\u{1F966}", description: "veel groenten en volwaardige eiwitten, weinig bewerkte producten, in balans" },
@@ -4512,13 +4528,15 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     persist("shoppingList", nextShopping, setShoppingList);
     showToast(addedCount ? `Boodschappenlijst aangevuld met ${addedCount} product${addedCount > 1 ? "en" : ""} voor het weekmenu.` : "Je hebt al alles in huis voor het weekmenu \u2014 niets toegevoegd.");
   };
-  const buildWeekRecipePrompt = (style, priorNames, recentNames, diets, saleNames) => `Je bent een menuplanner voor de kookboek-app "Pollepel". Bedenk \xE9\xE9n Nederlands AVONDETEN (hoofdgerecht voor het diner) in de stijl "${style.label}": ${style.description}.
+  const buildWeekRecipePrompt = (style2, priorNames, recentNames, diets, saleNames, alGebruikt = []) => `Je bent een menuplanner voor de kookboek-app "Pollepel". Bedenk \xE9\xE9n Nederlands AVONDETEN (hoofdgerecht voor het diner) in de stijl "${style2.label}": ${style2.description}.
 
 Je hoeft je niet te beperken tot wat er in huis is \u2014 boodschappen doen hoort erbij. Kies gerust iets waarvoor nog ingredi\xEBnten gehaald moeten worden.
 
 Belangrijk: dit is uitsluitend voor het avondeten. Bedenk GEEN ontbijt, lunch, tussendoortje, salade-als-bijgerecht of dessert \u2014 altijd een volwaardig hoofdgerecht dat je 's avonds warm opdient.
 ${priorNames.length ? `Deze gerechten staan al gepland deze week: ${priorNames.join(", ")}.
-BELANGRIJK: zorg voor duidelijke afwisseling. Kies een \xE1nder hoofdingredi\xEBnt (niet weer kip als er al kip staat), een \xE1ndere bereidingswijze (niet weer gebakken of geroosterd) en een \xE1ndere keukenstijl dan wat er al staat. Een week met drie keer "gebakken kipfilet met groenten" is precies wat we niet willen.` : ""}
+BELANGRIJK: zorg voor duidelijke afwisseling. Kies een \xE1nder hoofdingredi\xEBnt (niet weer kip als er al kip staat), een \xE1ndere bereidingswijze (niet weer gegrild, gebakken of geroosterd) en een \xE1ndere keukenstijl dan wat er al staat. Een week met drie keer "gegrilde kipfilet met groenten en een graansoort" is precies wat we niet willen.` : ""}
+${alGebruikt.length ? `Deze ingredi\xEBnten komen deze week al voor: ${alGebruikt.join(", ")}. Gebruik andere groenten en een andere koolhydraatbron dan deze.` : ""}
+Denk breed: stamppot, pasta, curry, soep met brood, ovenschotel, wok, rijstgerecht, Mexicaans, Indonesisch, Italiaans, Marokkaans. Niet altijd "eiwit met groenten en een graansoort" op een bord.
 ${recentNames.length ? `Dit is recent al gegeten (laatste 2 weken), bedenk liever iets anders voor afwisseling: ${recentNames.join(", ")}.` : ""}
 ${diets.length ? `Houd rekening met deze dieetwensen/allergie\xEBn in het huishouden: ${diets.join(", ")}. Het gerecht moet hier geschikt voor zijn.` : ""}
 ${saleNames.length ? `Deze producten zijn nu in de aanbieding bij de supermarkt: ${saleNames.join(", ")}. Gebruik er waar mogelijk en passend \xE9\xE9n of meer van, voor een voordeliger boodschappenlijst.` : ""}
@@ -4568,8 +4586,16 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
     showToast("Weekmenu ingevuld op basis van jullie eigen kookritme.");
   };
   const generateAIWeekmenu = async ({ styleId, scope }) => {
-    const style = MEAL_STYLES.find((s) => s.id === styleId) || MEAL_STYLES[0];
+    const gevarieerd = styleId === "gevarieerd";
+    const vasteStijl = MEAL_STYLES.find((s) => s.id === styleId) || MEAL_STYLES[0];
     const days = scope === "empty" ? periodDays.filter((d) => isDayEmpty(d.key)) : periodDays;
+    const stijlVoorDag = (dag) => {
+      if (!gevarieerd) return vasteStijl;
+      const weekdag = dag.date ? dag.date.getDay() : 1;
+      const verdeling = preferences.weekdayStyles && preferences.weekdayStyles.length === 7 ? preferences.weekdayStyles : GEVARIEERDE_VERDELING;
+      const id = verdeling[weekdag];
+      return MEAL_STYLES.find((s) => s.id === id) || vasteStijl;
+    };
     if (!days.length) {
       setAiWeekError("Alle dagen zijn al ingevuld. Kies 'hele week' om ze te vervangen, of maak eerst dagen leeg.");
       return;
@@ -4590,7 +4616,13 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
       try {
         const alGepland = periodDays.map((d) => dayEntry(d.key)).filter((e) => e && e.recipeId).map((e) => (recipes.find((r) => r.id === e.recipeId) || {}).name).filter(Boolean);
         const priorNames = [.../* @__PURE__ */ new Set([...alGepland, ...newRecipes.map((r) => r.name)])];
-        const opdracht = buildWeekRecipePrompt(style, priorNames, recentNames, activeDietTags, saleNames);
+        const alGebruikt = [...new Set(
+          periodDays.map((d) => dayEntry(d.key)).filter((e) => e && e.recipeId).flatMap((e) => {
+            const r = recipes.find((x) => x.id === e.recipeId);
+            return r ? (r.ingredients || []).map((ing) => ing.name) : [];
+          }).concat(newRecipes.flatMap((r) => (r.ingredients || []).map((ing) => ing.name))).filter((naam) => !isPantryBasic(naam))
+        )].slice(0, 25);
+        const opdracht = buildWeekRecipePrompt(stijlVoorDag(days[i]), priorNames, recentNames, activeDietTags, saleNames, alGebruikt);
         let raw;
         try {
           raw = await askClaude(opdracht, 650, true);
@@ -5220,7 +5252,9 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
         progress: aiWeekProgress,
         error: aiWeekError,
         onCancel: () => setAiWeekOpen(false),
-        onGenerate: generateAIWeekmenu
+        onGenerate: generateAIWeekmenu,
+        weekdayStyles: preferences.weekdayStyles,
+        onSetWeekdayStyles: (v) => updatePreferences({ weekdayStyles: v })
       }
     )
   ] });
@@ -8915,12 +8949,90 @@ function ImportModal({ importing, error, onCancel, onImportText, onImportUrl, on
     ] })
   ] });
 }
-function AIWeekmenuModal({ generating, progress, error, onCancel, onGenerate }) {
-  const [styleId, setStyleId] = useState(MEAL_STYLES[0].id);
+function AIWeekmenuModal({ generating, progress, error, weekdayStyles, onSetWeekdayStyles, onCancel, onGenerate }) {
+  const [dagenOpen, setDagenOpen] = useState(false);
+  const verdeling = weekdayStyles && weekdayStyles.length === 7 ? weekdayStyles : GEVARIEERDE_VERDELING;
+  const [styleId, setStyleId] = useState("gevarieerd");
   const [scope, setScope] = useState("empty");
   return /* @__PURE__ */ jsxs(Modal, { title: "AI: genereer weekmenu", onClose: onCancel, wide: true, children: [
     /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.inkSoft, marginTop: 0 }, children: "Pollepel bedenkt per dag een avondeten (geen ontbijt of lunch) en houdt rekening met overlappende ingredi\xEBnten tussen de gerechten, zodat je boodschappenlijst compacter en scherper wordt." }),
     /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "4px 0 8px" }, children: "Stijl" }),
+    /* @__PURE__ */ jsxs(
+      "button",
+      {
+        onClick: () => setStyleId("gevarieerd"),
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 11,
+          width: "100%",
+          textAlign: "left",
+          padding: "12px 13px",
+          borderRadius: 14,
+          cursor: "pointer",
+          marginBottom: 8,
+          border: `1.5px solid ${styleId === "gevarieerd" ? C.blue : C.borderTint}`,
+          background: styleId === "gevarieerd" ? C.blue : C.cardBg,
+          color: styleId === "gevarieerd" ? "#fff" : C.ink,
+          fontFamily: FONT_BODY
+        },
+        children: [
+          /* @__PURE__ */ jsx("span", { style: { fontSize: 20, flexShrink: 0 }, children: "\u{1F3B2}" }),
+          /* @__PURE__ */ jsxs("span", { children: [
+            /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 13.5, fontWeight: 600 }, children: "Gevarieerd" }),
+            /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 11.5, opacity: styleId === "gevarieerd" ? 0.9 : 0.75 }, children: "Elke dag een andere stijl: snel doordeweeks, uitgebreider in het weekend" })
+          ] })
+        ]
+      }
+    ),
+    styleId === "gevarieerd" && /* @__PURE__ */ jsxs("div", { style: { marginBottom: 12 }, children: [
+      /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: () => setDagenOpen((v) => !v),
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            background: "none",
+            border: "none",
+            color: C.blue,
+            fontSize: 12.5,
+            cursor: "pointer",
+            fontFamily: FONT_BODY,
+            padding: "6px 0",
+            minHeight: 34
+          },
+          children: [
+            dagenOpen ? /* @__PURE__ */ jsx(ChevronUp, { size: 14 }) : /* @__PURE__ */ jsx(ChevronDown, { size: 14 }),
+            "Welke stijl op welke dag?"
+          ]
+        }
+      ),
+      dagenOpen && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: 10, marginTop: 4 }, children: [
+        [1, 2, 3, 4, 5, 6, 0].map((wd) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }, children: [
+          /* @__PURE__ */ jsx("span", { style: { width: 82, fontSize: 12.5, color: C.ink, flexShrink: 0 }, children: DAG_LANG[wd].charAt(0).toUpperCase() + DAG_LANG[wd].slice(1) }),
+          /* @__PURE__ */ jsx(
+            "select",
+            {
+              style: { ...inputStyle, fontSize: 13, padding: "7px 9px" },
+              value: verdeling[wd],
+              onChange: (e) => {
+                const nieuwe = [...verdeling];
+                nieuwe[wd] = e.target.value;
+                onSetWeekdayStyles(nieuwe);
+              },
+              children: MEAL_STYLES.map((s) => /* @__PURE__ */ jsxs("option", { value: s.id, children: [
+                s.icon,
+                " ",
+                s.label
+              ] }, s.id))
+            }
+          )
+        ] }, wd)),
+        /* @__PURE__ */ jsx("p", { style: { fontSize: 11, color: C.inkSoft, margin: "6px 0 0", lineHeight: 1.45 }, children: "Dit wordt onthouden voor je huishouden." })
+      ] })
+    ] }),
     /* @__PURE__ */ jsx("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }, children: MEAL_STYLES.map((s) => /* @__PURE__ */ jsxs(
       "button",
       {
