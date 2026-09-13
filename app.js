@@ -3397,13 +3397,13 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
     }
     return headers;
   };
-  const askClaude = async (prompt) => {
+  const askClaude = async (prompt, maxTokens = 1e3) => {
     const response = await fetch(AI_ENDPOINT, {
       method: "POST",
       headers: await buildAuthHeaders(),
       body: JSON.stringify({
         model: "claude-sonnet-5",
-        max_tokens: 1e3,
+        max_tokens: maxTokens,
         messages: [{ role: "user", content: prompt }]
       })
     });
@@ -4523,7 +4523,7 @@ ${saleNames.length ? `Deze producten zijn nu in de aanbieding bij de supermarkt:
 Antwoord ALLEEN met STRIKT GELDIGE, COMPACTE JSON (\xE9\xE9n regel, geen markdown-codeblok, geen uitleg) in dit format:
 {"name":string,"emoji":"\xE9\xE9n relevante food-emoji","cookTime":integer(minuten),"servings":4,"ingredients":[{"name":string,"amount":number,"unit":\xE9\xE9n van "stuks"|"g"|"kg"|"ml"|"l"|"eetlepel"|"theelepel"|"snufje"}],"steps":[string,...],"diets":[zero of meer van ${JSON.stringify(DIET_TAGS)}]}
 
-Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi\xEBnten.`;
+Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en maximaal 9 ingredi\xEBnten. Basis zoals zout, peper en olie hoef je niet op te sommen.`;
   const generatePatternWeekmenu = ({ scope }) => {
     const days = scope === "empty" ? periodDays.filter((d) => isDayEmpty(d.key)) : periodDays;
     if (!days.length) {
@@ -4586,7 +4586,15 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
       setAiWeekProgress(`Gerecht ${i + 1} van ${days.length} bedenken (${style.label.toLowerCase()})\u2026`);
       try {
         const priorNames = newRecipes.map((r) => r.name);
-        const raw = await askClaude(buildWeekRecipePrompt(style, priorNames, recentNames, activeDietTags, saleNames));
+        const opdracht = buildWeekRecipePrompt(style, priorNames, recentNames, activeDietTags, saleNames);
+        let raw;
+        try {
+          raw = await askClaude(opdracht, 650);
+        } catch (eerste) {
+          if (eerste.status === 429) throw eerste;
+          console.warn(`Dag ${days[i].key}: eerste poging mislukt (${eerste.status || eerste.message}), opnieuw\u2026`);
+          raw = await askClaude(opdracht, 500);
+        }
         const parsed = sanitizeDraft(extractJson(raw));
         if (!parsed.ingredients.length || !parsed.steps.length) {
           console.error(`Dag ${days[i].key}: antwoord niet te gebruiken.`, String(raw).slice(0, 300));
