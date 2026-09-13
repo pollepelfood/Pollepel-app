@@ -3397,13 +3397,13 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
     }
     return headers;
   };
-  const askClaude = async (prompt, maxTokens = 1e3) => {
+  const askClaude = async (prompt, maxTokens = 1e3, snel = false) => {
     const response = await fetch(AI_ENDPOINT, {
       method: "POST",
       headers: await buildAuthHeaders(),
       body: JSON.stringify({
-        model: "claude-sonnet-5",
         max_tokens: maxTokens,
+        snel,
         messages: [{ role: "user", content: prompt }]
       })
     });
@@ -4514,8 +4514,11 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   };
   const buildWeekRecipePrompt = (style, priorNames, recentNames, diets, saleNames) => `Je bent een menuplanner voor de kookboek-app "Pollepel". Bedenk \xE9\xE9n Nederlands AVONDETEN (hoofdgerecht voor het diner) in de stijl "${style.label}": ${style.description}.
 
+Je hoeft je niet te beperken tot wat er in huis is \u2014 boodschappen doen hoort erbij. Kies gerust iets waarvoor nog ingredi\xEBnten gehaald moeten worden.
+
 Belangrijk: dit is uitsluitend voor het avondeten. Bedenk GEEN ontbijt, lunch, tussendoortje, salade-als-bijgerecht of dessert \u2014 altijd een volwaardig hoofdgerecht dat je 's avonds warm opdient.
-${priorNames.length ? `Deze gerechten staan al gepland deze week: ${priorNames.join(", ")}. Hergebruik waar zinvol overlappende ingredi\xEBnten (bijv. een deel van een pak roomboter, verse kruiden, een groente die je toch al haalt) zodat de boodschappenlijst compacter en scherper wordt \u2014 maar bedenk geen gerecht dat al in de lijst staat.` : ""}
+${priorNames.length ? `Deze gerechten staan al gepland deze week: ${priorNames.join(", ")}.
+BELANGRIJK: zorg voor duidelijke afwisseling. Kies een \xE1nder hoofdingredi\xEBnt (niet weer kip als er al kip staat), een \xE1ndere bereidingswijze (niet weer gebakken of geroosterd) en een \xE1ndere keukenstijl dan wat er al staat. Een week met drie keer "gebakken kipfilet met groenten" is precies wat we niet willen.` : ""}
 ${recentNames.length ? `Dit is recent al gegeten (laatste 2 weken), bedenk liever iets anders voor afwisseling: ${recentNames.join(", ")}.` : ""}
 ${diets.length ? `Houd rekening met deze dieetwensen/allergie\xEBn in het huishouden: ${diets.join(", ")}. Het gerecht moet hier geschikt voor zijn.` : ""}
 ${saleNames.length ? `Deze producten zijn nu in de aanbieding bij de supermarkt: ${saleNames.join(", ")}. Gebruik er waar mogelijk en passend \xE9\xE9n of meer van, voor een voordeliger boodschappenlijst.` : ""}
@@ -4585,15 +4588,16 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
     for (let i = 0; i < days.length; i++) {
       setAiWeekProgress(`Gerecht ${i + 1} van ${days.length} bedenken (${style.label.toLowerCase()})\u2026`);
       try {
-        const priorNames = newRecipes.map((r) => r.name);
+        const alGepland = periodDays.map((d) => dayEntry(d.key)).filter((e) => e && e.recipeId).map((e) => (recipes.find((r) => r.id === e.recipeId) || {}).name).filter(Boolean);
+        const priorNames = [.../* @__PURE__ */ new Set([...alGepland, ...newRecipes.map((r) => r.name)])];
         const opdracht = buildWeekRecipePrompt(style, priorNames, recentNames, activeDietTags, saleNames);
         let raw;
         try {
-          raw = await askClaude(opdracht, 650);
+          raw = await askClaude(opdracht, 650, true);
         } catch (eerste) {
           if (eerste.status === 429) throw eerste;
           console.warn(`Dag ${days[i].key}: eerste poging mislukt (${eerste.status || eerste.message}), opnieuw\u2026`);
-          raw = await askClaude(opdracht, 500);
+          raw = await askClaude(opdracht, 500, true);
         }
         const parsed = sanitizeDraft(extractJson(raw));
         if (!parsed.ingredients.length || !parsed.steps.length) {
