@@ -3414,15 +3414,27 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
     return headers;
   };
   const askClaude = async (prompt, maxTokens = 1e3, snel = false) => {
-    const response = await fetch(AI_ENDPOINT, {
-      method: "POST",
-      headers: await buildAuthHeaders(),
-      body: JSON.stringify({
-        max_tokens: maxTokens,
-        snel,
-        messages: [{ role: "user", content: prompt }]
-      })
-    });
+    const afbreken = new AbortController();
+    const klok = setTimeout(() => afbreken.abort(), 25e3);
+    let response;
+    try {
+      response = await fetch(AI_ENDPOINT, {
+        method: "POST",
+        headers: await buildAuthHeaders(),
+        body: JSON.stringify({
+          max_tokens: maxTokens,
+          snel,
+          messages: [{ role: "user", content: prompt }]
+        }),
+        signal: afbreken.signal
+      });
+    } catch (e) {
+      clearTimeout(klok);
+      const err = new Error(e.name === "AbortError" ? "duurde te lang" : e.message || "verbinding mislukt");
+      err.status = 0;
+      throw err;
+    }
+    clearTimeout(klok);
     if (!response.ok) {
       let bodyText = "";
       try {
@@ -3438,21 +3450,32 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
     return (data.content || []).map((b) => b.text || "").join("\n");
   };
   const askClaudeVision = async (base64, mediaType, prompt) => {
-    const response = await fetch(AI_ENDPOINT, {
-      method: "POST",
-      headers: await buildAuthHeaders(),
-      body: JSON.stringify({
-        model: "claude-sonnet-5",
-        max_tokens: 1e3,
-        messages: [{
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
-            { type: "text", text: prompt }
-          ]
-        }]
-      })
-    });
+    const afbreken = new AbortController();
+    const klok = setTimeout(() => afbreken.abort(), 3e4);
+    let response;
+    try {
+      response = await fetch(AI_ENDPOINT, {
+        method: "POST",
+        signal: afbreken.signal,
+        headers: await buildAuthHeaders(),
+        body: JSON.stringify({
+          max_tokens: 1e3,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+              { type: "text", text: prompt }
+            ]
+          }]
+        })
+      });
+    } catch (e) {
+      clearTimeout(klok);
+      const err = new Error(e.name === "AbortError" ? "duurde te lang" : e.message || "verbinding mislukt");
+      err.status = 0;
+      throw err;
+    }
+    clearTimeout(klok);
     if (!response.ok) {
       let bodyText = "";
       try {
@@ -4610,6 +4633,8 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
     const newRecipes = [];
     const mislukt = [];
     let limietBereikt = false;
+    let opeenvolgendeFouten = 0;
+    let gestopt = false;
     const nextWeekmenu = { ...weekmenu };
     for (let i = 0; i < days.length; i++) {
       setAiWeekProgress(`Gerecht ${i + 1} van ${days.length} bedenken (${style.label.toLowerCase()})\u2026`);
@@ -4645,6 +4670,7 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
           recipeWithId = { ...parsed, id: uid(), favorite: false };
         }
         newRecipes.push(recipeWithId);
+        opeenvolgendeFouten = 0;
         nextWeekmenu[days[i].key] = { ...dayEntry(days[i].key), recipeId: recipeWithId.id };
       } catch (e) {
         console.error(`Dag ${days[i].key} mislukt:`, e.status || "", e.message, e.body || "");
@@ -4654,12 +4680,18 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
           break;
         }
         mislukt.push({ dag: days[i].key, reden: e.message || "onbekende fout" });
+        opeenvolgendeFouten += 1;
+        if (opeenvolgendeFouten >= 3) {
+          console.error("Drie mislukkingen op rij \u2014 gestopt.", e.status || "", e.message, e.body || "");
+          gestopt = true;
+          break;
+        }
       }
     }
     setAiWeekGenerating(false);
     setAiWeekProgress("");
     if (!newRecipes.length && mislukt.length) {
-      setAiWeekError(limietBereikt ? "Je AI-tegoed voor deze maand is op. Met Pollepel Premium kun je hele weekmenu's laten bedenken." : "Er kwam geen bruikbaar recept terug. Probeer het zo nog eens.");
+      setAiWeekError(limietBereikt ? "Je AI-tegoed voor deze maand is op. Met Pollepel Premium kun je hele weekmenu's laten bedenken." : gestopt ? "De AI-hulp reageert niet. Probeer het later opnieuw \u2014 er is niets van je tegoed afgegaan." : "Er kwam geen bruikbaar recept terug. Probeer het zo nog eens.");
     }
     if (newRecipes.length) {
       if (hasDataAPI) setRecipes((prev) => [...prev, ...newRecipes]);
