@@ -5149,6 +5149,9 @@ Maximaal 8 bereidingsstappen (kort, ~15 woorden per stap) en maximaal 12 ingredi
       InventoryForm,
       {
         consumptionLog,
+        inventory,
+        nummertBakjes: !!preferences.containerNumbering,
+        bakjesAantal: Number(preferences.containerCount) || 40,
         initial: editingItem,
         onCancel: () => setEditingItem(null),
         onSave: saveInventoryItem
@@ -8235,13 +8238,21 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
     })
   ] });
 }
-function InventoryForm({ initial, consumptionLog = [], onCancel, onSave }) {
+function InventoryForm({ initial, consumptionLog = [], inventory = [], nummertBakjes = false, bakjesAantal = 40, onCancel, onSave }) {
   const [name, setName] = useState(initial.name || "");
   const [category, setCategory] = useState(initial.category || CATEGORIES[0]);
   const [unit, setUnit] = useState(initial.unit || "stuks");
   const [current, setCurrent] = useState(initial.current ?? "");
   const [min, setMin] = useState(initial.min ?? "");
   const [max, setMax] = useState(initial.max ?? "");
+  const [bakjes, setBakjes] = useState((initial.containers || []).join(", "));
+  const inVriezer = category === "Diepvries" || /^vriezer:/i.test(name);
+  const geefVrijeNummers = () => {
+    const aantal = Math.max(1, Math.round(Number(current) || 1));
+    const anderen = inventory.filter((i) => i.id !== initial.id);
+    const vrij = kiesVrijeBakjes(anderen, aantal, bakjesAantal);
+    setBakjes(vrij.join(", "));
+  };
   const voorstel = useMemo(() => {
     if (Number(initial.min || 0) > 0) return null;
     return stelMinimumVoor({ name: initial.name || name, unit: initial.unit || unit }, consumptionLog);
@@ -8385,6 +8396,26 @@ function InventoryForm({ initial, consumptionLog = [], onCancel, onSave }) {
         ]
       }
     ),
+    nummertBakjes && inVriezer && /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsx(Field, { label: "Bakjes", children: /* @__PURE__ */ jsx(
+        "input",
+        {
+          autoComplete: "off",
+          style: inputStyle,
+          value: bakjes,
+          onChange: (e) => setBakjes(e.target.value),
+          placeholder: "Bijvoorbeeld: 3, 4",
+          inputMode: "numeric"
+        }
+      ) }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, alignItems: "center", margin: "-4px 0 14px", flexWrap: "wrap" }, children: [
+        /* @__PURE__ */ jsxs(GhostButton, { onClick: geefVrijeNummers, children: [
+          /* @__PURE__ */ jsx(Shuffle, { size: 13 }),
+          " Geef me vrije nummers"
+        ] }),
+        /* @__PURE__ */ jsx("span", { style: { fontSize: 11, color: C.inkSoft, flex: 1, minWidth: 120, lineHeight: 1.4 }, children: "De nummers van de stickers op je bakjes, gescheiden door komma's." })
+      ] })
+    ] }),
     /* @__PURE__ */ jsx(Field, { label: "Barcode (optioneel, voor scannen)", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, value: barcode, onChange: (e) => setBarcode(e.target.value), placeholder: "Bijv. 8710400123456" }) }),
     /* @__PURE__ */ jsx(Field, { label: "Houdbaar tot (THT, optioneel)", children: /* @__PURE__ */ jsx("input", { autoComplete: "off", type: "date", style: inputStyle, value: expiryDate, onChange: (e) => setExpiryDate(e.target.value) }) }),
     /* @__PURE__ */ jsxs(
@@ -8418,7 +8449,10 @@ function InventoryForm({ initial, consumptionLog = [], onCancel, onSave }) {
             const minWaarde = Number(min) || 0;
             let maxWaarde = Number(max) || 0;
             if (maxWaarde > 0 && maxWaarde < minWaarde) maxWaarde = minWaarde;
-            onSave({ ...initial, name: name.trim(), category, unit, current: Number(current) || 0, min: minWaarde, max: maxWaarde, barcode: barcode.trim(), expiryDate, onSale });
+            const bakjesLijst = [...new Set(
+              String(bakjes).split(/[^0-9]+/).map(Number).filter((x) => x > 0)
+            )].sort((a, b) => a - b);
+            onSave({ ...initial, name: name.trim(), category, unit, current: Number(current) || 0, min: minWaarde, max: maxWaarde, barcode: barcode.trim(), expiryDate, onSale, containers: bakjesLijst });
           },
           children: [
             /* @__PURE__ */ jsx(Check, { size: 16 }),
