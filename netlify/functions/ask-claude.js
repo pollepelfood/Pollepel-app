@@ -126,16 +126,27 @@ export default async (req) => {
     max_tokens: Math.min(Number(body.max_tokens) || MAX_TOKENS, MAX_TOKENS),
   };
 
+  const bijAnthropic = (model) => fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({ ...veiligBody, model }),
+  });
+
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify(veiligBody),
-    });
+    let response = await bijAnthropic(veiligBody.model);
+
+    // Is het snelle model niet beschikbaar, dan alsnog het gewone proberen.
+    // Anders valt de hele functie uit op één modelnaam die niet klopt.
+    if (!response.ok && veiligBody.model !== STANDAARD_MODEL && response.status >= 400 && response.status < 500) {
+      const reden = await response.clone().text();
+      console.error(`Snel model ${veiligBody.model} geweigerd (${response.status}): ${reden.slice(0, 200)}. Terugvallen op ${STANDAARD_MODEL}.`);
+      response = await bijAnthropic(STANDAARD_MODEL);
+    }
+
     const data = await response.text();
 
     // Pas afschrijven als Anthropic werkelijk iets heeft geleverd. Ging het
