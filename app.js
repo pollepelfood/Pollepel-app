@@ -2851,6 +2851,59 @@ function ExtraToevoegenModal({ datum, recipes, onKies, onClose }) {
     ] })
   ] });
 }
+function LogboekModal({ onClose }) {
+  const regels = typeof window !== "undefined" && window.pollepelLog ? [...window.pollepelLog].reverse() : [];
+  const [gekopieerd, setGekopieerd] = useState(false);
+  const alsTekst = () => regels.map((r) => `[${r.soort}] ${r.tijd.slice(11, 19)} ${r.tekst}`).join("\n") || "geen meldingen";
+  const deel = async () => {
+    const tekst = `Pollepel foutlogboek
+${(/* @__PURE__ */ new Date()).toLocaleString("nl-NL")}
+
+${alsTekst()}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "Pollepel foutlogboek", text: tekst });
+        return;
+      } catch (e) {
+        return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(tekst);
+      setGekopieerd(true);
+      setTimeout(() => setGekopieerd(false), 2500);
+    } catch (e) {
+    }
+  };
+  return /* @__PURE__ */ jsxs(Modal, { title: "Foutlogboek", onClose, children: [
+    /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.inkSoft, marginTop: 0, lineHeight: 1.5 }, children: "Hier staan de laatste meldingen van de app. Werkt er iets niet, dan kun je dit delen \u2014 dan is meteen duidelijk wat er misging." }),
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginBottom: 12 }, children: [
+      /* @__PURE__ */ jsxs(PrimaryButton, { onClick: deel, children: [
+        /* @__PURE__ */ jsx(Share2, { size: 15 }),
+        " ",
+        gekopieerd ? "Gekopieerd" : "Delen"
+      ] }),
+      /* @__PURE__ */ jsx(GhostButton, { onClick: () => {
+        if (window.pollepelLog) window.pollepelLog.length = 0;
+        onClose();
+      }, children: "Leegmaken" })
+    ] }),
+    regels.length === 0 ? /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.sage }, children: "Geen meldingen \u2014 er is niets misgegaan." }) : /* @__PURE__ */ jsx("div", { style: { maxHeight: "55vh", overflowY: "auto" }, children: regels.map((r, i) => /* @__PURE__ */ jsxs("div", { style: {
+      background: r.soort === "error" ? C.warnBg : C.cardBg,
+      border: `1px solid ${r.soort === "error" ? C.brick : C.borderTint}`,
+      borderRadius: 10,
+      padding: "8px 10px",
+      marginBottom: 6
+    }, children: [
+      /* @__PURE__ */ jsxs("div", { style: { fontSize: 10, color: C.inkSoft, fontFamily: FONT_MONO, marginBottom: 2 }, children: [
+        r.tijd.slice(11, 19),
+        " \xB7 ",
+        r.soort === "error" ? "fout" : "waarschuwing"
+      ] }),
+      /* @__PURE__ */ jsx("div", { style: { fontSize: 11.5, color: C.ink, fontFamily: FONT_MONO, wordBreak: "break-word", lineHeight: 1.45 }, children: r.tekst })
+    ] }, i)) })
+  ] });
+}
 function ControleModal({ bevindingen, onHerstel, onClose }) {
   const kleur = { hoog: C.brick, midden: C.mustardDeep, laag: C.inkSoft };
   const label = { hoog: "Moet je bekijken", midden: "Let op", laag: "Ter info" };
@@ -3113,6 +3166,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   const [koppelVoor, setKoppelVoor] = useState(null);
   const [leftoverContext, setLeftoverContext] = useState(null);
   const [controleOpen, setControleOpen] = useState(false);
+  const [logboekOpen, setLogboekOpen] = useState(false);
   const [extras, setExtras] = useState([]);
   const [extraVoorDag, setExtraVoorDag] = useState(null);
   const [periodIndex, setPeriodIndex] = useState(0);
@@ -4757,6 +4811,7 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
         onClose: () => setExtraVoorDag(null)
       }
     ),
+    logboekOpen && /* @__PURE__ */ jsx(LogboekModal, { onClose: () => setLogboekOpen(false) }),
     controleOpen && /* @__PURE__ */ jsx(
       ControleModal,
       {
@@ -5196,6 +5251,10 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
         onOpenControle: () => {
           setSettingsOpen(false);
           setControleOpen(true);
+        },
+        onOpenLogboek: () => {
+          setSettingsOpen(false);
+          setLogboekOpen(true);
         },
         aantalBevindingen: bevindingen.length,
         heeftPremium,
@@ -7217,7 +7276,7 @@ function CookDislikeRow({ name, preferences, onUpdate }) {
     ] })
   ] });
 }
-function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onShowWelcome, onExportBackup, onToggleDarkMode, onSetShoppingDay, onSetContainerNumbering, onSetContainerCount, onOpenControle, aantalBevindingen = 0, heeftPremium = false, onMoveCategoryOrder, onUpdateCookDiets, onUpdateCookDislikes, onTogglePremium, onClose }) {
+function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onShowWelcome, onExportBackup, onToggleDarkMode, onSetShoppingDay, onSetContainerNumbering, onSetContainerCount, onOpenControle, onOpenLogboek, aantalBevindingen = 0, heeftPremium = false, onMoveCategoryOrder, onUpdateCookDiets, onUpdateCookDislikes, onTogglePremium, onClose }) {
   const [name, setName] = useState(household?.name || "");
   const [savingName, setSavingName] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -7499,6 +7558,20 @@ ${link}`;
             /* @__PURE__ */ jsxs("span", { style: { display: "flex", flexDirection: "column" }, children: [
               /* @__PURE__ */ jsx("span", { style: { fontSize: 14, color: C.ink }, children: "Uitleg opnieuw bekijken" }),
               /* @__PURE__ */ jsx("span", { style: { fontSize: 11, color: C.inkSoft }, children: "Hoe Pollepel werkt, in drie schermen" })
+            ] })
+          ]
+        }
+      ),
+      /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: onOpenLogboek,
+          style: { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 12px", background: "none", border: "none", borderBottom: `1px solid ${C.ceramic}`, cursor: "pointer", textAlign: "left" },
+          children: [
+            /* @__PURE__ */ jsx(AlertTriangle, { size: 16, color: C.blueDeep }),
+            /* @__PURE__ */ jsxs("span", { style: { display: "flex", flexDirection: "column" }, children: [
+              /* @__PURE__ */ jsx("span", { style: { fontSize: 14, color: C.ink }, children: "Foutlogboek" }),
+              /* @__PURE__ */ jsx("span", { style: { fontSize: 11, color: C.inkSoft }, children: "Werkt er iets niet? Deel dit, dan zie ik wat er misging" })
             ] })
           ]
         }

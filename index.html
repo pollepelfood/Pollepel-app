@@ -39,6 +39,30 @@
   <div id="root"></div>
 
   <script>
+    // ---------- Foutlogboek in de app ----------
+    // Op een iPhone kun je niet bij het foutlogboek van de browser. Zonder dit
+    // is een fout melden onmogelijk: je ziet alleen dat iets niet werkt.
+    window.pollepelLog = [];
+    (function () {
+      const bewaar = (soort, argumenten) => {
+        try {
+          const tekst = Array.from(argumenten).map((a) => {
+            if (a instanceof Error) return a.stack || a.message;
+            if (typeof a === "object") { try { return JSON.stringify(a).slice(0, 400); } catch (e) { return String(a); } }
+            return String(a);
+          }).join(" ");
+          window.pollepelLog.push({ tijd: new Date().toISOString(), soort, tekst: tekst.slice(0, 600) });
+          if (window.pollepelLog.length > 80) window.pollepelLog.shift();
+        } catch (e) { /* logboek mag nooit zelf stukgaan */ }
+      };
+      ["error", "warn"].forEach((soort) => {
+        const origineel = console[soort].bind(console);
+        console[soort] = function () { bewaar(soort, arguments); origineel.apply(console, arguments); };
+      });
+      window.addEventListener("error", (e) => bewaar("error", [e.message, e.filename + ":" + e.lineno]));
+      window.addEventListener("unhandledrejection", (e) => bewaar("error", ["Niet afgevangen: " + (e.reason && (e.reason.stack || e.reason.message) || e.reason)]));
+    })();
+
     // ---------- Barcode-decoder ----------
     // BarcodeDetector bestaat niet op iOS (elke browser daar draait op WebKit).
     // Daarom laden we ZBar als WebAssembly, maar pas wanneer de scanner opengaat.
