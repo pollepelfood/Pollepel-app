@@ -188,7 +188,20 @@
           }
           onAuthed();
         } catch (e) {
-          setError(e.message || "Er ging iets mis. Probeer het opnieuw.");
+          // "Invalid login credentials" krijg je ook als het account wél bestaat
+          // maar nog niet bevestigd is. "Geen account bekend" is dan misleidend.
+          const ruw = (e.message || "").toLowerCase();
+          if (ruw.includes("email not confirmed")) {
+            setError("Je account bestaat, maar is nog niet bevestigd. Kijk in je mail — ook bij ongewenst — of vraag de beheerder van je huishouden om hulp.");
+          } else if (ruw.includes("invalid login credentials")) {
+            setError("Inloggen lukt niet. Klopt je wachtwoord? Heb je je net aangemeld, open dan eerst de bevestigingsmail.");
+          } else if (ruw.includes("rate limit") || ruw.includes("429")) {
+            setError("Er zijn te veel berichten verstuurd. Probeer het over een uur opnieuw.");
+          } else if (ruw.includes("already registered")) {
+            setError("Dit e-mailadres is al bekend. Log in met je wachtwoord in plaats van een nieuw account te maken.");
+          } else {
+            setError(e.message || "Er ging iets mis. Probeer het opnieuw.");
+          }
         } finally {
           setLoading(false);
         }
