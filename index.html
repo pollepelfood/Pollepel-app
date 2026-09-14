@@ -165,7 +165,15 @@
         setError(""); setInfo(""); setLoading(true);
         try {
           if (mode === "signup") {
-            const { data, error } = await supabase.auth.signUp({ email, password });
+            // Terugkeeradres expliciet meegeven. Zonder dit gebruikt Supabase
+            // het adres uit de projectinstellingen, en dat staat standaard op
+            // localhost — waar niemand ooit terechtkomt. De uitnodigingscode
+            // gaat mee, zodat die de mailwissel overleeft.
+            const terug = window.location.origin + window.location.pathname + window.location.search;
+            const { data, error } = await supabase.auth.signUp({
+              email, password,
+              options: { emailRedirectTo: terug },
+            });
             if (error) throw error;
             if (!data.session) {
               setError("");
