@@ -7,7 +7,7 @@
 // Alleen wanneer het netwerk faalt vallen we terug op de cache, zodat de app
 // offline blijft werken.
 
-const VERSION = "v2";
+const VERSION = "v3";
 const CACHE_NAME = `pollepel-shell-${VERSION}`;
 
 // app.js hoorde hier ook in: zonder dat bestand start de app offline helemaal niet.

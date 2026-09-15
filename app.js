@@ -290,6 +290,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
+const APP_VERSIE = "v57 \xB7 14 september 2026";
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
 const FONT_MONO = "'IBM Plex Mono', monospace";
@@ -4624,7 +4625,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     persist("shoppingList", nextShopping, setShoppingList);
     showToast(addedCount ? `Boodschappenlijst aangevuld met ${addedCount} product${addedCount > 1 ? "en" : ""} voor het weekmenu.` : "Je hebt al alles in huis voor het weekmenu \u2014 niets toegevoegd.");
   };
-  const buildWeekRecipePrompt = (style2, priorNames, recentNames, diets, saleNames, alGebruikt = []) => `Je bent een menuplanner voor de kookboek-app "Pollepel". Bedenk \xE9\xE9n Nederlands AVONDETEN (hoofdgerecht voor het diner) in de stijl "${style2.label}": ${style2.description}.
+  const buildWeekRecipePrompt = (style, priorNames, recentNames, diets, saleNames, alGebruikt = []) => `Je bent een menuplanner voor de kookboek-app "Pollepel". Bedenk \xE9\xE9n Nederlands AVONDETEN (hoofdgerecht voor het diner) in de stijl "${style.label}": ${style.description}.
 
 Je hoeft je niet te beperken tot wat er in huis is \u2014 boodschappen doen hoort erbij. Kies gerust iets waarvoor nog ingredi\xEBnten gehaald moeten worden.
 
@@ -4710,7 +4711,8 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
     let gestopt = false;
     const nextWeekmenu = { ...weekmenu };
     for (let i = 0; i < days.length; i++) {
-      setAiWeekProgress(`Gerecht ${i + 1} van ${days.length} bedenken (${style.label.toLowerCase()})\u2026`);
+      const dagStijl = stijlVoorDag(days[i]);
+      setAiWeekProgress(`Gerecht ${i + 1} van ${days.length} bedenken (${dagStijl.label.toLowerCase()})\u2026`);
       try {
         const alGepland = periodDays.map((d) => dayEntry(d.key)).filter((e) => e && e.recipeId).map((e) => (recipes.find((r) => r.id === e.recipeId) || {}).name).filter(Boolean);
         const priorNames = [.../* @__PURE__ */ new Set([...alGepland, ...newRecipes.map((r) => r.name)])];
@@ -4720,7 +4722,7 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
             return r ? (r.ingredients || []).map((ing) => ing.name) : [];
           }).concat(newRecipes.flatMap((r) => (r.ingredients || []).map((ing) => ing.name))).filter((naam) => !isPantryBasic(naam))
         )].slice(0, 25);
-        const opdracht = buildWeekRecipePrompt(stijlVoorDag(days[i]), priorNames, recentNames, activeDietTags, saleNames, alGebruikt);
+        const opdracht = buildWeekRecipePrompt(dagStijl, priorNames, recentNames, activeDietTags, saleNames, alGebruikt);
         let raw;
         try {
           raw = await askClaude(opdracht, 650, true);
@@ -7710,6 +7712,10 @@ ${link}`;
           }, children: "Annuleren" })
         ] })
       ] })
+    ] }),
+    /* @__PURE__ */ jsxs("p", { style: { fontSize: 10.5, color: C.inkSoft, textAlign: "center", marginTop: 20, fontFamily: FONT_MONO }, children: [
+      "Pollepel ",
+      APP_VERSIE
     ] }),
     privacyOpen && /* @__PURE__ */ jsx(PrivacyModal, { onClose: () => setPrivacyOpen(false) })
   ] });
