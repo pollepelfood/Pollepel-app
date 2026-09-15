@@ -290,7 +290,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v57 \xB7 14 september 2026";
+const APP_VERSIE = "v58 \xB7 14 september 2026";
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
 const FONT_MONO = "'IBM Plex Mono', monospace";
@@ -3470,7 +3470,22 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
     setToast(msg);
     setTimeout(() => setToast(null), 4200);
   };
-  const AI_ENDPOINT = "/api/ask-claude";
+  const AI_PADEN = ["/api/ask-claude", "/.netlify/functions/ask-claude"];
+  const aiPadRef = React.useRef(0);
+  const aiFetch = async (opties) => {
+    let laatste;
+    for (let poging = 0; poging < AI_PADEN.length; poging++) {
+      const index = (aiPadRef.current + poging) % AI_PADEN.length;
+      const antwoord = await fetch(AI_PADEN[index], opties);
+      if (antwoord.status !== 404) {
+        aiPadRef.current = index;
+        return antwoord;
+      }
+      laatste = antwoord;
+      console.warn(`AI-adres ${AI_PADEN[index]} bestaat niet, volgende proberen\u2026`);
+    }
+    return laatste;
+  };
   const buildAuthHeaders = async () => {
     const headers = { "Content-Type": "application/json" };
     if (typeof window !== "undefined" && window.householdAPI && window.householdAPI.getAccessToken) {
@@ -3487,7 +3502,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
     const klok = setTimeout(() => afbreken.abort(), 25e3);
     let response;
     try {
-      response = await fetch(AI_ENDPOINT, {
+      response = await aiFetch({
         method: "POST",
         headers: await buildAuthHeaders(),
         body: JSON.stringify({
@@ -3510,7 +3525,9 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
         bodyText = (await response.text()).slice(0, 300);
       } catch (e) {
       }
-      const err = new Error(response.status === 429 ? "limiet bereikt" : `API-fout ${response.status}`);
+      const err = new Error(
+        response.status === 429 ? "limiet bereikt" : response.status === 404 ? "AI-functie niet gevonden op de server" : `API-fout ${response.status}`
+      );
       err.status = response.status;
       err.body = bodyText;
       throw err;
@@ -3523,7 +3540,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
     const klok = setTimeout(() => afbreken.abort(), 3e4);
     let response;
     try {
-      response = await fetch(AI_ENDPOINT, {
+      response = await aiFetch({
         method: "POST",
         signal: afbreken.signal,
         headers: await buildAuthHeaders(),
@@ -3551,7 +3568,9 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
         bodyText = (await response.text()).slice(0, 300);
       } catch (e) {
       }
-      const err = new Error(response.status === 429 ? "limiet bereikt" : `API-fout ${response.status}`);
+      const err = new Error(
+        response.status === 429 ? "limiet bereikt" : response.status === 404 ? "AI-functie niet gevonden op de server" : `API-fout ${response.status}`
+      );
       err.status = response.status;
       err.body = bodyText;
       throw err;
@@ -4766,7 +4785,8 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
     setAiWeekGenerating(false);
     setAiWeekProgress("");
     if (!newRecipes.length && mislukt.length) {
-      setAiWeekError(limietBereikt ? "Je AI-tegoed voor deze maand is op. Met Pollepel Premium kun je hele weekmenu's laten bedenken." : gestopt ? "De AI-hulp reageert niet. Probeer het later opnieuw \u2014 er is niets van je tegoed afgegaan." : "Er kwam geen bruikbaar recept terug. Probeer het zo nog eens.");
+      const alles404 = mislukt.length > 0 && mislukt.every((m) => String(m.reden).includes("niet gevonden"));
+      setAiWeekError(limietBereikt ? "Je AI-tegoed voor deze maand is op. Met Pollepel Premium kun je hele weekmenu's laten bedenken." : alles404 ? "De AI-functie staat niet op de server. Controleer of netlify/functions/ask-claude.js is ge\xFCpload." : gestopt ? "De AI-hulp reageert niet. Probeer het later opnieuw \u2014 er is niets van je tegoed afgegaan." : "Er kwam geen bruikbaar recept terug. Probeer het zo nog eens.");
     }
     if (newRecipes.length) {
       if (hasDataAPI) setRecipes((prev) => [...prev, ...newRecipes]);
