@@ -290,7 +290,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v58 \xB7 14 september 2026";
+const APP_VERSIE = "v59 \xB7 15 september 2026";
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
 const FONT_MONO = "'IBM Plex Mono', monospace";

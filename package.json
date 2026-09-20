@@ -1,0 +1,6 @@
+{
+  "name": "pollepel",
+  "private": true,
+  "type": "module",
+  "description": "Zonder dit bestand leest Node een .js-bestand op de oude manier, waarin 'export' niet bestaat. De serverloze functies falen dan al bij het bouwen en worden nooit gepubliceerd — je krijgt dan een 404 op het adres. De extensie .mjs lost dat op zichzelf al op; dit bestand is de riem naast de bretels."
+}
