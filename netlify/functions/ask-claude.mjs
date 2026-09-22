@@ -24,7 +24,9 @@ const MODELLEN = {
   nauwkeurig: "claude-sonnet-5",
 };
 const STANDAARD_MODEL = MODELLEN.nauwkeurig;
-const MAX_TOKENS = 2048;
+// Ruim genoeg voor een volledig recept in JSON. Te krap betekent een
+// afgekapt antwoord dat niet te lezen is — dat kost een beurt zonder resultaat.
+const MAX_TOKENS = 4096;
 const MAX_VERZOEK_BYTES = 200 * 1024; // ruim genoeg voor een recept met foto-tekst
 
 function json(inhoud, status) {
