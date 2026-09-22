@@ -2603,7 +2603,8 @@ const SPELLING_CORRECTIES = [
   [/\bkook room\b/gi, "kookroom"],
   [/\bslag room\b/gi, "slagroom"],
   [/\bknoflook teen(tje)?s?\b/gi, "knoflookteentjes"],
-  [/\bui en\b/gi, "uien"],
+  // "ui en" is bewust weggelaten: dat komt in gewoon Nederlands voor
+  // ("de ui en de knoflook") en werd dan verminkt tot "de uien knoflook".
   [/\bpaprika poeder\b/gi, "paprikapoeder"],
   [/\bolijf olie\b/gi, "olijfolie"],
   [/\bsoja saus\b/gi, "sojasaus"],
@@ -2640,7 +2641,8 @@ const SPELLING_CORRECTIES = [
   // "Roerbakken de groenten" is geen verbetering ten opzichte van het Engels.
   [/\bstir[- ]?fry\b/gi, "roerbak"],
   [/\bstir[- ]?frying\b/gi, "roerbakken"],
-  [/\bsauté\b/gi, "fruit"],
+  // Het accent telt niet als woordteken, dus een grens erachter werkt niet.
+  [/\bsaut[eé](er|ed|ing)?(?![a-zà-ÿ])/gi, "fruit"],
   [/\bsimmer for\b/gi, "laat sudderen"],
   [/\bsimmer\b/gi, "laat sudderen"],
   [/\blet simmer\b/gi, "laat sudderen"],
