@@ -297,7 +297,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v62 \xB7 22 september 2026";
+const APP_VERSIE = "v63 \xB7 22 september 2026";
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
 const FONT_MONO = "'IBM Plex Mono', monospace";
@@ -3712,9 +3712,45 @@ ${sourceText.slice(0, 6e3)}
 """`;
   const extractJson = (raw) => {
     const start = raw.indexOf("{");
+    if (start === -1) throw new Error("geen-json-gevonden");
     const end = raw.lastIndexOf("}");
-    if (start === -1 || end === -1 || end <= start) throw new Error("geen-json-gevonden");
-    return JSON.parse(raw.slice(start, end + 1));
+    if (end > start) {
+      try {
+        return JSON.parse(raw.slice(start, end + 1));
+      } catch (e) {
+      }
+    }
+    let tekst = raw.slice(start);
+    const laatsteKomma = Math.max(tekst.lastIndexOf("},"), tekst.lastIndexOf('",'), tekst.lastIndexOf("],"));
+    if (laatsteKomma > 0) tekst = tekst.slice(0, laatsteKomma + 1);
+    let inTekst = false, ontsnapt = false;
+    const stapel = [];
+    for (const teken of tekst) {
+      if (ontsnapt) {
+        ontsnapt = false;
+        continue;
+      }
+      if (teken === "\\") {
+        ontsnapt = true;
+        continue;
+      }
+      if (teken === '"') {
+        inTekst = !inTekst;
+        continue;
+      }
+      if (inTekst) continue;
+      if (teken === "{" || teken === "[") stapel.push(teken);
+      else if (teken === "}" || teken === "]") stapel.pop();
+    }
+    if (inTekst) tekst += '"';
+    while (stapel.length) tekst += stapel.pop() === "{" ? "}" : "]";
+    try {
+      const hersteld = JSON.parse(tekst);
+      console.warn("Antwoord was afgekapt; het bruikbare deel is gered.");
+      return hersteld;
+    } catch (e) {
+      throw new Error("geen-json-gevonden");
+    }
   };
   const parseRecipeFromText = async (sourceText) => {
     let aiDraft = null;
@@ -4858,15 +4894,19 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
         const opdracht = buildWeekRecipePrompt(dagStijl, priorNames, recentNames, activeDietTags, saleNames, alGebruikt, alleAfkeuren, soort.opdracht);
         let raw;
         try {
-          raw = await askClaude(opdracht, 900);
+          raw = await askClaude(opdracht, 2e3);
         } catch (eerste) {
           if (eerste.status === 429) throw eerste;
           console.warn(`Dag ${days[i].key}: eerste poging mislukt (${eerste.status || eerste.message}), opnieuw\u2026`);
-          raw = await askClaude(opdracht, 700);
+          raw = await askClaude(opdracht, 2e3);
         }
         const parsed = sanitizeDraft(extractJson(raw));
         if (!parsed.ingredients.length || !parsed.steps.length) {
-          console.error(`Dag ${days[i].key}: antwoord niet te gebruiken.`, String(raw).slice(0, 300));
+          const ruw = String(raw || "");
+          console.error(
+            `Dag ${days[i].key}: antwoord niet te gebruiken (${ruw.length} tekens, eindigt op "${ruw.slice(-40)}").`,
+            ruw.slice(0, 300)
+          );
           mislukt.push({ dag: days[i].key, reden: "onbruikbaar antwoord" });
           continue;
         }
