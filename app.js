@@ -297,7 +297,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v63 \xB7 22 september 2026";
+const APP_VERSIE = "v64 \xB7 23 september 2026";
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
 const FONT_MONO = "'IBM Plex Mono', monospace";
@@ -3564,24 +3564,33 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
     setToast(msg);
     setTimeout(() => setToast(null), 4200);
   };
-  const AI_PADEN = ["/api/ask-claude", "/.netlify/functions/ask-claude"];
+  const AI_PADEN = [
+    "https://ucevkzircawpapsrywfv.supabase.co/functions/v1/ask-claude",
+    "/api/ask-claude",
+    "/.netlify/functions/ask-claude"
+  ];
   const aiPadRef = React.useRef(0);
   const aiFetch = async (opties) => {
     let laatste;
     for (let poging = 0; poging < AI_PADEN.length; poging++) {
       const index = (aiPadRef.current + poging) % AI_PADEN.length;
       const antwoord = await fetch(AI_PADEN[index], opties);
-      if (antwoord.status !== 404) {
+      const kapot = antwoord.status === 404 || antwoord.status >= 500;
+      if (!kapot) {
         aiPadRef.current = index;
         return antwoord;
       }
+      if (poging === AI_PADEN.length - 1) return antwoord;
       laatste = antwoord;
-      console.warn(`AI-adres ${AI_PADEN[index]} bestaat niet, volgende proberen\u2026`);
+      console.warn(`AI-adres ${AI_PADEN[index]} gaf ${antwoord.status}, volgende proberen\u2026`);
     }
     return laatste;
   };
   const buildAuthHeaders = async () => {
-    const headers = { "Content-Type": "application/json" };
+    const headers = {
+      "Content-Type": "application/json",
+      apikey: "sb_publishable_t0F12XeC1bPLzmZgvLWUeQ_CPat-lMn"
+    };
     if (typeof window !== "undefined" && window.householdAPI && window.householdAPI.getAccessToken) {
       try {
         const token = await window.householdAPI.getAccessToken();
@@ -3593,7 +3602,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   };
   const askClaude = async (prompt, maxTokens = 1e3, snel = false) => {
     const afbreken = new AbortController();
-    const klok = setTimeout(() => afbreken.abort(), 25e3);
+    const klok = setTimeout(() => afbreken.abort(), 6e4);
     let response;
     try {
       response = await aiFetch({
