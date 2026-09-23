@@ -297,7 +297,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v64 \xB7 23 september 2026";
+const APP_VERSIE = "v65 \xB7 23 september 2026";
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
 const FONT_MONO = "'IBM Plex Mono', monospace";
@@ -5146,7 +5146,7 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, position: "relative" }, children: [
         /* @__PURE__ */ jsx(LogoMark, { size: 22 }),
         /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 20, flexShrink: 0, whiteSpace: "nowrap" }, children: "Pollepel" }),
-        saving && /* @__PURE__ */ jsx(Loader2, { className: "animate-spin", size: 14, style: { marginLeft: 6, flexShrink: 0 } }),
+        saving && /* @__PURE__ */ jsx("span", { style: { marginLeft: 6, flexShrink: 0 }, children: /* @__PURE__ */ jsx(PollepelLoader, { size: 15, inline: true, delay: 0 }) }),
         /* @__PURE__ */ jsx("div", { style: { marginLeft: "auto", display: "flex", gap: 8, flexShrink: 0 }, children: /* @__PURE__ */ jsx(
           "button",
           {
@@ -7543,7 +7543,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
     /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }, children: "Naam van je huishouden" }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginBottom: 16 }, children: [
       /* @__PURE__ */ jsx("input", { autoComplete: "off", style: inputStyle, value: name, onChange: (e) => setName(e.target.value), placeholder: "Bijv. Familie Jansen" }),
-      /* @__PURE__ */ jsx(PrimaryButton, { onClick: saveName, disabled: savingName || !name.trim() || name.trim() === household?.name, children: savingName ? /* @__PURE__ */ jsx(Loader2, { className: "animate-spin", size: 16 }) : /* @__PURE__ */ jsx(Check, { size: 16 }) })
+      /* @__PURE__ */ jsx(PrimaryButton, { onClick: saveName, disabled: savingName || !name.trim() || name.trim() === household?.name, children: savingName ? /* @__PURE__ */ jsx(PollepelLoader, { size: 17, inline: true, delay: 0 }) : /* @__PURE__ */ jsx(Check, { size: 16 }) })
     ] }),
     nameError && /* @__PURE__ */ jsx("p", { role: "alert", style: { fontSize: 12, color: C.brick, margin: "-8px 0 14px", lineHeight: 1.45 }, children: nameError }),
     household?.invite_code && (() => {
@@ -8733,7 +8733,7 @@ function InventoryForm({ initial, consumptionLog = [], inventory = [], nummertBa
         }
       ),
       /* @__PURE__ */ jsx("datalist", { id: "common-groceries", children: COMMON_GROCERY_ITEMS.map((n) => /* @__PURE__ */ jsx("option", { value: n }, n)) }),
-      searching && /* @__PURE__ */ jsx("div", { style: { position: "absolute", right: 10, top: 11 }, children: /* @__PURE__ */ jsx(Loader2, { className: "animate-spin", size: 15, color: C.inkSoft }) }),
+      searching && /* @__PURE__ */ jsx("div", { style: { position: "absolute", right: 10, top: 9 }, children: /* @__PURE__ */ jsx(PollepelLoader, { size: 16, inline: true, delay: 0 }) }),
       showSuggestions && suggestions.length > 0 && /* @__PURE__ */ jsx("div", { style: { position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, zIndex: 5, maxHeight: 220, overflowY: "auto", boxShadow: "0 6px 16px rgba(0,0,0,0.12)" }, children: suggestions.map((p, idx) => /* @__PURE__ */ jsxs(
         "button",
         {
@@ -9292,7 +9292,7 @@ function AIWeekmenuModal({ generating, progress, error, weekdayStyles, onSetWeek
   const [styleId, setStyleId] = useState("gevarieerd");
   const [scope, setScope] = useState("empty");
   return /* @__PURE__ */ jsxs(Modal, { title: "AI: genereer weekmenu", onClose: onCancel, wide: true, children: [
-    /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.inkSoft, marginTop: 0 }, children: "Pollepel bedenkt per dag een avondeten (geen ontbijt of lunch) en houdt rekening met overlappende ingredi\xEBnten tussen de gerechten, zodat je boodschappenlijst compacter en scherper wordt." }),
+    /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.inkSoft, marginTop: 0 }, children: "Pollepel bedenkt per dag een avondgerecht. Hij zorgt voor afwisseling, houdt rekening met wat jullie niet lusten, en past de stijl aan per dag van de week." }),
     /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "4px 0 8px" }, children: "Stijl" }),
     /* @__PURE__ */ jsxs(
       "button",
@@ -9447,7 +9447,7 @@ function AIWeekmenuModal({ generating, progress, error, weekdayStyles, onSetWeek
       )
     ] }),
     generating && /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: 12, marginBottom: 12 }, children: [
-      /* @__PURE__ */ jsx(Loader2, { className: "animate-spin", size: 16, color: C.blue }),
+      /* @__PURE__ */ jsx(PollepelLoader, { size: 20, inline: true, delay: 0 }),
       /* @__PURE__ */ jsx("span", { style: { fontSize: 13, color: C.ink }, children: progress || "Bezig\u2026" })
     ] }),
     error && !generating && /* @__PURE__ */ jsxs("div", { style: { background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 12, padding: "8px 10px", fontSize: 13, color: C.brick, marginBottom: 10, display: "flex", gap: 6, alignItems: "flex-start" }, children: [
@@ -9456,7 +9456,7 @@ function AIWeekmenuModal({ generating, progress, error, weekdayStyles, onSetWeek
     ] }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
       /* @__PURE__ */ jsxs(PrimaryButton, { tone: "mustard", disabled: generating, onClick: () => onGenerate({ styleId, scope }), children: [
-        generating ? /* @__PURE__ */ jsx(Loader2, { className: "animate-spin", size: 16 }) : /* @__PURE__ */ jsx(Wand2, { size: 16 }),
+        generating ? /* @__PURE__ */ jsx(PollepelLoader, { size: 17, inline: true, delay: 0 }) : /* @__PURE__ */ jsx(Wand2, { size: 16 }),
         generating ? "Bezig\u2026" : "Genereer weekmenu"
       ] }),
       /* @__PURE__ */ jsx(GhostButton, { onClick: onCancel, children: generating ? "Sluiten" : "Annuleren" })
