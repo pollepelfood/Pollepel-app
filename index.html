@@ -42,8 +42,29 @@
     // ---------- Foutlogboek in de app ----------
     // Op een iPhone kun je niet bij het foutlogboek van de browser. Zonder dit
     // is een fout melden onmogelijk: je ziet alleen dat iets niet werkt.
-    window.pollepelLog = [];
+    // Uit de opslag halen, zodat het logboek een herlaadbeurt overleeft. Stond
+    // het alleen in het geheugen, dan was het weg zodra je de app opnieuw opende
+    // — precies op het moment dat je het nodig hebt.
+    window.pollepelLog = (function () {
+      try {
+        const bewaard = localStorage.getItem("pollepel-log");
+        return bewaard ? JSON.parse(bewaard) : [];
+      } catch (e) { return []; }
+    })();
+
     (function () {
+      let opslaanGepland = false;
+      const opslaan = () => {
+        if (opslaanGepland) return;
+        opslaanGepland = true;
+        // Even wachten: bij tien meldingen achter elkaar niet tien keer schrijven.
+        setTimeout(() => {
+          opslaanGepland = false;
+          try { localStorage.setItem("pollepel-log", JSON.stringify(window.pollepelLog)); }
+          catch (e) { /* opslag vol of geweigerd: dan alleen in het geheugen */ }
+        }, 500);
+      };
+
       const bewaar = (soort, argumenten) => {
         try {
           const tekst = Array.from(argumenten).map((a) => {
@@ -53,6 +74,7 @@
           }).join(" ");
           window.pollepelLog.push({ tijd: new Date().toISOString(), soort, tekst: tekst.slice(0, 600) });
           if (window.pollepelLog.length > 80) window.pollepelLog.shift();
+          opslaan();
         } catch (e) { /* logboek mag nooit zelf stukgaan */ }
       };
       ["error", "warn"].forEach((soort) => {

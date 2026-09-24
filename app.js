@@ -297,7 +297,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v65 \xB7 23 september 2026";
+const APP_VERSIE = "v66 \xB7 24 september 2026";
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
 const FONT_MONO = "'IBM Plex Mono', monospace";
@@ -2980,6 +2980,10 @@ ${alsTekst()}`;
       ] }),
       /* @__PURE__ */ jsx(GhostButton, { onClick: () => {
         if (window.pollepelLog) window.pollepelLog.length = 0;
+        try {
+          localStorage.removeItem("pollepel-log");
+        } catch (e) {
+        }
         onClose();
       }, children: "Leegmaken" })
     ] }),
