@@ -297,7 +297,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v67 \xB7 24 september 2026";
+const APP_VERSIE = "v68 \xB7 24 september 2026";
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
 const FONT_MONO = "'IBM Plex Mono', monospace";
@@ -2681,6 +2681,77 @@ function corrigeerSpelling(tekst) {
   }
   return uit;
 }
+const AFKEUR_FAMILIES = {
+  vis: [
+    "zalm",
+    "kabeljauw",
+    "tonijn",
+    "haring",
+    "makreel",
+    "forel",
+    "schol",
+    "pangasius",
+    "koolvis",
+    "tilapia",
+    "ansjovis",
+    "sardine",
+    "zeebaars",
+    "victoriabaars",
+    "heilbot",
+    "garnaal",
+    "garnalen",
+    "mosselen",
+    "scampi",
+    "inktvis",
+    "surimi",
+    "vissticks",
+    "visfilet",
+    "zeevruchten",
+    "schaaldieren",
+    "lekkerbek",
+    "kibbeling"
+  ],
+  vlees: [
+    "kip",
+    "rund",
+    "varken",
+    "gehakt",
+    "spek",
+    "worst",
+    "ham",
+    "kalkoen",
+    "lam",
+    "biefstuk",
+    "schnitzel",
+    "bacon",
+    "salami",
+    "shoarma",
+    "kipfilet"
+  ],
+  varkensvlees: ["spek", "ham", "bacon", "worst", "schnitzel", "procureur", "speklapjes"],
+  noten: [
+    "walnoot",
+    "amandel",
+    "cashew",
+    "hazelnoot",
+    "pecan",
+    "pistache",
+    "pinda",
+    "pijnboompitten",
+    "notenmix"
+  ],
+  paddenstoelen: ["champignon", "shiitake", "oesterzwam", "cantharel", "portobello"]
+};
+function valtOnderAfkeur(ingredientNaam, afkeur) {
+  if (namesMatch(ingredientNaam, afkeur)) return true;
+  const familie = AFKEUR_FAMILIES[norm(afkeur)];
+  if (!familie) return false;
+  const naam = norm(ingredientNaam);
+  return familie.some((lid) => {
+    if (namesMatch(ingredientNaam, lid)) return true;
+    return lid.length >= 4 && naam.includes(lid);
+  });
+}
 function bezetteBakjes(inventory) {
   const bezet = /* @__PURE__ */ new Set();
   (inventory || []).forEach((i) => {
@@ -4798,7 +4869,12 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     persist("shoppingList", nextShopping, setShoppingList);
     showToast(addedCount ? `Boodschappenlijst aangevuld met ${addedCount} product${addedCount > 1 ? "en" : ""} voor het weekmenu.` : "Je hebt al alles in huis voor het weekmenu \u2014 niets toegevoegd.");
   };
-  const buildWeekRecipePrompt = (style, priorNames, recentNames, diets, saleNames, alGebruikt = [], afkeuren = [], soortOpdracht = "") => `Je bent een menuplanner voor de kookboek-app "Pollepel". Bedenk \xE9\xE9n Nederlands AVONDETEN (hoofdgerecht voor het diner) in de stijl "${style.label}": ${style.description}.
+  const buildWeekRecipePrompt = (style, priorNames, recentNames, diets, saleNames, alGebruikt = [], afkeuren = [], soortOpdracht = "") => `${afkeuren.length || soortOpdracht ? `HARDE EIS \u2014 lees dit eerst en controleer je antwoord hieraan:
+${soortOpdracht ? `\u2022 ${soortOpdracht}` : ""}
+${afkeuren.length ? `\u2022 Deze producten worden in dit huishouden niet gegeten: ${afkeuren.join(", ")}. Ze mogen nergens in voorkomen \u2014 niet als hoofdingredi\xEBnt, niet in een saus, niet als garnering, en ook geen familieleden ervan (geen kabeljauw, geen tonijn, geen garnalen als er "vis" staat).` : ""}
+Voldoet je gerecht hier niet aan, bedenk dan iets anders voordat je antwoordt.
+
+` : ""}Je bent een menuplanner voor de kookboek-app "Pollepel". Bedenk \xE9\xE9n Nederlands AVONDETEN (hoofdgerecht voor het diner) in de stijl "${style.label}": ${style.description}.
 
 Je hoeft je niet te beperken tot wat er in huis is \u2014 boodschappen doen hoort erbij. Kies gerust iets waarvoor nog ingredi\xEBnten gehaald moeten worden.
 
@@ -4809,8 +4885,7 @@ ${alGebruikt.length ? `Deze ingredi\xEBnten komen deze week al voor: ${alGebruik
 Denk breed: stamppot, pasta, curry, soep met brood, ovenschotel, wok, rijstgerecht, Mexicaans, Indonesisch, Italiaans, Marokkaans. Niet altijd "eiwit met groenten en een graansoort" op een bord.
 ${recentNames.length ? `Dit is recent al gegeten (laatste 2 weken), bedenk liever iets anders voor afwisseling: ${recentNames.join(", ")}.` : ""}
 ${diets.length ? `Houd rekening met deze dieetwensen/allergie\xEBn in het huishouden: ${diets.join(", ")}. Het gerecht moet hier geschikt voor zijn.` : ""}
-${soortOpdracht ? soortOpdracht : ""}
-${afkeuren.length ? `LET OP \u2014 deze producten lust men in dit huishouden niet: ${afkeuren.join(", ")}. Gebruik ze niet, ook niet als bijgerecht of in een saus. Dit is geen voorkeur maar een harde eis.` : ""}
+${afkeuren.length ? `Denk eraan: geen ${afkeuren.join(", ")}.` : ""}
 ${saleNames.length ? `Deze producten zijn nu in de aanbieding bij de supermarkt: ${saleNames.join(", ")}. Gebruik er waar mogelijk en passend \xE9\xE9n of meer van, voor een voordeliger boodschappenlijst.` : ""}
 
 Antwoord ALLEEN met STRIKT GELDIGE, COMPACTE JSON (\xE9\xE9n regel, geen markdown-codeblok, geen uitleg) in dit format:
@@ -4920,6 +4995,16 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
           raw = await askClaude(opdracht, 4e3);
         }
         const parsed = sanitizeDraft(extractJson(raw));
+        if (alleAfkeuren.length && parsed.ingredients.length) {
+          const verboden = alleAfkeuren.filter(
+            (afkeur) => parsed.ingredients.some((ing) => valtOnderAfkeur(ing.name, afkeur)) || valtOnderAfkeur(parsed.name || "", afkeur)
+          );
+          if (verboden.length) {
+            console.warn(`Dag ${days[i].key}: bevat ${verboden.join(", ")} terwijl dat niet gegeten wordt. Geweigerd.`);
+            mislukt.push({ dag: days[i].key, reden: `bevatte ${verboden.join(", ")}` });
+            continue;
+          }
+        }
         if (!parsed.ingredients.length || !parsed.steps.length) {
           const ruw = String(raw || "");
           console.error(
