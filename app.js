@@ -297,7 +297,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v66 \xB7 24 september 2026";
+const APP_VERSIE = "v67 \xB7 24 september 2026";
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
 const FONT_MONO = "'IBM Plex Mono', monospace";
@@ -3640,7 +3640,13 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       throw err;
     }
     const data = await response.json();
-    return (data.content || []).map((b) => b.text || "").join("\n");
+    const tekst = (data.content || []).map((b) => b.text || "").join("\n");
+    if (data.stop_reason === "max_tokens") {
+      console.warn(
+        `Antwoord afgekapt: ${data.usage ? data.usage.output_tokens : "?"} van ${maxTokens} tokens verbruikt, ${tekst.length} tekens tekst. Verhoog de ruimte.`
+      );
+    }
+    return tekst;
   };
   const askClaudeVision = async (base64, mediaType, prompt) => {
     const afbreken = new AbortController();
@@ -4907,11 +4913,11 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
         const opdracht = buildWeekRecipePrompt(dagStijl, priorNames, recentNames, activeDietTags, saleNames, alGebruikt, alleAfkeuren, soort.opdracht);
         let raw;
         try {
-          raw = await askClaude(opdracht, 2e3);
+          raw = await askClaude(opdracht, 4e3);
         } catch (eerste) {
           if (eerste.status === 429) throw eerste;
           console.warn(`Dag ${days[i].key}: eerste poging mislukt (${eerste.status || eerste.message}), opnieuw\u2026`);
-          raw = await askClaude(opdracht, 2e3);
+          raw = await askClaude(opdracht, 4e3);
         }
         const parsed = sanitizeDraft(extractJson(raw));
         if (!parsed.ingredients.length || !parsed.steps.length) {
