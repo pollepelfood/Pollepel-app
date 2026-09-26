@@ -8690,35 +8690,45 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
       )
     ] }),
     zoek ? /* @__PURE__ */ jsx("p", { style: { fontSize: 12, color: C.inkSoft, margin: "0 0 12px" }, children: gefilterd.length === 0 ? `Niets gevonden voor \u201C${zoek}\u201D.` : `${gefilterd.length} ${gefilterd.length === 1 ? "product" : "producten"} gevonden.` }) : /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.inkSoft, marginTop: 0 }, children: "Stel per ingredi\xEBnt een minimum en maximum in. Zodra de voorraad onder het minimum komt, verschijnt het automatisch op de boodschappenlijst." }),
-    teVerwijderen && /* @__PURE__ */ jsx(Modal, { title: "Weggooien?", onClose: () => setTeVerwijderen(null), children: /* @__PURE__ */ jsxs("div", { children: [
-      (() => {
-        const isKliekje = !!teVerwijderen.sourceRecipeId;
-        const porties = Number(teVerwijderen.current) || 0;
-        const bakjes = (teVerwijderen.containers || []);
-        return /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 11, background: isKliekje ? C.warnBg : C.cardBg, border: `1.5px solid ${isKliekje ? C.brick : C.borderTint}`, borderRadius: 14, padding: "12px 13px", marginBottom: 12 }, children: [
-            /* @__PURE__ */ jsx("span", { style: { fontSize: 24, flexShrink: 0 }, children: isKliekje ? "\u{1F371}" : "\u{1F4E6}" }),
-            /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
-              /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 15, fontWeight: 600, color: C.ink }, children: teVerwijderen.name }),
-              /* @__PURE__ */ jsxs("span", { style: { display: "block", fontSize: 12, color: C.inkSoft }, children: [
-                porties, " ", teVerwijderen.unit,
-                bakjes.length ? ` \u00b7 bakje ${bakjesTekst(bakjes)}` : ""
-              ] })
+    teVerwijderen && /* @__PURE__ */ jsx(Modal, { title: "Weggooien?", onClose: () => setTeVerwijderen(null), children: /* @__PURE__ */ jsx("div", { children: [(() => {
+      const isKliekje = !!teVerwijderen.sourceRecipeId;
+      const porties = Number(teVerwijderen.current) || 0;
+      const bakjes = teVerwijderen.containers || [];
+      return /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsxs("div", { style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 11,
+          background: isKliekje ? C.warnBg : C.cardBg,
+          border: `1.5px solid ${isKliekje ? C.brick : C.borderTint}`,
+          borderRadius: 14,
+          padding: "12px 13px",
+          marginBottom: 12
+        }, children: [
+          /* @__PURE__ */ jsx("span", { style: { fontSize: 24, flexShrink: 0 }, children: isKliekje ? "\u{1F371}" : "\u{1F4E6}" }),
+          /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
+            /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 15, fontWeight: 600, color: C.ink }, children: teVerwijderen.name }),
+            /* @__PURE__ */ jsxs("span", { style: { display: "block", fontSize: 12, color: C.inkSoft }, children: [
+              porties,
+              " ",
+              teVerwijderen.unit,
+              bakjes.length ? ` \xB7 bakje ${bakjesTekst(bakjes)}` : ""
             ] })
-          ] }),
-          isKliekje
-            ? /* @__PURE__ */ jsxs("p", { style: { fontSize: 13.5, color: C.ink, lineHeight: 1.55, margin: "0 0 14px" }, children: [
-                "Dit is eten dat je zelf hebt gekookt. Gooi je het hier weg, dan is het uit je voorraad \u2014 ook als het nog in je vriezer of koelkast staat.",
-                bakjes.length ? ` Bakje ${bakjesTekst(bakjes)} komt weer vrij.` : ""
-              ] })
-            : /* @__PURE__ */ jsx("p", { style: { fontSize: 13.5, color: C.inkSoft, lineHeight: 1.55, margin: "0 0 14px" }, children: "Dit product verdwijnt uit je voorraad. Recepten die het gebruiken blijven gewoon bestaan." }),
-          /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
-            /* @__PURE__ */ jsx(PrimaryButton, { tone: "brick", onClick: () => { onDelete(teVerwijderen.id); setTeVerwijderen(null); }, children: "Ja, weggooien" }),
-            /* @__PURE__ */ jsx(GhostButton, { onClick: () => setTeVerwijderen(null), children: "Annuleren" })
           ] })
-        ] });
-      })()
-    ] }) }),
+        ] }),
+        isKliekje ? /* @__PURE__ */ jsxs("p", { style: { fontSize: 13.5, color: C.ink, lineHeight: 1.55, margin: "0 0 14px" }, children: [
+          "Dit is eten dat je zelf hebt gekookt. Gooi je het hier weg, dan is het uit je voorraad \u2014 ook als het nog in je vriezer of koelkast staat.",
+          bakjes.length ? ` Bakje ${bakjesTekst(bakjes)} komt weer vrij.` : ""
+        ] }) : /* @__PURE__ */ jsx("p", { style: { fontSize: 13.5, color: C.inkSoft, lineHeight: 1.55, margin: "0 0 14px" }, children: "Dit product verdwijnt uit je voorraad. Recepten die het gebruiken blijven gewoon bestaan." }),
+        /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+          /* @__PURE__ */ jsx(PrimaryButton, { tone: "brick", onClick: () => {
+            onDelete(teVerwijderen.id);
+            setTeVerwijderen(null);
+          }, children: "Ja, weggooien" }),
+          /* @__PURE__ */ jsx(GhostButton, { onClick: () => setTeVerwijderen(null), children: "Annuleren" })
+        ] })
+      ] });
+    })()] }) }),
     !zoek && ernstigeBevindingen > 0 && /* @__PURE__ */ jsxs(
       "button",
       {
@@ -8847,10 +8857,18 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
                   " ",
                   expDays < 0 ? "verlopen" : expDays === 0 ? "vandaag" : `${expDays}d`
                 ] }),
-                /* @__PURE__ */ jsx("button", { "aria-label": `${item.name} verwijderen`, onClick: (e) => {
-                  e.stopPropagation();
-                  setTeVerwijderen(item);
-                }, style: { background: "none", border: "none", cursor: "pointer", padding: 8, margin: -8 }, children: /* @__PURE__ */ jsx(Trash2, { size: 13, color: C.inkSoft }) })
+                /* @__PURE__ */ jsx(
+                  "button",
+                  {
+                    "aria-label": `${item.name} verwijderen`,
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      setTeVerwijderen(item);
+                    },
+                    style: { background: "none", border: "none", cursor: "pointer", padding: 8, margin: -8 },
+                    children: /* @__PURE__ */ jsx(Trash2, { size: 13, color: C.inkSoft })
+                  }
+                )
               ] })
             ] })
           ] }, item.id);
