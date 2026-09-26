@@ -297,7 +297,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v68 \xB7 24 september 2026";
+const APP_VERSIE = "v70 \xB7 25 september 2026";
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
 const FONT_MONO = "'IBM Plex Mono', monospace";
@@ -2681,6 +2681,91 @@ function corrigeerSpelling(tekst) {
   }
   return uit;
 }
+const BEKENDE_PRODUCTWOORDEN = [
+  "aardappel",
+  "broccoli",
+  "spinazie",
+  "wortel",
+  "paprika",
+  "courgette",
+  "aubergine",
+  "bloemkool",
+  "spruitjes",
+  "prei",
+  "champignon",
+  "tomaat",
+  "komkommer",
+  "boerenkool",
+  "kip",
+  "eend",
+  "rund",
+  "varken",
+  "gehakt",
+  "spek",
+  "worst",
+  "zalm",
+  "kabeljauw",
+  "rijst",
+  "pasta",
+  "bulgur",
+  "quinoa",
+  "couscous",
+  "noedel",
+  "room",
+  "kaas",
+  "boter",
+  "yoghurt",
+  "melk"
+];
+const ECHTE_SAMENSTELLINGEN = [
+  "rundergehakt",
+  "varkensgehakt",
+  "kalfsgehakt",
+  "kippengehakt",
+  "kipgehakt",
+  "roomboter",
+  "roomkaas",
+  "roomijs",
+  "kookroom",
+  "slagroom",
+  "zilvervliesrijst",
+  "jasmijnrijst",
+  "risottorijst",
+  "paellarijst",
+  "kabeljauwfilet",
+  "zalmfilet",
+  "kipfilet",
+  "kipdijfilet",
+  "varkenshaas",
+  "kippenbouillon",
+  "runderbouillon",
+  "groentebouillon",
+  "visbouillon",
+  "aardappelpuree",
+  "tomatenpuree",
+  "tomatenblokjes",
+  "tomatenpassata",
+  "boerenkool",
+  "bloemkool",
+  "zuurkool",
+  "rodekool",
+  "spitskool",
+  "witlof",
+  "champignonroomsaus",
+  "kaassaus",
+  "kaasblokjes",
+  "geitenkaas",
+  "roomkwark"
+];
+function lijktVerzonnen(naam) {
+  const n = norm(naam).replace(/[^a-zà-ÿ]/g, "");
+  if (n.length < 10) return false;
+  if (ECHTE_SAMENSTELLINGEN.some((echt) => n.includes(echt))) return false;
+  const gevonden = BEKENDE_PRODUCTWOORDEN.filter((w) => n.includes(w));
+  if (gevonden.length < 2) return false;
+  const gedekt = gevonden.reduce((s, w) => s + w.length, 0);
+  return gedekt >= n.length - 3;
+}
 const AFKEUR_FAMILIES = {
   vis: [
     "zalm",
@@ -4898,7 +4983,9 @@ SCHRIJF ALLES IN HET NEDERLANDS. Geen Engelse woorden in de ingredi\xEBnten of d
 - kikkererwten (niet chickpeas), pijnboompitten (niet pine nuts), zoete aardappel (niet sweet potato)
 Schrijf ingredi\xEBntnamen voluit en correct gespeld: jasmijnrijst (niet jasrijst), zilvervliesrijst, cr\xE8me fra\xEEche, tagliatelle. Een verkeerd gespeld ingredi\xEBnt wordt niet herkend in de voorraad.
 
-Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en maximaal 9 ingredi\xEBnten. Basis zoals zout, peper en olie hoef je niet op te sommen.`;
+Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en maximaal 9 ingredi\xEBnten. Basis zoals zout, peper en olie hoef je niet op te sommen.
+
+CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingredi\xEBntenlijst na en vraag je bij elk product af: bestaat dit echt, en kan ik dit zo in een Nederlandse supermarkt vragen? Plak nooit twee producten aan elkaar tot een woord dat niet bestaat \u2014 "eendenaardappel", "kipbroccoli" en "roomspinazie" zijn geen producten. Zijn het er twee, schrijf ze dan als twee losse ingredi\xEBnten. Twijfel je over een naam, kies dan het gewonere woord.`;
   const generatePatternWeekmenu = ({ scope }) => {
     const days = scope === "empty" ? periodDays.filter((d) => isDayEmpty(d.key)) : periodDays;
     if (!days.length) {
@@ -5004,6 +5091,10 @@ Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en m
             mislukt.push({ dag: days[i].key, reden: `bevatte ${verboden.join(", ")}` });
             continue;
           }
+        }
+        const verzonnen = parsed.ingredients.map((ing) => ing.name).filter(lijktVerzonnen);
+        if (verzonnen.length) {
+          console.warn(`Dag ${days[i].key}: verdachte ingredi\xEBntnaam: ${verzonnen.join(", ")}`);
         }
         if (!parsed.ingredients.length || !parsed.steps.length) {
           const ruw = String(raw || "");
@@ -8537,6 +8628,7 @@ function getExpirySuggestions(inventory, recipes) {
 function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiumOn, ernstigeBevindingen = 0, onOpenControle, onEdit, onNew, onDelete, onScan, onOpenRecipe, onOpenShelfPhoto }) {
   const cats = categories && categories.length ? categories : CATEGORIES;
   const [zoek, setZoek] = useState("");
+  const [teVerwijderen, setTeVerwijderen] = useState(null);
   const gefilterd = useMemo(() => {
     const q = zoek.trim();
     if (!q) return inventory;
@@ -8598,6 +8690,35 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
       )
     ] }),
     zoek ? /* @__PURE__ */ jsx("p", { style: { fontSize: 12, color: C.inkSoft, margin: "0 0 12px" }, children: gefilterd.length === 0 ? `Niets gevonden voor \u201C${zoek}\u201D.` : `${gefilterd.length} ${gefilterd.length === 1 ? "product" : "producten"} gevonden.` }) : /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.inkSoft, marginTop: 0 }, children: "Stel per ingredi\xEBnt een minimum en maximum in. Zodra de voorraad onder het minimum komt, verschijnt het automatisch op de boodschappenlijst." }),
+    teVerwijderen && /* @__PURE__ */ jsx(Modal, { title: "Weggooien?", onClose: () => setTeVerwijderen(null), children: /* @__PURE__ */ jsxs("div", { children: [
+      (() => {
+        const isKliekje = !!teVerwijderen.sourceRecipeId;
+        const porties = Number(teVerwijderen.current) || 0;
+        const bakjes = (teVerwijderen.containers || []);
+        return /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 11, background: isKliekje ? C.warnBg : C.cardBg, border: `1.5px solid ${isKliekje ? C.brick : C.borderTint}`, borderRadius: 14, padding: "12px 13px", marginBottom: 12 }, children: [
+            /* @__PURE__ */ jsx("span", { style: { fontSize: 24, flexShrink: 0 }, children: isKliekje ? "\u{1F371}" : "\u{1F4E6}" }),
+            /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
+              /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 15, fontWeight: 600, color: C.ink }, children: teVerwijderen.name }),
+              /* @__PURE__ */ jsxs("span", { style: { display: "block", fontSize: 12, color: C.inkSoft }, children: [
+                porties, " ", teVerwijderen.unit,
+                bakjes.length ? ` \u00b7 bakje ${bakjesTekst(bakjes)}` : ""
+              ] })
+            ] })
+          ] }),
+          isKliekje
+            ? /* @__PURE__ */ jsxs("p", { style: { fontSize: 13.5, color: C.ink, lineHeight: 1.55, margin: "0 0 14px" }, children: [
+                "Dit is eten dat je zelf hebt gekookt. Gooi je het hier weg, dan is het uit je voorraad \u2014 ook als het nog in je vriezer of koelkast staat.",
+                bakjes.length ? ` Bakje ${bakjesTekst(bakjes)} komt weer vrij.` : ""
+              ] })
+            : /* @__PURE__ */ jsx("p", { style: { fontSize: 13.5, color: C.inkSoft, lineHeight: 1.55, margin: "0 0 14px" }, children: "Dit product verdwijnt uit je voorraad. Recepten die het gebruiken blijven gewoon bestaan." }),
+          /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+            /* @__PURE__ */ jsx(PrimaryButton, { tone: "brick", onClick: () => { onDelete(teVerwijderen.id); setTeVerwijderen(null); }, children: "Ja, weggooien" }),
+            /* @__PURE__ */ jsx(GhostButton, { onClick: () => setTeVerwijderen(null), children: "Annuleren" })
+          ] })
+        ] });
+      })()
+    ] }) }),
     !zoek && ernstigeBevindingen > 0 && /* @__PURE__ */ jsxs(
       "button",
       {
@@ -8726,10 +8847,10 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
                   " ",
                   expDays < 0 ? "verlopen" : expDays === 0 ? "vandaag" : `${expDays}d`
                 ] }),
-                /* @__PURE__ */ jsx("button", { onClick: (e) => {
+                /* @__PURE__ */ jsx("button", { "aria-label": `${item.name} verwijderen`, onClick: (e) => {
                   e.stopPropagation();
-                  onDelete(item.id);
-                }, style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(Trash2, { size: 13, color: C.inkSoft }) })
+                  setTeVerwijderen(item);
+                }, style: { background: "none", border: "none", cursor: "pointer", padding: 8, margin: -8 }, children: /* @__PURE__ */ jsx(Trash2, { size: 13, color: C.inkSoft }) })
               ] })
             ] })
           ] }, item.id);
