@@ -297,7 +297,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v70 \xB7 25 september 2026";
+const APP_VERSIE = "v71 \xB7 7 oktober 2026";
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
 const FONT_MONO = "'IBM Plex Mono', monospace";
@@ -639,6 +639,39 @@ function stockVsNeed(item, ing, scale = 1) {
   }
   return null;
 }
+function netteHoeveelheid(hoeveelheid, eenheid) {
+  const e = (eenheid || "").toLowerCase();
+  const n = Number(hoeveelheid || 0);
+  if (!isFinite(n) || n <= 0) return 0;
+  if (e === "g" || e === "ml") return Math.max(1, Math.round(n));
+  if (e === "stuks") return Math.max(1, Math.ceil(n - 1e-3));
+  return Math.max(0.01, round2(n));
+}
+function boodschapRegel(need, inventory) {
+  const item = findInventoryMatch(inventory, need);
+  if (!item && isPantryBasic(need.name)) return null;
+  const cmp = item ? stockVsNeed(item, need, 1) : null;
+  let eenheid, hoeveelheid;
+  if (cmp && !cmp.geschat) {
+    const tekort = cmp.need - cmp.have;
+    if (tekort <= 0) return null;
+    eenheid = cmp.unit;
+    hoeveelheid = tekort;
+  } else if (cmp) {
+    if (cmp.have >= cmp.need) return null;
+    eenheid = need.unit;
+    hoeveelheid = Number(need.amount || 0);
+  } else {
+    eenheid = need.unit;
+    hoeveelheid = Number(need.amount || 0);
+  }
+  const bedrag = netteHoeveelheid(hoeveelheid, eenheid);
+  if (!bedrag) return null;
+  const naam = item ? item.name : need.name;
+  let categorie = normalizeCategory(item ? item.category : "");
+  if (!categorie || categorie === "Overig") categorie = guessCategory(naam);
+  return { name: naam, unit: eenheid, amount: bedrag, category: categorie };
+}
 const EMOJI_KEYWORDS = [
   [["spaghetti", "pasta", "macaroni", "lasagne", "penne", "tagliatelle"], "\u{1F35D}"],
   [["soep", "bouillon"], "\u{1F372}"],
@@ -670,12 +703,51 @@ function suggestEmoji(name) {
 }
 const CATEGORY_KEYWORDS = [
   [["vriezer", "diepvries", "ijsje", "ijstaart"], "Diepvries"],
+  // Een paar groentenamen bevatten toevallig een ander trefwoord: "rucola"
+  // bevat "cola", "waterkers" bevat "water", "boursin" bevat "ui". Ze staan
+  // daarom bovenaan, vóór de regels waar ze anders in zouden vallen.
+  [[
+    "rucola",
+    "waterkers",
+    "tuinkers",
+    "postelein",
+    "radicchio",
+    "paksoi",
+    "salieblad",
+    "bleekselderij",
+    "knolselderij"
+  ], "Groente & fruit"],
+  // Let op de volgorde: dit blok staat met opzet vóór "Groente & fruit".
+  // "Paprika poeder" bevat het woord "paprika" en belandde daardoor eerder bij
+  // de groenten. Een specerij herken je aan het achtervoegsel, niet aan de
+  // grondstof — daarom staan de poedervormen hier expliciet.
   [[
     "kruidenmix",
     "kipkruiden",
     "aardappelkruiden",
     "gerookte paprika",
     "paprika pikant",
+    "paprikapoeder",
+    "paprika poeder",
+    "chilipoeder",
+    "currypoeder",
+    "kerriepoeder",
+    "knoflookpoeder",
+    "uienpoeder",
+    "gemberpoeder",
+    "korianderpoeder",
+    "mosterdpoeder",
+    "kaneelpoeder",
+    "gemalen komijn",
+    "gemalen koriander",
+    "gemalen peper",
+    "currypasta",
+    "curry pasta",
+    "gele curry",
+    "groene curry",
+    "rode curry",
+    "kruidenpasta",
+    "tikka masala",
     "specerij",
     "kruiden"
   ], "Kruiden & specerijen"],
@@ -709,7 +781,27 @@ const CATEGORY_KEYWORDS = [
     "noedel",
     "mihoen",
     "wrap",
-    "tortilla"
+    "tortilla",
+    "gnocchi",
+    "orzo",
+    "rigatoni",
+    "spaghetti",
+    "farfalle",
+    "polenta",
+    "boekweit",
+    "linzen",
+    "spliterwt",
+    "kapucijner",
+    "gierst",
+    "havermout",
+    "mie",
+    "udon",
+    "soba",
+    "basmati",
+    "jasmijnrijst",
+    "zilvervlies",
+    "paellarijst",
+    "risottorijst"
   ], "Pasta, rijst & wereldkeuken"],
   [[
     "kaas",
@@ -720,7 +812,22 @@ const CATEGORY_KEYWORDS = [
     "brie",
     "camembert",
     "roomkaas",
-    "geitenkaas"
+    "geitenkaas",
+    "cheddar",
+    "halloumi",
+    "pecorino",
+    "grana padano",
+    "gorgonzola",
+    "gouda",
+    "emmentaler",
+    "manchego",
+    "ricotta",
+    "mascarpone",
+    "burrata",
+    "roquefort",
+    "comt\xE9",
+    "gruy\xE8re",
+    "gruyere"
   ], "Kaas"],
   [[
     "tofu",
@@ -759,7 +866,28 @@ const CATEGORY_KEYWORDS = [
     "mosselen",
     "fuet",
     "salami",
-    "rookvlees"
+    "rookvlees",
+    "riblap",
+    "sukadelap",
+    "speklap",
+    "runderlap",
+    "kalfs",
+    "ossenhaas",
+    "schenkel",
+    "lamsvlees",
+    "lamsbout",
+    "entrecote",
+    "chorizo",
+    "shoarma",
+    "gyros",
+    "mosselen",
+    "zeebaars",
+    "schol",
+    "forel",
+    "witvis",
+    "kippenbout",
+    "kippendij",
+    "kippenpoot"
   ], "Vlees & vis"],
   [[
     "melk",
@@ -777,7 +905,12 @@ const CATEGORY_KEYWORDS = [
     "vla",
     "pudding",
     "chocomel",
-    "skyr"
+    "skyr",
+    "fra\xEEche",
+    "fraiche",
+    "karnemelk",
+    "h\xFCttenk\xE4se",
+    "koffiemelk"
   ], "Zuivel & eieren"],
   [[
     "brood",
@@ -789,7 +922,12 @@ const CATEGORY_KEYWORDS = [
     "croissant",
     "bagel",
     "stokbrood",
-    "bolletjes"
+    "bolletjes",
+    "naan",
+    "paratha",
+    "tortillawrap",
+    "focaccia",
+    "ciabatta"
   ], "Brood & bakkerij"],
   [[
     "bouillon",
@@ -805,7 +943,23 @@ const CATEGORY_KEYWORDS = [
     "zilverui",
     "mais",
     "bonen in blik",
-    "kokosmelk"
+    "kokosmelk",
+    "kappertje",
+    "mayonaise",
+    "mosterd",
+    "hummus",
+    "pesto",
+    "tapenade",
+    "sambal",
+    "oestersaus",
+    "tamari",
+    "kidneybonen",
+    "witte bonen",
+    "zwarte bonen",
+    "tomatenpassata",
+    "passata",
+    "gezeefde tomaten",
+    "kikkererwt"
   ], "Soepen, sauzen & conserven"],
   [[
     "chips",
@@ -817,7 +971,14 @@ const CATEGORY_KEYWORDS = [
     "pinda",
     "cashew",
     "borrelnoot",
-    "zoutje"
+    "zoutje",
+    "pijnboompit",
+    "zonnebloempit",
+    "pompoenpit",
+    "hazelnoot",
+    "pistache",
+    "paranoot",
+    "macadamia"
   ], "Chips, noten & borrel"],
   [["koekje", "koek", "speculaas", "biscuit", "chocolade", "snoep", "drop", "reep"], "Koek & snoep"],
   [[
@@ -845,7 +1006,11 @@ const CATEGORY_KEYWORDS = [
     "gist",
     "vanillesuiker",
     "cacao",
-    "amandelmeel"
+    "amandelmeel",
+    "paneermeel",
+    "broodkruim",
+    "maizena",
+    "custard"
   ], "Bakken & zoetwaren"],
   [[
     "afwasmiddel",
@@ -915,7 +1080,79 @@ const CATEGORY_KEYWORDS = [
     "granaatappel",
     "groente",
     "fruit",
-    "kool"
+    "kool",
+    // Stonden er niet in en belandden daardoor in "Overig".
+    "selderij",
+    "sperzieboon",
+    "sperziebonen",
+    "haricot",
+    "snijboon",
+    "snijbonen",
+    "doperwt",
+    "doperwten",
+    "tuinboon",
+    "tuinbonen",
+    "peultjes",
+    "taug\xE9",
+    "tauge",
+    "rucola",
+    "veldsla",
+    "radijs",
+    "radicchio",
+    "pastinaak",
+    "knolraap",
+    "koolraap",
+    "rammenas",
+    "postelein",
+    "paksoi",
+    "bimi",
+    "asperge",
+    "asperges",
+    "artisjok",
+    "biet",
+    "bieten",
+    "bieslook",
+    "dille",
+    "munt",
+    "salie",
+    "waterkers",
+    "sjalot",
+    "lente-ui",
+    "bosui",
+    "pompoen",
+    "butternut",
+    "zoete aardappel",
+    "maiskolf",
+    "nectarine",
+    "pruim",
+    "pruimen",
+    "dadel",
+    "dadels",
+    "vijg",
+    "vijgen",
+    "rozijn",
+    "rozijnen",
+    "cranberry",
+    "passievrucht",
+    "lychee",
+    "papaya",
+    "pomelo",
+    "grapefruit",
+    "braam",
+    "veenbes",
+    "kruisbes",
+    "aalbes",
+    "rode bes",
+    "abrikoz",
+    "zucchini",
+    "parelui",
+    "salademix",
+    "groentemix",
+    "roerbakgroente",
+    "andijvie",
+    "witlof",
+    "venkelknol",
+    "limoen"
   ], "Groente & fruit"],
   [[
     "zout",
@@ -937,7 +1174,33 @@ const CATEGORY_KEYWORDS = [
     "sesamzaad",
     "chilivlokken",
     "garam",
-    "masala"
+    "masala",
+    "aromat",
+    "baharat",
+    "chili",
+    "fenegriek",
+    "kruidnagel",
+    "cajun",
+    "picadillo",
+    "ras el hanout",
+    "rozemarijn",
+    "saffraan",
+    "thijm",
+    "yazzra",
+    "piment",
+    "karwij",
+    "dragon",
+    "marjolein",
+    "bonenkruid",
+    "venkelzaad",
+    "korianderzaad",
+    "komijnzaad",
+    "peperkorrel",
+    "kaffirlimoen",
+    "citroengras",
+    "fajita",
+    "shoarmakruiden",
+    "mexicaanse kruiden"
   ], "Kruiden & specerijen"]
 ];
 const OFF_CATEGORY_RULES = [
@@ -949,6 +1212,28 @@ const OFF_CATEGORY_RULES = [
   [["frozen"], "Diepvries"],
   [["beverage", "drink", "juice", "soda", "water", "beer", "wine", "coffee", "tea"], "Drank"]
 ];
+const CATEGORIE_ALIASSEN = {
+  "groente & fruit": "Groente & fruit",
+  "zuivel": "Zuivel & eieren",
+  "zuivel & eieren": "Zuivel & eieren",
+  "vlees & vis": "Vlees & vis",
+  "bakkerij & granen": "Brood & bakkerij",
+  "brood & bakkerij": "Brood & bakkerij",
+  "kruiden & specerijen": "Kruiden & specerijen",
+  "drank": "Dranken",
+  "dranken": "Dranken",
+  "diepvries": "Diepvries",
+  "houdbaar": "Soepen, sauzen & conserven",
+  "conserven": "Soepen, sauzen & conserven",
+  "overig": "Overig"
+};
+function normalizeCategory(category) {
+  if (!category) return "Overig";
+  const sleutel = String(category).trim().toLowerCase();
+  if (CATEGORIE_ALIASSEN[sleutel]) return CATEGORIE_ALIASSEN[sleutel];
+  const bekend = CATEGORIES.find((c) => c.toLowerCase() === sleutel);
+  return bekend || category;
+}
 function guessCategory(name) {
   const n = norm(name);
   if (!n) return "Overig";
@@ -1151,8 +1436,8 @@ function pushLowStockToShopping(shoppingArr, item, newCurrent) {
     id: idx > -1 ? shoppingArr[idx].id : uid(),
     name: item.name,
     unit: item.unit,
-    category: item.category,
-    amount: needed,
+    category: normalizeCategory(item.category) === "Overig" ? guessCategory(item.name) : normalizeCategory(item.category),
+    amount: netteHoeveelheid(needed, item.unit),
     auto: true,
     checked: false
   };
@@ -4665,18 +4950,13 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
         return;
       }
       const ing = (recipe.ingredients || []).find((i) => namesMatch(i.name, name));
-      const invItem = inventory.find((i) => namesMatch(i.name, name));
-      const needed = ing ? round2(Number(ing.amount || 0) * scale) : 1;
-      let amount = needed;
-      if (invItem && ing && (invItem.unit || "").toLowerCase() === (ing.unit || "").toLowerCase()) {
-        amount = Math.max(round2(needed - Number(invItem.current || 0)), 0.01);
+      const need = ing ? { name: ing.name, unit: ing.unit, amount: Number(ing.amount || 0) * scale, inventoryItemId: ing.inventoryItemId } : { name, unit: "stuks", amount: 1 };
+      const regel = boodschapRegel(need, inventory);
+      if (!regel) {
+        skipped.push(name);
+        return;
       }
-      toAdd.push({
-        name,
-        amount,
-        unit: ing ? ing.unit : "stuks",
-        category: invItem && invItem.category || guessCategory(name)
-      });
+      toAdd.push(regel);
     });
     if (toAdd.length) {
       persist(
@@ -4920,30 +5200,44 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       return;
     }
     const totals = /* @__PURE__ */ new Map();
+    const telOp = (naam, eenheid, hoeveelheid) => {
+      const basis = norm(naam);
+      for (const [sleutel, regel] of totals) {
+        if (regel.basis !== basis) continue;
+        const omgerekend = convertAmount(hoeveelheid, eenheid, regel.unit);
+        if (omgerekend === null) continue;
+        totals.set(sleutel, { ...regel, amount: round2(regel.amount + omgerekend) });
+        return;
+      }
+      totals.set(`${basis}|${eenheid}`, {
+        basis,
+        name: naam,
+        unit: eenheid,
+        amount: round2(hoeveelheid)
+      });
+    };
     plannedEntries.forEach(({ recipe, scale }) => {
       recipe.ingredients.forEach((ing) => {
-        const key = `${norm(ing.name)}|${ing.unit}`;
-        const prev = totals.get(key) || { name: ing.name, unit: ing.unit, amount: 0 };
-        totals.set(key, { ...prev, amount: round2(prev.amount + Number(ing.amount || 0) * scale) });
+        telOp(ing.name, ing.unit, Number(ing.amount || 0) * scale);
       });
     });
     let nextShopping = shoppingList.map((s) => ({ ...s }));
     let addedCount = 0;
     totals.forEach((need) => {
-      const item = findInventoryMatch(inventory, need);
-      const cmp = item ? stockVsNeed(item, need, 1) : null;
-      const inStock = cmp ? cmp.have : 0;
-      const needed = cmp ? cmp.need : Number(need.amount || 0);
-      const shortfall = round2(needed - inStock);
-      if (shortfall <= 0) return;
-      const category = item ? item.category : guessCategory(need.name);
-      const idx = nextShopping.findIndex((s) => namesMatch(s.name, need.name) && s.unit === need.unit);
+      const regel = boodschapRegel(need, inventory);
+      if (!regel) return;
+      let idx = nextShopping.findIndex(
+        (s) => namesMatch(s.name, regel.name) && (s.unit || "") === regel.unit
+      );
+      if (idx === -1) {
+        idx = nextShopping.findIndex(
+          (s) => namesMatch(s.name, regel.name) && convertAmount(1, s.unit, regel.unit) !== null
+        );
+      }
+      if (idx > -1 && !nextShopping[idx].auto) return;
       const entry = {
         id: idx > -1 ? nextShopping[idx].id : uid(),
-        name: need.name,
-        unit: need.unit,
-        category,
-        amount: shortfall,
+        ...regel,
         auto: true,
         checked: false
       };
@@ -8642,7 +8936,8 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
     const map = {};
     cats.forEach((c) => map[c] = []);
     gefilterd.forEach((i) => {
-      (map[i.category] || (map[i.category] = [])).push(i);
+      const cat = normalizeCategory(i.category);
+      (map[cat] || (map[cat] = [])).push(i);
     });
     Object.keys(map).forEach((c) => {
       map[c] = [...map[c]].sort((a, b) => (a.name || "").localeCompare(b.name || "", "nl", { sensitivity: "base" }));
@@ -9147,7 +9442,8 @@ function BoodschappenView({ list, categories, onToggle, onRemove, onAddManual, o
     const map = {};
     cats.forEach((c) => map[c] = []);
     list.forEach((item) => {
-      (map[item.category] || (map[item.category] = [])).push(item);
+      const cat = normalizeCategory(item.category);
+      (map[cat] || (map[cat] = [])).push(item);
     });
     Object.keys(map).forEach((c) => {
       map[c] = [...map[c]].sort((a, b) => a.checked === b.checked ? 0 : a.checked ? 1 : -1);
