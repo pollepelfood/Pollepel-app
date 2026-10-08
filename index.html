@@ -920,6 +920,7 @@
               min: Number(i.min), max: Number(i.max), barcode: i.barcode || "", expiryDate: i.expiry_date || "",
               onSale: i.on_sale, sourceRecipeId: i.source_recipe_id,
               containers: i.containers || [],
+              aliases: i.aliases || [],
             }));
           },
           async create(item) {
@@ -928,6 +929,7 @@
               current: item.current, min: item.min, max: item.max, barcode: item.barcode || null,
               expiry_date: item.expiryDate || null, on_sale: !!item.onSale, source_recipe_id: item.sourceRecipeId || null,
               containers: item.containers || [],
+              aliases: item.aliases || [],
             }).select().single();
             if (error) throw error;
             return data.id;
@@ -938,6 +940,7 @@
               min: item.min, max: item.max, barcode: item.barcode || null, expiry_date: item.expiryDate || null,
               on_sale: !!item.onSale, updated_at: new Date().toISOString(),
               containers: item.containers || [],
+              aliases: item.aliases || [],
             }).eq("id", id);
             if (error) throw error;
           },
