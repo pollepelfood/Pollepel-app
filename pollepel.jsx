@@ -257,7 +257,7 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v70 · 25 september 2026";
+const APP_VERSIE = "v74 · 10 oktober 2026";
 
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
@@ -452,6 +452,196 @@ function aaneenMatch(wa, wb) {
   return false;
 }
 
+// ---- Twijfelen over dubbele producten ----
+//
+// namesMatch hierboven is met opzet streng: die beslist of iets hetzelfde ís,
+// en een fout daar laat een gerecht ten onrechte als "maakbaar" gelden (dat
+// was de caprese-bug). Hieronder staat de tegenhanger, en die mag juist wél
+// twijfelen — want hij beslist niets. Hij levert alleen een vraag op voor de
+// gebruiker: "lijkt dit hetzelfde product?"
+//
+// Zonder deze losse variant kreeg je twee keer ketchup in je voorraad: de
+// strenge regel ziet "Ketchup" niet terug in "Heinz Tomatenketchup", omdat het
+// daar in een samenstelling is weggestopt.
+
+// Hoeveel losse letterwijzigingen zitten er tussen twee woorden? Stopt zodra
+// het er meer dan `grens` zijn — we hoeven het exacte getal niet te weten.
+function letterAfstand(a, b, grens) {
+  if (Math.abs(a.length - b.length) > grens) return grens + 1;
+  let vorige = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const huidige = [i];
+    let besteOpRij = i;
+    for (let j = 1; j <= b.length; j++) {
+      const kosten = a[i - 1] === b[j - 1] ? 0 : 1;
+      huidige[j] = Math.min(huidige[j - 1] + 1, vorige[j] + 1, vorige[j - 1] + kosten);
+      if (huidige[j] < besteOpRij) besteOpRij = huidige[j];
+    }
+    if (besteOpRij > grens) return grens + 1;
+    vorige = huidige;
+  }
+  return vorige[b.length];
+}
+
+// De naam zonder spaties, streepjes en haakjes: "Heinz Tomatenketchup" wordt
+// "heinztomatenketchup". Zo valt een samenstelling terug te vinden.
+function naamKern(s) {
+  return nameWords(s).join("");
+}
+
+// Twee losse woorden die hetzelfde product kúnnen aanduiden. Ruimer dan
+// wordsEqual: "ketchup" telt ook mee binnen "tomatenketchup". De ondergrens van
+// vijf letters houdt toevalstreffers als "ei" of "ui" buiten de deur.
+function woordLijktOp(a, b) {
+  if (wordsEqual(a, b)) return true;
+  if (a.length >= 5 && b.includes(a)) return true;
+  if (b.length >= 5 && a.includes(b)) return true;
+  return false;
+}
+
+// Zoekt bij een naam van een briefje of bon het bijpassende voorraadproduct.
+// Geeft terug: { zeker, kandidaten }. "zeker" is alleen gevuld als er precies
+// één product bij past; anders staan de mogelijkheden in "kandidaten" en kiest
+// de gebruiker. De eenheid speelt hier bewust GEEN rol —
+// dat je ketchup in grammen bijhoudt en op je briefje "ketchup" schrijft maakt
+// het nog steeds hetzelfde product. Juist die eis zorgde voor dubbelingen.
+function vindVoorraadKandidaten(naam, inventory) {
+  const kern = naamKern(naam);
+  const gevraagd = norm(naam);
+  const sterk = [];   // naam klopt volgens de strenge regel of een bijnaam
+  const zwak = [];    // alleen een vermoeden
+
+  inventory.forEach((item) => {
+    // Vriezerbakjes zijn kliekjes van wat je zelf gekookt hebt, geen product
+    // dat je in de winkel koopt. Zonder deze uitzondering kwam "pasta" van je
+    // briefje uit bij "Vriezer: Broccoli pasta".
+    if (/^vriezer\s*:/i.test(item.name || "")) return;
+
+    const bijnamen = Array.isArray(item.aliases) ? item.aliases : [];
+    const itemNaam = norm(item.name);
+
+    if (bijnamen.some((a) => norm(a) === gevraagd)) {
+      sterk.push({ item, reden: "eerder zo genoemd", score: 280 });
+      return;
+    }
+    if (itemNaam === gevraagd) {
+      sterk.push({ item, reden: "precies dezelfde naam", score: 300 });
+      return;
+    }
+    if (namesMatch(item.name, naam)) {
+      // Hoe dichter de naam bij elkaar ligt, hoe waarschijnlijker. Zo wint
+      // "Ui" van "Ui poeder" in plaats van wie toevallig vooraan staat.
+      sterk.push({ item, reden: "zelfde naam", score: 100 - Math.abs(itemNaam.length - gevraagd.length) * 0.5 });
+      return;
+    }
+
+    const itemKern = naamKern(item.name);
+    if (!kern || !itemKern) return;
+
+    if (kern.length >= 5 && itemKern.includes(kern)) {
+      zwak.push({ item, reden: `"${naam}" zit in "${item.name}"`, score: 60 - (itemKern.length - kern.length) * 0.5 });
+      return;
+    }
+    if (itemKern.length >= 5 && kern.includes(itemKern)) {
+      zwak.push({ item, reden: `"${item.name}" zit in "${naam}"`, score: 55 - (kern.length - itemKern.length) * 0.5 });
+      return;
+    }
+    // Merknaam ervoor: alle woorden van de korte naam komen terug in de lange,
+    // maar ze beslaan er te weinig van voor de strenge regel.
+    //
+    // Een woord telt hier ook mee als het in een samenstelling verstopt zit:
+    // "Heinz Ketchup" tegenover "Heinz Tomatenketchup". Dat is precies wat het
+    // Nederlands zo lastig maakt en wat de strenge regel bewust niet doet.
+    const wa = nameWords(naam), wb = nameWords(item.name);
+    const kort = wa.length <= wb.length ? wa : wb;
+    const lang = kort === wa ? wb : wa;
+    if (kort.length && kort.every((k) => lang.some((l) => woordLijktOp(k, l)))) {
+      zwak.push({ item, reden: "zelfde woorden, andere schrijfwijze", score: 40 });
+      return;
+    }
+    // Typefout: één letter verschil bij namen van enige lengte.
+    if (kern.length >= 5 && letterAfstand(kern, itemKern, 1) <= 1) {
+      zwak.push({ item, reden: "bijna dezelfde naam — typefout?", score: 70 });
+    }
+  });
+
+  sterk.sort((a, b) => b.score - a.score);
+  zwak.sort((a, b) => b.score - a.score);
+
+  // Wanneer slaan we de vraag over?
+  //  • De naam is létterlijk dezelfde, of je hebt hem eerder zo genoemd.
+  //    Zekerder dan dat wordt het niet, ook al lijkt er iets anders op.
+  //  • Of er komt sowieso maar één product in aanmerking.
+  // In alle andere gevallen vragen we het. Staan "Ui" én "Ui poeder" in je
+  // kast, dan is dat precies het moment om het niet zelf te bedenken.
+  const beste = sterk[0];
+  const overduidelijk = beste && beste.score >= 280;
+  const enige = sterk.length === 1 && zwak.length === 0;
+  return {
+    zeker: overduidelijk || enige ? beste.item : null,
+    kandidaten: overduidelijk || enige ? [] : [...sterk, ...zwak].slice(0, 4),
+  };
+}
+
+// Suggesties terwijl je een productnaam intypt. Eén gedeelde regel voor alle
+// invoervelden, zodat je overal dezelfde lijst krijgt.
+//
+// Belangrijk: deze lijst vervángt nooit wat je typt. Tik je "Aardappel", dan
+// blijft dat "Aardappel" — ook al staat "Aardappelpuree" eronder in de lijst.
+// Wil je die, dan tik je hem aan. Zo kies jij welk product het wordt, en niet
+// de app.
+function voorraadSuggesties(tekst, inventory, max = 6) {
+  const q = norm(tekst || "").trim();
+  // Vriezerbakjes zijn kliekjes, geen product dat je opnieuw aanmaakt.
+  const pool = (inventory || []).filter((i) => i && i.name && !/^vriezer\s*:/i.test(i.name));
+  if (!q) return pool.slice(0, max);
+
+  const score = (item) => {
+    const n = norm(item.name);
+    const bijnamen = Array.isArray(item.aliases) ? item.aliases : [];
+    if (n === q) return 100;
+    if (n.startsWith(q)) return 80 - n.length * 0.1;          // "Citr" → "Citroen"
+    if (bijnamen.some((a) => norm(a).startsWith(q))) return 70;
+    if (n.includes(q)) return 60 - n.length * 0.1;            // "peen" → "Winterpeen"
+    if (q.length >= 3 && namesMatch(item.name, tekst)) return 40;
+    return -1;
+  };
+
+  return pool
+    .map((item) => ({ item, s: score(item) }))
+    .filter((x) => x.s > 0)
+    .sort((a, b) => b.s - a.s)
+    .slice(0, max)
+    .map((x) => x.item);
+}
+
+// Rekent een gekochte hoeveelheid om naar de eenheid van het voorraadproduct.
+// "1 pak melk" bij een voorraad in milliliters, "2 stuks" ketchup bij een
+// voorraad in grammen. Geeft null wanneer het niet te vertalen is; dan moet de
+// gebruiker het zelf zeggen in plaats van dat wij een getal verzinnen.
+function naarVoorraadEenheid(hoeveelheid, vanEenheid, item) {
+  const van = (vanEenheid || "").toLowerCase();
+  const naar = (item.unit || "").toLowerCase();
+  if (van === naar) return Number(hoeveelheid || 0);
+
+  const recht = convertAmount(hoeveelheid, van, naar);
+  if (recht !== null) return round2(recht);
+
+  // Stuks tegenover gewicht: alleen met een gemiddeld stukgewicht, en dat is
+  // een schatting. We geven hem terug, maar de aanroeper laat de gebruiker het zien.
+  const gram = stukGewicht(item.name) || stukGewicht(van === "stuks" ? item.name : "");
+  if (!gram) return null;
+  if (van === "stuks" && UNIT_KIND[naar]) {
+    const om = convertAmount(Number(hoeveelheid || 0) * gram, "g", naar);
+    return om === null ? null : round2(om);
+  }
+  if (naar === "stuks" && UNIT_KIND[van]) {
+    const inGram = convertAmount(hoeveelheid, van, "g");
+    return inGram === null ? null : round2(inGram / gram);
+  }
+  return null;
+}
+
 // Gemiddeld gewicht per stuk. Hiermee kan de app "4 tomaten" vergelijken met
 // "500 g tomaten" in je voorraad. Bewust alleen om te bepálen of je genoeg
 // hebt — nooit om precies af te boeken, want het is een schatting.
@@ -599,6 +789,72 @@ function stockVsNeed(item, ing, scale = 1) {
   return null;
 }
 
+// Maakt een hoeveelheid presentabel voor op een boodschappenlijst. 1000 gram
+// koop je niet als "1000,004 g", en anderhalve knoflookteen bestaat niet in de
+// winkel — die rond je naar boven af.
+function netteHoeveelheid(hoeveelheid, eenheid) {
+  const e = (eenheid || "").toLowerCase();
+  const n = Number(hoeveelheid || 0);
+  if (!isFinite(n) || n <= 0) return 0;
+  if (e === "g" || e === "ml") return Math.max(1, Math.round(n));
+  if (e === "stuks") return Math.max(1, Math.ceil(n - 0.001));
+  return Math.max(0.01, round2(n));
+}
+
+// Vertaalt "dit heb ik nodig" naar "dit moet ik kopen".
+//
+// Hier ging het mis: de hoeveelheid werd omgerekend naar de eenheid van je
+// vóórraad, maar daarna opgeschreven met de eenheid uit het récept. Vraagt een
+// recept om 1 kg aardappelen en staat je voorraad in grammen, dan werd het
+// tekort 1000 — en kwam er "1000 kg aardappelen" op de lijst te staan.
+// Hoeveelheid en eenheid horen bij elkaar; daarom geeft deze functie ze samen
+// terug, en nergens anders meer los.
+//
+// Geeft null wanneer er niets gekocht hoeft te worden.
+function boodschapRegel(need, inventory) {
+  const item = findInventoryMatch(inventory, need);
+
+  // Basisproducten als zout, peper en water horen niet op een boodschappenlijst.
+  // Houd je ze wél zelf bij in de voorraad, dan wil je ze natuurlijk wel zien
+  // zodra ze op zijn — vandaar de uitzondering op de uitzondering.
+  if (!item && isPantryBasic(need.name)) return null;
+
+  const cmp = item ? stockVsNeed(item, need, 1) : null;
+  let eenheid, hoeveelheid;
+
+  if (cmp && !cmp.geschat) {
+    // Exacte vergelijking: reken het tekort uit in de eenheid van je voorraad.
+    // Dat is ook de eenheid waarmee het afvinken straks bij het juiste product
+    // optelt — "1000 kg" zou anders een nieuw voorraaditem aanmaken.
+    const tekort = cmp.need - cmp.have;
+    if (tekort <= 0) return null;
+    eenheid = cmp.unit;
+    hoeveelheid = tekort;
+  } else if (cmp) {
+    // Stuks tegenover grammen: we weten dát je te weinig hebt, maar hoeveel
+    // precies is een schatting op basis van een gemiddeld stukgewicht. Dan is
+    // de hoeveelheid uit het recept eerlijker dan een schijnnauwkeurig getal.
+    if (cmp.have >= cmp.need) return null;
+    eenheid = need.unit;
+    hoeveelheid = Number(need.amount || 0);
+  } else {
+    // Niets in de voorraad dat hierbij hoort: gewoon kopen wat het recept vraagt.
+    eenheid = need.unit;
+    hoeveelheid = Number(need.amount || 0);
+  }
+
+  const bedrag = netteHoeveelheid(hoeveelheid, eenheid);
+  if (!bedrag) return null;
+
+  // De naam uit je voorraad wint: die herken je in de winkel, en hij zorgt dat
+  // het afvinken bij het goede product terechtkomt.
+  const naam = item ? item.name : need.name;
+  let categorie = normalizeCategory(item ? item.category : "");
+  if (!categorie || categorie === "Overig") categorie = guessCategory(naam);
+
+  return { name: naam, unit: eenheid, amount: bedrag, category: categorie };
+}
+
 const EMOJI_KEYWORDS = [
   [["spaghetti", "pasta", "macaroni", "lasagne", "penne", "tagliatelle"], "🍝"],
   [["soep", "bouillon"], "🍲"],
@@ -636,18 +892,37 @@ function suggestEmoji(name) {
 const CATEGORY_KEYWORDS = [
   [["vriezer", "diepvries", "ijsje", "ijstaart"], "Diepvries"],
 
+  // Een paar groentenamen bevatten toevallig een ander trefwoord: "rucola"
+  // bevat "cola", "waterkers" bevat "water", "boursin" bevat "ui". Ze staan
+  // daarom bovenaan, vóór de regels waar ze anders in zouden vallen.
+  [["rucola", "waterkers", "tuinkers", "postelein", "radicchio", "paksoi",
+    "salieblad", "bleekselderij", "knolselderij"], "Groente & fruit"],
+
+  // Let op de volgorde: dit blok staat met opzet vóór "Groente & fruit".
+  // "Paprika poeder" bevat het woord "paprika" en belandde daardoor eerder bij
+  // de groenten. Een specerij herken je aan het achtervoegsel, niet aan de
+  // grondstof — daarom staan de poedervormen hier expliciet.
   [["kruidenmix", "kipkruiden", "aardappelkruiden", "gerookte paprika", "paprika pikant",
-    "specerij", "kruiden"], "Kruiden & specerijen"],
+    "paprikapoeder", "paprika poeder", "chilipoeder", "currypoeder", "kerriepoeder",
+    "knoflookpoeder", "uienpoeder", "gemberpoeder", "korianderpoeder", "mosterdpoeder",
+    "kaneelpoeder", "gemalen komijn", "gemalen koriander", "gemalen peper",
+    "currypasta", "curry pasta", "gele curry", "groene curry", "rode curry",
+    "kruidenpasta", "tikka masala", "specerij", "kruiden"], "Kruiden & specerijen"],
 
   [["chocopasta", "hagelslag", "hagel", "pindakaas", "jam", "honing", "stroop", "siroop",
     "notenpasta", "appelstroop", "muisjes"], "Ontbijt & broodbeleg"],
 
   [["spaghetti", "macaroni", "penne", "tagliatelle", "fusilli", "tortelloni", "lasagne",
     "pasta", "rijst", "risotto", "couscous", "bulgur", "quinoa", "noedel", "mihoen",
-    "wrap", "tortilla"], "Pasta, rijst & wereldkeuken"],
+    "wrap", "tortilla", "gnocchi", "orzo", "rigatoni", "spaghetti", "farfalle",
+    "polenta", "boekweit", "linzen", "spliterwt", "kapucijner",
+    "gierst", "havermout", "mie", "udon", "soba", "basmati", "jasmijnrijst",
+    "zilvervlies", "paellarijst", "risottorijst"], "Pasta, rijst & wereldkeuken"],
 
   [["kaas", "parmezaan", "boursin", "mozzarella", "feta", "brie", "camembert",
-    "roomkaas", "geitenkaas"], "Kaas"],
+    "roomkaas", "geitenkaas", "cheddar", "halloumi", "pecorino", "grana padano",
+    "gorgonzola", "gouda", "emmentaler", "manchego", "ricotta", "mascarpone",
+    "burrata", "roquefort", "comté", "gruyère", "gruyere"], "Kaas"],
 
   [["tofu", "tempeh", "seitan", "vegaburger", "vegetarische", "falafel",
     "vleesvervanger"], "Vega & vleesvervangers"],
@@ -655,19 +930,28 @@ const CATEGORY_KEYWORDS = [
   [["kip", "gehakt", "spek", "worst", "ham", "zalm", "tonijn", "vis", "garnaal", "garnalen",
     "kabeljauw", "biefstuk", "rund", "varkens", "kalkoen", "spareribs", "gehaktbal", "vlees",
     "bacon", "filet", "schnitzel", "hamburger", "makreel", "haring", "mosselen", "fuet",
-    "salami", "rookvlees"], "Vlees & vis"],
+    "salami", "rookvlees", "riblap", "sukadelap", "speklap", "runderlap",
+    "kalfs", "ossenhaas", "schenkel", "lamsvlees", "lamsbout", "entrecote",
+    "chorizo", "shoarma", "gyros", "mosselen", "zeebaars", "schol", "forel",
+    "witvis", "kippenbout", "kippendij", "kippenpoot"], "Vlees & vis"],
 
   [["melk", "boter", "yoghurt", "kwark", "kookroom", "slagroom", "room", "crèmefraîche",
-    "margarine", "ei", "eieren", "zuivel", "vla", "pudding", "chocomel", "skyr"], "Zuivel & eieren"],
+    "margarine", "ei", "eieren", "zuivel", "vla", "pudding", "chocomel", "skyr",
+    "fraîche", "fraiche", "karnemelk", "hüttenkäse", "koffiemelk"], "Zuivel & eieren"],
 
   [["brood", "pita", "knäckebröd", "beschuit", "cracker", "toast", "croissant", "bagel",
-    "stokbrood", "bolletjes"], "Brood & bakkerij"],
+    "stokbrood", "bolletjes", "naan", "paratha", "tortillawrap", "focaccia",
+    "ciabatta"], "Brood & bakkerij"],
 
   [["bouillon", "passata", "tomatenpuree", "blik", "olijven", "sojasaus", "ketjap", "saus",
-    "soep", "augurk", "zilverui", "mais", "bonen in blik", "kokosmelk"], "Soepen, sauzen & conserven"],
+    "soep", "augurk", "zilverui", "mais", "bonen in blik", "kokosmelk",
+    "kappertje", "mayonaise", "mosterd", "hummus", "pesto", "tapenade", "sambal",
+    "oestersaus", "tamari", "kidneybonen", "witte bonen", "zwarte bonen",
+    "tomatenpassata", "passata", "gezeefde tomaten", "kikkererwt"], "Soepen, sauzen & conserven"],
 
   [["chips", "nootjes", "noten", "walnoot", "walnut", "amandel", "pinda", "cashew",
-    "borrelnoot", "zoutje"], "Chips, noten & borrel"],
+    "borrelnoot", "zoutje", "pijnboompit", "zonnebloempit", "pompoenpit",
+    "hazelnoot", "pistache", "paranoot", "macadamia"], "Chips, noten & borrel"],
 
   [["koekje", "koek", "speculaas", "biscuit", "chocolade", "snoep", "drop", "reep"], "Koek & snoep"],
 
@@ -677,7 +961,7 @@ const CATEGORY_KEYWORDS = [
   [["olijfolie", "zonnebloemolie", "sesamolie", "bakolie", "olie", "azijn", "balsamico"], "Olie, azijn & basis"],
 
   [["suiker", "bloem", "tarwemeel", "bakpoeder", "gist", "vanillesuiker", "cacao",
-    "amandelmeel"], "Bakken & zoetwaren"],
+    "amandelmeel", "paneermeel", "broodkruim", "maizena", "custard"], "Bakken & zoetwaren"],
 
   [["afwasmiddel", "wasmiddel", "vuilniszak", "keukenrol", "wc-papier", "schoonmaak",
     "aluminiumfolie", "vaatwastablet"], "Huishouden"],
@@ -690,11 +974,28 @@ const CATEGORY_KEYWORDS = [
     "courgette", "aubergine", "framboos", "druif", "druiven", "peer", "peren", "sinaasappel",
     "mandarijn", "gember", "koriander", "basilicum", "peterselie", "bieslook", "venkel",
     "rabarber", "spruit", "aardbei", "kers", "kersen", "meloen", "kiwi", "mango", "ananas",
-    "perzik", "abrikoos", "bosbes", "bramen", "granaatappel", "groente", "fruit", "kool"], "Groente & fruit"],
+    "perzik", "abrikoos", "bosbes", "bramen", "granaatappel", "groente", "fruit", "kool",
+    // Stonden er niet in en belandden daardoor in "Overig".
+    "selderij", "sperzieboon", "sperziebonen", "haricot", "snijboon", "snijbonen",
+    "doperwt", "doperwten", "tuinboon", "tuinbonen", "peultjes", "taugé", "tauge",
+    "rucola", "veldsla", "radijs", "radicchio", "pastinaak", "knolraap", "koolraap",
+    "rammenas", "postelein", "paksoi", "bimi", "asperge", "asperges", "artisjok",
+    "biet", "bieten", "bieslook", "dille", "munt", "salie", "waterkers", "sjalot",
+    "lente-ui", "bosui", "pompoen", "butternut", "zoete aardappel", "maiskolf",
+    "nectarine", "pruim", "pruimen", "dadel", "dadels", "vijg", "vijgen", "rozijn",
+    "rozijnen", "cranberry", "passievrucht", "lychee", "papaya", "pomelo",
+    "grapefruit", "braam", "veenbes", "kruisbes", "aalbes", "rode bes",
+    "abrikoz", "zucchini", "parelui", "salademix", "groentemix", "roerbakgroente",
+    "andijvie", "witlof", "venkelknol", "limoen"], "Groente & fruit"],
 
   [["zout", "peper", "paprikapoeder", "kerrie", "komijn", "kaneel", "oregano", "tijm",
     "laurier", "nootmuskaat", "kurkuma", "kardemom", "sumak", "steranijs", "foelie",
-    "jeneverbes", "sesamzaad", "chilivlokken", "garam", "masala"], "Kruiden & specerijen"],
+    "jeneverbes", "sesamzaad", "chilivlokken", "garam", "masala",
+    "aromat", "baharat", "chili", "fenegriek", "kruidnagel", "cajun", "picadillo",
+    "ras el hanout", "rozemarijn", "saffraan", "thijm", "yazzra", "piment",
+    "karwij", "dragon", "marjolein", "bonenkruid", "venkelzaad", "korianderzaad",
+    "komijnzaad", "peperkorrel", "kaffirlimoen", "citroengras", "fajita",
+    "shoarmakruiden", "mexicaanse kruiden"], "Kruiden & specerijen"],
 ];
 
 // Mapt Open Food Facts' eigen (Engelstalige) categorie-tags naar onze categorieën —
@@ -708,6 +1009,35 @@ const OFF_CATEGORY_RULES = [
   [["frozen"], "Diepvries"],
   [["beverage", "drink", "juice", "soda", "water", "beer", "wine", "coffee", "tea"], "Drank"],
 ];
+
+// Categorieën die in oudere versies van de app bestonden. Ze staan nog in de
+// database bij producten die sindsdien niet zijn aangeraakt, en zorgen anders
+// voor dubbele kopjes in de boodschappenlijst ("Groente & fruit" én
+// "Groente & Fruit"). Hoofdletters negeren we; de rest vertalen we hier.
+const CATEGORIE_ALIASSEN = {
+  "groente & fruit": "Groente & fruit",
+  "zuivel": "Zuivel & eieren",
+  "zuivel & eieren": "Zuivel & eieren",
+  "vlees & vis": "Vlees & vis",
+  "bakkerij & granen": "Brood & bakkerij",
+  "brood & bakkerij": "Brood & bakkerij",
+  "kruiden & specerijen": "Kruiden & specerijen",
+  "drank": "Dranken",
+  "dranken": "Dranken",
+  "diepvries": "Diepvries",
+  "houdbaar": "Soepen, sauzen & conserven",
+  "conserven": "Soepen, sauzen & conserven",
+  "overig": "Overig",
+};
+
+function normalizeCategory(category) {
+  if (!category) return "Overig";
+  const sleutel = String(category).trim().toLowerCase();
+  if (CATEGORIE_ALIASSEN[sleutel]) return CATEGORIE_ALIASSEN[sleutel];
+  // Bestaat de categorie al (op hoofdletters na), gebruik dan onze schrijfwijze.
+  const bekend = CATEGORIES.find((c) => c.toLowerCase() === sleutel);
+  return bekend || category;
+}
 
 function guessCategory(name) {
   const n = norm(name);
@@ -873,10 +1203,41 @@ function resizeImageFile(file, maxDim = 1024, quality = 0.75) {
 // Telt voorraad bij, maar nooit boven het ingestelde maximum.
 // Staat het maximum op 0, dan is er geen bovengrens: bij producten die je
 // niet op voorraad houdt zou je aankoop anders meteen verdwijnen.
+// Het maximum is een streefgetal voor de boodschappenlijst, geen capaciteit
+// van je kast. Eerder topte deze functie je voorraad erop af, en dan verdween
+// er echte voorraad: koop je een kilo gehakt terwijl je maximum op 500 g staat,
+// dan registreerde de app 500 g en was de rest weg. Meer dan je maximum is
+// gewoon meer — het komt alleen niet op de boodschappenlijst, en dat klopt,
+// want je zit ruim boven je minimum.
+// Een weekmenu-dag uitlezen. Heel oude menu's bewaarden alleen een recept-id
+// als losse tekst; die vorm vangen we hier op zodat de rest van de app altijd
+// met een object werkt. Stond eerder twee keer los in de code.
+// "dinsdag om 19:40", of "vandaag om 19:40" als het vandaag was. Korter en
+// leesbaarder dan een volledige datum op een knop.
+function gekooktOmschrijving(isoTijd) {
+  if (!isoTijd) return "";
+  const d = new Date(isoTijd);
+  if (isNaN(d)) return "";
+  const klok = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const vandaag = dateKey(new Date());
+  const toen = dateKey(d);
+  if (toen === vandaag) return `vandaag om ${klok}`;
+  const gisteren = new Date();
+  gisteren.setDate(gisteren.getDate() - 1);
+  if (toen === dateKey(gisteren)) return `gisteren om ${klok}`;
+  const dagen = ["zondag", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"];
+  return `${dagen[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1} om ${klok}`;
+}
+
+function leesDag(weekmenu, day) {
+  const raw = weekmenu ? weekmenu[day] : null;
+  if (!raw) return null;
+  if (typeof raw === "string") return { recipeId: raw, cook: "" };
+  return raw;
+}
+
 function addToStock(item, erbij) {
-  const nieuw = round2(Number(item.current || 0) + Number(erbij || 0));
-  const max = Number(item.max || 0);
-  return max > 0 ? Math.min(max, nieuw) : nieuw;
+  return round2(Number(item.current || 0) + Number(erbij || 0));
 }
 
 function pushLowStockToShopping(shoppingArr, item, newCurrent) {
@@ -887,8 +1248,10 @@ function pushLowStockToShopping(shoppingArr, item, newCurrent) {
     id: idx > -1 ? shoppingArr[idx].id : uid(),
     name: item.name,
     unit: item.unit,
-    category: item.category,
-    amount: needed,
+    category: normalizeCategory(item.category) === "Overig"
+      ? guessCategory(item.name)
+      : normalizeCategory(item.category),
+    amount: netteHoeveelheid(needed, item.unit),
     auto: true,
     checked: false,
   };
@@ -1777,6 +2140,35 @@ function GhostButton({ children, onClick, danger, full, disabled }) {
   );
 }
 
+// Het uitklaplijstje onder een productnaam-veld. Staat op één plek zodat de
+// voorraad, de recepten en de boodschappenlijst precies hetzelfde doen.
+function VoorraadSuggesties({ tekst, inventory, onKies, titel = "Uit je voorraad — tikken neemt de naam en eenheid over" }) {
+  const lijst = voorraadSuggesties(tekst, inventory);
+  if (!lijst.length) return null;
+  return (
+    <div style={{ background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, marginBottom: 8, overflow: "hidden" }}>
+      <div style={{ fontSize: 11, color: C.inkSoft, padding: "6px 10px 2px" }}>{titel}</div>
+      {lijst.map((item) => (
+        <button
+          key={item.id}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onKies(item)}
+          style={{
+            display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between",
+            gap: 8, background: "none", border: "none", borderTop: `1px solid ${C.ceramic}`,
+            padding: "8px 10px", cursor: "pointer", textAlign: "left", fontFamily: FONT_BODY, fontSize: 13,
+          }}
+        >
+          <span style={{ color: C.ink }}>{item.name}</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.inkSoft }}>
+            {item.current} {item.unit}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Field({ label, children }) {
   return (
     <label style={{ display: "block", marginBottom: 12 }}>
@@ -2510,14 +2902,15 @@ function controleerGegevens({ inventory = [], weekmenu = {}, recipes = [], shopp
   const bevindingen = [];
   const vandaag = dateKey(new Date());
 
-  // 1. Maximum onder het minimum: elke aankoop wordt dan afgetopt op dat lage getal.
+  // 1. Maximum onder het minimum. Sinds het maximum je voorraad niet meer
+  // aftopt is dit geen verlies meer, alleen een rommelige instelling.
   inventory.forEach((i) => {
     const min = Number(i.min || 0), max = Number(i.max || 0);
     if (max > 0 && max < min) {
       bevindingen.push({
-        soort: "minmax", ernst: "hoog", itemId: i.id,
+        soort: "minmax", ernst: "laag", itemId: i.id,
         tekst: `${i.name}: maximum (${max}) ligt onder het minimum (${min}).`,
-        gevolg: "Wat je bijkoopt wordt afgetopt op het maximum.",
+        gevolg: "Je voorraad klopt gewoon, maar het aanvulgetal is verwarrend: de boodschappenlijst gaat uit van je minimum.",
         herstel: { min, max: Math.max(min, Number(i.current || 0)) },
       });
     }
@@ -3091,6 +3484,11 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [koppelVoor, setKoppelVoor] = useState(null); // { recipeId, ingredientNaam }
   const [leftoverContext, setLeftoverContext] = useState(null); // voorraaditem-id van een gepland kliekje
+  // Vanuit welke weekmenu-dag is dit recept geopend? Daardoor weet de app
+  // welke avond er wordt afgeboekt — en niet alleen wélk gerecht. Hetzelfde
+  // recept kan twee keer in de week staan, en je kookt niet altijd op de dag
+  // waarop het gepland stond.
+  const [cookDayContext, setCookDayContext] = useState(null);
   const [controleOpen, setControleOpen] = useState(false);
   const [logboekOpen, setLogboekOpen] = useState(false);
   const [extras, setExtras] = useState([]); // extra gerechten naast het avondeten
@@ -3122,7 +3520,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   const [shoppingList, setShoppingList] = useState([]);
   const [weekmenu, setWeekmenu] = useState({});
   const [cooks, setCooks] = useState([]);
-  const [preferences, setPreferences] = useState({ darkMode: false, categoryOrder: null, diets: [], dislikes: [], premium: { photoInventory: true, predictiveDepletion: true, householdRSVP: true, sousChef: true } });
+  const [preferences, setPreferences] = useState({ darkMode: false, categoryOrder: null, diets: [], dislikes: [], premium: { photoInventory: true, photoListImport: true, predictiveDepletion: true, householdRSVP: true, sousChef: true } });
   const [cookLog, setCookLog] = useState([]);
   const [consumptionLog, setConsumptionLog] = useState([]);
   const [rsvp, setRsvp] = useState({});
@@ -3139,6 +3537,22 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   const [maxCookTime, setMaxCookTime] = useState(null);
   const [openRecipeId, setOpenRecipeId] = useState(null);
   const [doublePortionDefault, setDoublePortionDefault] = useState(false);
+
+  // Eén ingang om een recept te openen. De drie stukjes context (weekmenu-dag,
+  // kliekje, dubbele portie) horen bij elkaar. Bleef er één hangen van een
+  // vorig recept, dan boekte de app straks de verkeerde avond af — daarom
+  // worden ze hier altijd alle drie gezet, ook als ze leeg zijn.
+  //
+  // Staat bewust ná de staat die hij gebruikt: een helper boven zijn eigen
+  // useState-regels liet de app eerder bij het openen al crashen.
+  const openRecipeVanuit = (id, { dag = null, leftoverId = null, dubbel = false, naarKookboek = false } = {}) => {
+    setOpenRecipeId(id);
+    setCookDayContext(id ? dag : null);
+    setLeftoverContext(id ? leftoverId : null);
+    setDoublePortionDefault(!!dubbel);
+    if (naarKookboek) setTab("kookboek");
+  };
+
   const [editingRecipe, setEditingRecipe] = useState(null); // object or null; {} = nieuw
   const [editingItem, setEditingItem] = useState(null); // voorraaditem
   const [toast, setToast] = useState(null);
@@ -3160,6 +3574,13 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   const [shelfScanning, setShelfScanning] = useState(false);
   const [shelfScanError, setShelfScanError] = useState("");
   const [shelfScanResults, setShelfScanResults] = useState([]);
+  // Boodschappenlijstje of kassabon inlezen
+  const [listPhotoOpen, setListPhotoOpen] = useState(false);
+  const [listScanning, setListScanning] = useState(false);
+  const [listScanError, setListScanError] = useState("");
+  const [listScanResults, setListScanResults] = useState([]);
+  const [listScanSource, setListScanSource] = useState("");
+  const [listAfvinkVraag, setListAfvinkVraag] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -3183,7 +3604,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
           loadKey("shoppingList", () => []),
           loadKey("weekmenu", () => ({})),
           loadKey("cooks", () => []),
-          loadKey("preferences", () => ({ darkMode: false, categoryOrder: null, diets: [], dislikes: [], premium: { photoInventory: true, predictiveDepletion: true, householdRSVP: true, sousChef: true } })),
+          loadKey("preferences", () => ({ darkMode: false, categoryOrder: null, diets: [], dislikes: [], premium: { photoInventory: true, photoListImport: true, predictiveDepletion: true, householdRSVP: true, sousChef: true } })),
           loadKey("cookLog", () => []),
           loadKey("consumptionLog", () => []),
         ]);
@@ -3209,8 +3630,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
         const params = new URLSearchParams(window.location.search);
         const receptId = params.get("recept");
         if (receptId) {
-          setTab("kookboek");
-          setOpenRecipeId(receptId);
+          openRecipeVanuit(receptId, { naarKookboek: true });
           window.history.replaceState({}, "", window.location.pathname);
         }
       } catch (e) { /* geen geldig adres */ }
@@ -3376,6 +3796,15 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       return;
     }
     if (key === "cookLog") {
+      // Korter geworden betekent: er is een kookbeurt teruggedraaid. Die moet
+      // ook uit de database, anders staat hij er na het herladen weer. De
+      // lijst wordt in het geheugen op 200 afgekapt; dat maakt hem niet
+      // korter dan hij was, dus dat telt hier niet mee als verwijderen.
+      if (value.length < cookLog.length && window.dataAPI.cookLog.remove) {
+        const nieuweIds = new Set(value.map((e) => e.id));
+        const weg = cookLog.filter((e) => !nieuweIds.has(e.id));
+        for (const e of weg) await window.dataAPI.cookLog.remove(e);
+      }
       if (value.length && (!cookLog.length || value[0].id !== cookLog[0]?.id)) {
         await window.dataAPI.cookLog.add(value[0]);
       }
@@ -3515,7 +3944,10 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
     return tekst;
   };
 
-  const askClaudeVision = async (base64, mediaType, prompt) => {
+  // maxTokens is instelbaar: een kookboekpagina past in 1000, maar een
+  // boodschappenlijstje van twintig regels met een voorstel per regel niet.
+  // Te krap betekent een afgekapt antwoord, en dat is geen leesbare JSON meer.
+  const askClaudeVision = async (base64, mediaType, prompt, maxTokens = 1000) => {
     // Ook hier een tijdslimiet: een foto uitlezen duurt langer, dus ruimer.
     const afbreken = new AbortController();
     const klok = setTimeout(() => afbreken.abort(), 30000);
@@ -3526,7 +3958,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       signal: afbreken.signal,
       headers: await buildAuthHeaders(),
       body: JSON.stringify({
-        max_tokens: 1000,
+        max_tokens: maxTokens,
         messages: [{
           role: "user",
           content: [
@@ -3559,6 +3991,11 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       throw err;
     }
     const data = await response.json();
+    if (data.stop_reason === "max_tokens") {
+      console.warn(
+        `Antwoord op de foto afgekapt: ${data.usage ? data.usage.output_tokens : "?"} van ${maxTokens} tokens verbruikt. Verhoog de ruimte.`
+      );
+    }
     return (data.content || []).map((b) => b.text || "").join("\n");
   };
 
@@ -3837,7 +4274,12 @@ Regels:
       let results;
       try {
         results = items.slice(0, 20).map((it) => {
-          const existing = inventory.find((i) => namesMatch(i.name, it.name) && i.unit === it.unit);
+          // Vroeger moest ook de eenheid kloppen. Had je ketchup in grammen en
+          // herkende de foto "1 stuks", dan gold dat als een ander product en
+          // kreeg je er een tweede bij. De naam bepaalt wat het is; de eenheid
+          // rekenen we om.
+          const { zeker } = vindVoorraadKandidaten(it.name, inventory);
+          const existing = zeker;
           return {
             tempId: uid(),
             name: String(it.name || "").slice(0, 60),
@@ -3874,8 +4316,14 @@ Regels:
     results.filter((r) => r.include).forEach((r) => {
       const idx = nextInventory.findIndex((i) => i.id === r.matchedId);
       if (idx > -1) {
-        nextInventory[idx] = { ...nextInventory[idx], current: addToStock(nextInventory[idx], r.amount) };
-        updated += 1;
+        // De foto kan een andere eenheid noemen dan je voorraad bijhoudt.
+        // Omrekenen, en lukt dat niet, dan laten we de voorraad met rust in
+        // plaats van er een onvergelijkbaar getal bij op te tellen.
+        const erbij = naarVoorraadEenheid(r.amount, r.unit, nextInventory[idx]);
+        if (erbij !== null) {
+          nextInventory[idx] = { ...nextInventory[idx], current: addToStock(nextInventory[idx], erbij) };
+          updated += 1;
+        }
       } else {
         nextInventory.push({
           id: uid(), name: r.name, category: r.category, unit: r.unit,
@@ -3888,6 +4336,206 @@ Regels:
     setShelfPhotoOpen(false);
     setShelfScanResults([]);
     showToast(`Voorraad bijgewerkt: ${updated} product${updated !== 1 ? "en" : ""} aangevuld, ${created} nieuw toegevoegd.`);
+  };
+
+  /* ---------- Premium: boodschappenlijstje of kassabon → voorraad ---------- */
+
+  const buildListPhotoPrompt = () => `Je leest voor de kookboek-app "Pollepel" een foto van een BOODSCHAPPENLIJSTJE of een KASSABON. Haal daar de producten uit die je in een voorraadkast of koelkast zou leggen.
+
+Antwoord ALLEEN met STRIKT GELDIGE, COMPACTE JSON (één regel, geen markdown-codeblok, geen uitleg) in dit format:
+{"bron":"lijstje"|"bon","items":[{"naam":string,"hoeveelheid":number of null,"eenheid":één van ${JSON.stringify(UNITS)},"categorie":één van ${JSON.stringify(CATEGORIES)},"opfoto":true of false}]}
+
+Regels voor de naam:
+- Schrijf een gewone Nederlandse productnaam, zoals je het thuis zou noemen. Schrijf afkortingen van de bon voluit: "AH H.VOLLE MELK" wordt "Halfvolle melk", "JH KIPFILET" wordt "Kipfilet".
+- Laat het merk weg als het er niet toe doet, maar houd het als het de soort bepaalt: "Ketjap manis" blijft "Ketjap manis".
+- Eén product per regel. Geen hoofdletters midden in de naam.
+
+Regels voor de hoeveelheid:
+- Staat er een hoeveelheid op de foto ("2x melk", "500 gr gehakt", "1 kg aardappelen")? Neem die exact over en zet "opfoto" op true.
+- Staat er niets? Stel dan de gangbare Nederlandse supermarktverpakking voor (melk 1 l, gehakt 500 g, een krop sla 1 stuks) en zet "opfoto" op false. Verzin geen nauwkeurigheid die er niet is.
+
+Laat weg (dit zijn geen voorraadproducten):
+- Alles wat op een bon onder het boodschappenlijstje valt maar geen product is: totaal, subtotaal, btw, statiegeld, emballage, korting, bonus, airmiles, pinnen, wisselgeld, winkelnaam, datum, kassanummer.
+- Niet-eetbare artikelen zoals tijdschriften, bloemen, batterijen en cadeaubonnen.
+
+Maximaal 30 producten. Staat er niets bruikbaars op de foto, antwoord dan met {"bron":"lijstje","items":[]}.`;
+
+  const scanListPhoto = async (file) => {
+    setListScanning(true);
+    setListScanError("");
+    setListScanResults([]);
+    setListScanSource("");
+    try {
+      let base64, mediaType;
+      try {
+        ({ base64, mediaType } = await resizeImageFile(file));
+      } catch (e) {
+        console.error("Foto van lijstje verwerken mislukt:", e);
+        throw new Error("resize");
+      }
+      let raw;
+      try {
+        // Ruimer dan bij een kookboekpagina: dertig regels met een voorstel per
+        // regel past niet in 1000 tokens.
+        raw = await askClaudeVision(base64, mediaType, buildListPhotoPrompt(), 2000);
+      } catch (e) {
+        console.error("AI-aanroep (boodschappenlijstje) mislukt:", e.status, e.body || e.message);
+        const err = new Error(e.status ? `serverfout-${e.status}` : "netwerk");
+        err.detail = e.body || e.message;
+        throw err;
+      }
+      let parsed;
+      try {
+        parsed = extractJson(raw);
+      } catch (e) {
+        console.error("Kon AI-antwoord niet als JSON lezen:", raw);
+        const err = new Error("json");
+        err.detail = raw;
+        throw err;
+      }
+      const items = Array.isArray(parsed.items) ? parsed.items : [];
+      if (!items.length) throw new Error("leeg");
+
+      let results;
+      try {
+        results = items.slice(0, 30).map((it) => {
+          const naam = String(it.naam || it.name || "").slice(0, 60).trim();
+          if (!naam) return null;
+          const { zeker, kandidaten } = vindVoorraadKandidaten(naam, inventory);
+          const opFoto = it.opfoto === true && Number(it.hoeveelheid) > 0;
+          const eenheid = UNITS.includes(it.eenheid) ? it.eenheid : "stuks";
+          return {
+            tempId: uid(),
+            name: naam,
+            amount: Number(it.hoeveelheid) > 0 ? round2(Number(it.hoeveelheid)) : 1,
+            unit: eenheid,
+            category: CATEGORIES.includes(it.categorie) ? it.categorie : guessCategory(naam),
+            opFoto,
+            // Zeker gevonden? Dan hoeft er niets gevraagd te worden.
+            matchedId: zeker ? zeker.id : null,
+            // Twijfelgevallen bewaren we mét de reden, zodat de vraag
+            // uitlegt wáárom hij gesteld wordt.
+            kandidaten: kandidaten.map((t) => ({
+              id: t.item.id, name: t.item.name, unit: t.item.unit,
+              current: t.item.current, reden: t.reden,
+            })),
+            beslist: !!zeker,   // bij "zeker" is er niets te beslissen
+            include: true,
+          };
+        }).filter(Boolean);
+      } catch (e) {
+        console.error("Kon AI-antwoord niet omzetten naar producten (onverwachte vorm):", parsed, e);
+        const err = new Error("vorm");
+        err.detail = e.message;
+        throw err;
+      }
+      if (!results.length) throw new Error("leeg");
+
+      // Twee keer "melk" op hetzelfde briefje: dat hoort één regel te worden.
+      const samengevoegd = [];
+      results.forEach((r) => {
+        const bestaand = samengevoegd.find(
+          (s) => namesMatch(s.name, r.name) && convertAmount(1, s.unit, r.unit) !== null
+        );
+        if (bestaand) {
+          const erbij = convertAmount(r.amount, r.unit, bestaand.unit);
+          bestaand.amount = round2(bestaand.amount + (erbij === null ? 0 : erbij));
+          return;
+        }
+        samengevoegd.push(r);
+      });
+
+      setListScanSource(parsed.bron === "bon" ? "bon" : "lijstje");
+      setListScanResults(samengevoegd);
+    } catch (e) {
+      setListScanError(describePhotoError(e.message, e.detail));
+    } finally {
+      setListScanning(false);
+    }
+  };
+
+  // Antwoord op een twijfelvraag: hoort dit bij een bestaand product of is het nieuw?
+  const beslisListItem = (tempId, keuze) => {
+    setListScanResults((prev) => prev.map((r) => {
+      if (r.tempId !== tempId) return r;
+      if (keuze === "nieuw") return { ...r, matchedId: null, beslist: true, onthouden: false };
+      return { ...r, matchedId: keuze, beslist: true, onthouden: true };
+    }));
+  };
+
+  const wijzigListItem = (tempId, velden) => {
+    setListScanResults((prev) => prev.map((r) => (r.tempId === tempId ? { ...r, ...velden } : r)));
+  };
+
+  const applyListScanResults = (results) => {
+    const nextInventory = inventory.map((i) => ({ ...i }));
+    let aangevuld = 0;
+    let nieuw = 0;
+    const nietOmgerekend = [];
+
+    results.filter((r) => r.include).forEach((r) => {
+      const idx = r.matchedId ? nextInventory.findIndex((i) => i.id === r.matchedId) : -1;
+      if (idx > -1) {
+        const item = nextInventory[idx];
+        const erbij = naarVoorraadEenheid(r.amount, r.unit, item);
+        if (erbij === null) { nietOmgerekend.push(r.name); return; }
+        // Heeft de gebruiker bevestigd dat dit hetzelfde product is onder een
+        // andere naam, dan onthouden we die naam. Volgende keer geen vraag meer.
+        const bijnamen = Array.isArray(item.aliases) ? item.aliases : [];
+        const nieuweBijnaam = r.onthouden && !namesMatch(item.name, r.name)
+          && !bijnamen.some((a) => norm(a) === norm(r.name));
+        nextInventory[idx] = {
+          ...item,
+          current: addToStock(item, erbij),
+          aliases: nieuweBijnaam ? [...bijnamen, r.name].slice(-10) : bijnamen,
+        };
+        aangevuld += 1;
+      } else {
+        nextInventory.push({
+          id: uid(), name: r.name, category: r.category, unit: r.unit,
+          current: r.amount, min: round2(Math.max(r.amount * 0.4, 0.5)), max: r.amount,
+          aliases: [],
+        });
+        nieuw += 1;
+      }
+    });
+
+    persist("inventory", nextInventory, setInventory);
+
+    // Wat je net gekocht hebt, staat waarschijnlijk nog op je boodschappenlijst.
+    const opLijst = shoppingList.filter((s) =>
+      results.some((r) => r.include && (namesMatch(s.name, r.name)
+        || (r.matchedId && namesMatch(s.name, (inventory.find((i) => i.id === r.matchedId) || {}).name || ""))))
+    );
+
+    const delen = [];
+    if (aangevuld) delen.push(`${aangevuld} aangevuld`);
+    if (nieuw) delen.push(`${nieuw} nieuw toegevoegd`);
+    if (nietOmgerekend.length) delen.push(`${nietOmgerekend.length} overgeslagen (eenheid niet te vertalen)`);
+
+    if (opLijst.length) {
+      // Niet zelf weggooien: eerst vragen. Dat is dezelfde afspraak als bij
+      // het weghalen van een kliekje.
+      setListAfvinkVraag({ items: opLijst, samenvatting: delen.join(", ") });
+    } else {
+      setListPhotoOpen(false);
+      setListScanResults([]);
+      showToast(`Voorraad bijgewerkt: ${delen.join(", ")}.`);
+    }
+  };
+
+  const bevestigAfvinken = (doen) => {
+    const vraag = listAfvinkVraag;
+    setListAfvinkVraag(null);
+    setListPhotoOpen(false);
+    setListScanResults([]);
+    if (doen && vraag) {
+      const ids = new Set(vraag.items.map((i) => i.id));
+      persist("shoppingList", shoppingList.filter((s) => !ids.has(s.id)), setShoppingList);
+      showToast(`Voorraad bijgewerkt: ${vraag.samenvatting}. ${vraag.items.length} van je boodschappenlijst gehaald.`);
+      return;
+    }
+    if (vraag) showToast(`Voorraad bijgewerkt: ${vraag.samenvatting}.`);
   };
 
   /* ---------- Premium: AI-souschef ---------- */
@@ -3997,9 +4645,15 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
 
   // Heb je het vandaag al gekookt? Dan hoeft de app je niet te blijven vertellen
   // dat je het nog moet maken, en al helemaal niet dat je ingrediënten mist.
-  const vanavondAlGekookt = !!(vanavondRecept && cookLog.some((e) =>
-    e.recipeId === vanavondRecept.id &&
-    dateKey(new Date(e.date)) === dateKey(new Date())
+  //
+  // De avond zelf is de bron: die wordt gestempeld zodra je afboekt. Het
+  // kooklogboek is het vangnet voor kookbeurten van vóór deze versie, en voor
+  // wanneer je het recept rechtstreeks uit het kookboek hebt afgeboekt.
+  const vanavondAlGekookt = !!(vanavondRecept && (
+    (vanavondEntry && vanavondEntry.cookedAt) ||
+    cookLog.some((e) =>
+      e.recipeId === vanavondRecept.id &&
+      dateKey(new Date(e.date)) === dateKey(new Date()))
   ));
 
   // Kiest iets wat je met je voorraad kunt maken; is niets compleet, dan wat er
@@ -4015,7 +4669,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     if (minste > 0) {
       showToast(`${keuze.r.name}: hiervoor mis je nog ${recipeReadiness(keuze.r, inventory).missing.join(", ")}.`);
     }
-    setOpenRecipeId(keuze.r.id);
+    openRecipeVanuit(keuze.r.id);
   };
 
   const lowStockCount = inventory.filter((i) => i.current < i.min).length;
@@ -4193,14 +4847,14 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     setRecipes(recipes.filter((r) => r.id !== id));
     if (hasDataAPI) window.dataAPI.recipes.remove(id).catch(() => {});
     else persist("recipes", recipes.filter((r) => r.id !== id), setRecipes);
-    setOpenRecipeId(null);
+    openRecipeVanuit(null);
   };
 
   /* ---------- Koken -> voorraad + boodschappenlijst ---------- */
 
   // overrides: { [voorraaditem-id]: werkelijk gebruikte hoeveelheid }
   // Zo boeken we nooit meer af dan er was, en klopt de verbruiksgeschiedenis.
-  const cookRecipe = (recipe, scale = 1, overrides = {}) => {
+  const cookRecipe = (recipe, scale = 1, overrides = {}, dagSleutel = null) => {
     // Sessie afsluiten: het gerecht is klaar, dus huisgenoten hoeven het niet
     // meer als "wordt nu gekookt" te zien.
     if (hasDataAPI && window.dataAPI.cooking) {
@@ -4214,6 +4868,10 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     const used = [];
     const added = [];
     const newConsumptionEntries = [];
+    // Wat er precies van welk product af gaat. Nodig om deze kookbeurt later
+    // exact terug te kunnen draaien: opnieuw uitrekenen kan niet, want je mag
+    // bij het koken zelf een afwijkende hoeveelheid invullen.
+    const afgeboekt = [];
 
     recipe.ingredients.forEach((ing) => {
       const matchItem = findInventoryMatch(nextInventory, ing);
@@ -4233,6 +4891,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       const newCurrent = Math.max(0, round2(item.current - amountUsed));
       nextInventory[idx] = { ...item, current: newCurrent };
       used.push(item.name);
+      afgeboekt.push({ itemId: item.id, name: item.name, unit: item.unit, amount: amountUsed });
       newConsumptionEntries.push({ name: item.name, unit: item.unit, amount: amountUsed, date: new Date().toISOString() });
 
       const result = pushLowStockToShopping(nextShopping, item, newCurrent);
@@ -4260,8 +4919,64 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       }
     }
 
-    const logEntry = { id: uid(), recipeId: recipe.id, recipeName: recipe.name, emoji: recipe.emoji, date: new Date().toISOString(), servings: Math.round(recipe.servings * scale) };
+    const nu = new Date().toISOString();
+    const logEntry = {
+      id: uid(), recipeId: recipe.id, recipeName: recipe.name, emoji: recipe.emoji,
+      date: nu, servings: Math.round(recipe.servings * scale),
+      dayKey: dagSleutel || null, deducted: afgeboekt,
+    };
     persist("cookLog", [logEntry, ...cookLog].slice(0, 200), setCookLog);
+
+    // De avond zelf onthoudt dat hij is afgeboekt. Dat is nauwkeuriger dan
+    // zoeken naar "dit recept, vandaag": hetzelfde gerecht kan twee keer in de
+    // week staan, en je kookt niet altijd op de geplande dag.
+    if (dagSleutel && weekmenu[dagSleutel]) {
+      persist("weekmenu", { ...weekmenu, [dagSleutel]: { ...leesDag(weekmenu, dagSleutel), cookedAt: nu } }, setWeekmenu);
+    }
+  };
+
+  // Een kookbeurt terugdraaien. Zet de afgeboekte hoeveelheden exact terug —
+  // niet opnieuw berekend, maar wat er destijds daadwerkelijk af ging.
+  //
+  // Het recept blijft open staan: het vinkje verdwijnt en de gewone kookknop
+  // komt terug, zodat je meteen ziet dát het is teruggedraaid.
+  const undoCook = (dagSleutel) => {
+    const entry = weekmenu[dagSleutel];
+    if (!entry || !entry.cookedAt) return;
+
+    // De kookregel die bij deze avond hoort. Op dagKey als die er is; anders
+    // op recept en datum, voor kookbeurten van vóór deze versie.
+    const regel = (cookLog || []).find((e) => e.dayKey === dagSleutel)
+      || (cookLog || []).find((e) =>
+        e.recipeId === entry.recipeId && String(e.date).slice(0, 10) === String(entry.cookedAt).slice(0, 10));
+
+    const terug = (regel && Array.isArray(regel.deducted)) ? regel.deducted : [];
+    let hersteld = 0;
+    if (terug.length) {
+      const nextInventory = inventory.map((i) => ({ ...i }));
+      terug.forEach((d) => {
+        const idx = nextInventory.findIndex((i) => i.id === d.itemId);
+        if (idx === -1) return; // product bestaat niet meer
+        nextInventory[idx] = { ...nextInventory[idx], current: addToStock(nextInventory[idx], d.amount) };
+        hersteld += 1;
+      });
+      persist("inventory", nextInventory, setInventory);
+    }
+
+    persist("weekmenu", { ...weekmenu, [dagSleutel]: { ...leesDag(weekmenu, dagSleutel), cookedAt: null } }, setWeekmenu);
+    if (regel) persist("cookLog", cookLog.filter((e) => e.id !== regel.id), setCookLog);
+
+    if (!terug.length) {
+      showToast("Teruggezet op \u201Cnog niet gekookt\u201D. Van deze kookbeurt is niet vastgelegd wat er is afgeboekt, dus de voorraad blijft zoals hij nu staat.");
+    } else if (hersteld < terug.length) {
+      showToast(`Teruggezet. ${hersteld} van de ${terug.length} producten zijn aangevuld; de rest staat niet meer in je voorraad.`);
+    } else {
+      // Niet de hele boodschappenlijst in een melding proppen: de eerste paar
+      // zijn genoeg om te zien d\u00E1t het klopt.
+      const toon = terug.slice(0, 4).map((d) => `${d.amount} ${d.unit} ${d.name}`).join(", ");
+      const rest = terug.length - 4;
+      showToast(`Teruggezet op \u201Cnog niet gekookt\u201D. Aangevuld: ${toon}${rest > 0 ? ` en nog ${rest} ${rest === 1 ? "product" : "producten"}` : ""}.`);
+    }
   };
 
   /* ---------- Voorkeuren (donkere modus, categorie-volgorde, dieetwensen) ---------- */
@@ -4531,19 +5246,15 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     missing.forEach((name) => {
       if (shoppingList.some((s) => namesMatch(s.name, name))) { skipped.push(name); return; }
       const ing = (recipe.ingredients || []).find((i) => namesMatch(i.name, name));
-      const invItem = inventory.find((i) => namesMatch(i.name, name));
-      const needed = ing ? round2(Number(ing.amount || 0) * scale) : 1;
-      // Heb je er al iets van, dan hoef je alleen het tekort te kopen.
-      let amount = needed;
-      if (invItem && ing && (invItem.unit || "").toLowerCase() === (ing.unit || "").toLowerCase()) {
-        amount = Math.max(round2(needed - Number(invItem.current || 0)), 0.01);
-      }
-      toAdd.push({
-        name,
-        amount,
-        unit: ing ? ing.unit : "stuks",
-        category: (invItem && invItem.category) || guessCategory(name),
-      });
+      // Dezelfde rekenregel als bij het weekmenu, zodat beide knoppen hetzelfde
+      // opschrijven. Eerder rekende deze knop zelf, en alleen wanneer de
+      // eenheden toevallig gelijk waren.
+      const need = ing
+        ? { name: ing.name, unit: ing.unit, amount: Number(ing.amount || 0) * scale, inventoryItemId: ing.inventoryItemId }
+        : { name, unit: "stuks", amount: 1 };
+      const regel = boodschapRegel(need, inventory);
+      if (!regel) { skipped.push(name); return; }
+      toAdd.push(regel);
     });
 
     if (toAdd.length) {
@@ -4619,12 +5330,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
 
   // Normaliseert een dag-item: ondersteunt zowel de oude vorm (recipeId als string)
   // als de nieuwe vorm ({ recipeId, cook }).
-  const dayEntry = (day) => {
-    const raw = weekmenu[day];
-    if (!raw) return null;
-    if (typeof raw === "string") return { recipeId: raw, cook: "" };
-    return raw;
-  };
+  const dayEntry = (day) => leesDag(weekmenu, day);
   const isDayEmpty = (day) => {
     const e = dayEntry(day);
     return !e || (!e.recipeId && !e.offNight);
@@ -4633,10 +5339,19 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   // leftoverItemId verwijst naar het restje in je voorraad. Daaraan ziet de app
   // dat er niet gekookt maar opgewarmd wordt: geen boodschappen, en de
   // ingrediënten gaan niet nóg een keer van je voorraad af.
+  // Komt er een ánder gerecht op deze dag, dan hoort het "gekookt"-stempel van
+  // het vorige gerecht er niet meer bij. Zonder dit zou een nieuw gerecht
+  // meteen als afgeboekt gelden — en dan verdwijnt het van je boodschappenlijst
+  // terwijl je het nog moet maken.
   const setDayRecipe = (day, recipeId, leftoverItemId = null) => {
+    const vorige = dayEntry(day) || {};
+    const anderGerecht = vorige.recipeId !== recipeId;
     const next = {
       ...weekmenu,
-      [day]: { ...dayEntry(day), recipeId, offNight: false, leftoverItemId: leftoverItemId || null },
+      [day]: {
+        ...vorige, recipeId, offNight: false, leftoverItemId: leftoverItemId || null,
+        cookedAt: anderGerecht ? null : (vorige.cookedAt || null),
+      },
     };
     persist("weekmenu", next, setWeekmenu);
     setPickerDay(null);
@@ -4671,7 +5386,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       showToast("Alle dagen zijn al ingepland — maak eerst een dag leeg om dit te plannen.");
       return;
     }
-    const next = { ...weekmenu, [emptyDay.key]: { ...dayEntry(emptyDay.key), recipeId } };
+    const next = { ...weekmenu, [emptyDay.key]: { ...dayEntry(emptyDay.key), recipeId, cookedAt: null } };
     persist("weekmenu", next, setWeekmenu);
     showToast(`${recipeName} ingepland op ${emptyDay.label}.`);
   };
@@ -4686,8 +5401,22 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     persist("cooks", cooks.filter((c) => c !== name), setCooks);
   };
 
+  // Een sjabloon is een plan, geen geschiedenis. Zonder dit zou een opgeslagen
+  // week de "gekookt"-stempels meenemen, en zouden de dagen bij het opnieuw
+  // toepassen meteen als afgeboekt gelden — met als gevolg dat ze van je
+  // boodschappenlijst wegblijven terwijl je alles nog moet maken.
+  const zonderKookstempels = (menu) => {
+    const schoon = {};
+    Object.entries(menu || {}).forEach(([dag, waarde]) => {
+      const regel = leesDag(menu, dag);
+      if (!regel) return;
+      schoon[dag] = { ...regel, cookedAt: null };
+    });
+    return schoon;
+  };
+
   const duplicateWeekmenu = () => {
-    persist("weekmenuTemplate", weekmenu, () => {});
+    persist("weekmenuTemplate", zonderKookstempels(weekmenu), () => {});
     showToast("Dit weekmenu is opgeslagen als sjabloon. Gebruik 'Vorig weekmenu' om het later opnieuw toe te passen.");
   };
 
@@ -4699,14 +5428,22 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       showToast("Er is nog geen opgeslagen weekmenu-sjabloon.");
       return;
     }
-    persist("weekmenu", template, setWeekmenu);
+    persist("weekmenu", zonderKookstempels(template), setWeekmenu);
     showToast("Vorig weekmenu opnieuw toegepast.");
   };
 
   const shuffleWeekmenu = () => {
-    const filledDays = periodDays.filter((d) => dayEntry(d.key)?.recipeId);
+    // Avonden die al afgeboekt zijn blijven staan: dat is geen planning meer
+    // maar geschiedenis, en verschuiven zou de boekhouding laten rammelen.
+    const filledDays = periodDays.filter((d) => {
+      const e = dayEntry(d.key);
+      return e && e.recipeId && !e.cookedAt;
+    });
+    const gekookteDagen = periodDays.filter((d) => dayEntry(d.key)?.cookedAt).length;
     if (filledDays.length < 2) {
-      showToast("Vul minstens twee dagen in om ze te kunnen verwisselen.");
+      showToast(gekookteDagen
+        ? "Er blijven te weinig dagen over om te verwisselen — al gekookte avonden blijven staan."
+        : "Vul minstens twee dagen in om ze te kunnen verwisselen.");
       return;
     }
     const origineel = filledDays.map((d) => dayEntry(d.key));
@@ -4725,7 +5462,8 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     const next = { ...weekmenu };
     filledDays.forEach((d, idx) => { next[d.key] = entries[idx]; });
     persist("weekmenu", next, setWeekmenu);
-    showToast(`${filledDays.length} gerechten over andere dagen verdeeld.`);
+    showToast(`${filledDays.length} gerechten over andere dagen verdeeld.`
+      + (gekookteDagen ? ` ${gekookteDagen} al gekookte ${gekookteDagen === 1 ? "avond is" : "avonden zijn"} blijven staan.` : ""));
   };
 
   const exportWeekmenuToCalendar = () => {
@@ -4812,7 +5550,9 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     const plannedEntries = dagen
       .map((d) => dayEntry(d.key))
       // Kliekjes overslaan: die heb je al gekookt, de boodschappen zijn gedaan.
-      .filter((e) => e && e.recipeId && !e.leftoverItemId)
+      // Een avond die je al hebt afgeboekt net zo goed — anders koop je
+      // ingrediënten voor een maaltijd die je al op hebt.
+      .filter((e) => e && e.recipeId && !e.leftoverItemId && !e.cookedAt)
       .concat(extraEntries)
       .map((e) => {
         const recipe = recipes.find((r) => r.id === e.recipeId);
@@ -4834,36 +5574,56 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       return;
     }
 
-    // Benodigde totalen per (naam+eenheid) optellen over alle geplande gerechten (geschaald op aanwezigen indien bekend)
+    // Benodigde totalen optellen over alle geplande gerechten (geschaald op
+    // aanwezigen indien bekend). Eerder was de sleutel naam+eenheid, waardoor
+    // "2 eetlepel ketjap" en "2 stuks ketjap" als twee losse producten op de
+    // lijst belandden. Nu tellen we per naam op en rekenen we de eenheden naar
+    // elkaar om zolang dat kan.
     const totals = new Map();
+    const telOp = (naam, eenheid, hoeveelheid) => {
+      const basis = norm(naam);
+      for (const [sleutel, regel] of totals) {
+        if (regel.basis !== basis) continue;
+        const omgerekend = convertAmount(hoeveelheid, eenheid, regel.unit);
+        if (omgerekend === null) continue;
+        totals.set(sleutel, { ...regel, amount: round2(regel.amount + omgerekend) });
+        return;
+      }
+      totals.set(`${basis}|${eenheid}`, {
+        basis, name: naam, unit: eenheid, amount: round2(hoeveelheid),
+      });
+    };
     plannedEntries.forEach(({ recipe, scale }) => {
       recipe.ingredients.forEach((ing) => {
-        const key = `${norm(ing.name)}|${ing.unit}`;
-        const prev = totals.get(key) || { name: ing.name, unit: ing.unit, amount: 0 };
-        totals.set(key, { ...prev, amount: round2(prev.amount + Number(ing.amount || 0) * scale) });
+        telOp(ing.name, ing.unit, Number(ing.amount || 0) * scale);
       });
     });
-
 
     let nextShopping = shoppingList.map((s) => ({ ...s }));
     let addedCount = 0;
 
     totals.forEach((need) => {
-      const item = findInventoryMatch(inventory, need);
-      const cmp = item ? stockVsNeed(item, need, 1) : null;
-      const inStock = cmp ? cmp.have : 0;
-      const needed = cmp ? cmp.need : Number(need.amount || 0);
-      const shortfall = round2(needed - inStock);
-      if (shortfall <= 0) return;
+      const regel = boodschapRegel(need, inventory);
+      if (!regel) return;
 
-      const category = item ? item.category : guessCategory(need.name);
-      const idx = nextShopping.findIndex((s) => namesMatch(s.name, need.name) && s.unit === need.unit);
+      // Staat het er al op? Zoek eerst op dezelfde eenheid, en anders op een
+      // eenheid die om te rekenen is — zo krijg je geen tweede regel ketjap.
+      let idx = nextShopping.findIndex(
+        (s) => namesMatch(s.name, regel.name) && (s.unit || "") === regel.unit
+      );
+      if (idx === -1) {
+        idx = nextShopping.findIndex(
+          (s) => namesMatch(s.name, regel.name) && convertAmount(1, s.unit, regel.unit) !== null
+        );
+      }
+
+      // Een regel die je zelf hebt toegevoegd laten we met rust: daar heb jij
+      // de hoeveelheid bepaald, niet de app.
+      if (idx > -1 && !nextShopping[idx].auto) return;
+
       const entry = {
         id: idx > -1 ? nextShopping[idx].id : uid(),
-        name: need.name,
-        unit: need.unit,
-        category,
-        amount: shortfall,
+        ...regel,
         auto: true,
         checked: false,
       };
@@ -4963,7 +5723,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
       if (!candidates.length) return; // niets bruikbaars gevonden voor deze dag, gewoon overslaan
       const pick = candidates[0];
       usedThisRun.push(pick);
-      next[day.key] = { ...dayEntry(day.key), recipeId: pick };
+      next[day.key] = { ...dayEntry(day.key), recipeId: pick, cookedAt: null };
     });
 
     persist("weekmenu", next, setWeekmenu);
@@ -5116,7 +5876,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
         }
         newRecipes.push(recipeWithId);
         opeenvolgendeFouten = 0;
-        nextWeekmenu[days[i].key] = { ...dayEntry(days[i].key), recipeId: recipeWithId.id };
+        nextWeekmenu[days[i].key] = { ...dayEntry(days[i].key), recipeId: recipeWithId.id, cookedAt: null };
       } catch (e) {
         console.error(`Dag ${days[i].key} mislukt:`, e.status || "", e.message, e.body || "");
         if (e.status === 429) {
@@ -5395,7 +6155,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             readiness={vanavondRecept ? recipeReadiness(vanavondRecept, inventory) : null}
             cookNaam={(weekmenu[dateKey(new Date())] || {}).cook}
             alGekookt={vanavondAlGekookt}
-            onOpen={(id) => setOpenRecipeId(id)}
+            onOpen={(id) => openRecipeVanuit(id, { dag: dateKey(new Date()), dubbel: (weekmenu[dateKey(new Date())] || {}).doublePortion })}
             onVerrasMe={verrasMeVanavond}
             onNaarWeekmenu={() => setTab("weekmenu")}
           />
@@ -5405,7 +6165,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           <KookMelding
             sessies={cookingSessions}
             currentUserName={currentUserName}
-            onOpen={(id) => { setTab("kookboek"); setOpenRecipeId(id); }}
+            onOpen={(id) => openRecipeVanuit(id, { naarKookboek: true })}
           />
         )}
 
@@ -5423,7 +6183,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             activeDietTags={activeDietTags}
             bookMode={bookMode} setBookMode={setBookMode}
             inventory={inventory}
-            onOpen={setOpenRecipeId}
+            onOpen={(id) => openRecipeVanuit(id)}
             onToggleFav={toggleFavorite}
             onNew={() => setEditingRecipe({})}
             onImport={() => { setImportError(""); setImportOpen(true); }}
@@ -5436,12 +6196,14 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           <RecipeDetail
             recipe={openRecipe}
             isMine={openRecipeIsMine}
-            onBack={() => setOpenRecipeId(null)}
+            onBack={() => openRecipeVanuit(null)}
             onToggleFav={() => toggleFavorite(openRecipe.id)}
             onToggleCommunity={() => toggleCommunity(openRecipe.id)}
             onEdit={() => setEditingRecipe(openRecipe)}
             onDelete={() => deleteRecipe(openRecipe.id)}
-            onCook={(scale, overrides) => cookRecipe(openRecipe, scale, overrides)}
+            onCook={(scale, overrides) => cookRecipe(openRecipe, scale, overrides, cookDayContext)}
+            dagAlGekooktOp={cookDayContext ? (leesDag(weekmenu, cookDayContext) || {}).cookedAt || null : null}
+            onUndoCook={cookDayContext ? () => undoCook(cookDayContext) : null}
             onDuplicate={() => duplicateToMyBook(openRecipe.id)}
             onAddLeftover={addLeftover}
             onAddFreezerPortion={addFreezerPortion}
@@ -5458,7 +6220,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             toonBakjesTip={!preferences.containerNumbering && !preferences.containerHintSeen}
             onBakjesTipGezien={() => updatePreferences({ containerHintSeen: true })}
             leftoverItem={leftoverContext ? inventory.find((i) => i.id === leftoverContext) : null}
-            onEatLeftover={(porties, bakjes) => { eatLeftover(leftoverContext, porties, openRecipe, bakjes); setLeftoverContext(null); setOpenRecipeId(null); }}
+            onEatLeftover={(porties, bakjes) => { eatLeftover(leftoverContext, porties, openRecipe, bakjes); openRecipeVanuit(null); }}
             onRecalculateNutrition={() => recalculateNutrition(openRecipe.id)}
             nutritionBusy={nutritionBusy}
           />
@@ -5475,10 +6237,11 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             onNew={() => setEditingItem({})}
             onDelete={deleteInventoryItem}
             onScan={() => setScanOpen(true)}
-            onOpenRecipe={(id, dbl, leftoverId) => { setOpenRecipeId(id); setDoublePortionDefault(!!dbl); setLeftoverContext(leftoverId || null); setTab("kookboek"); }}
+            onOpenRecipe={(id, dbl, leftoverId, dagSleutel) => openRecipeVanuit(id, { dag: dagSleutel, leftoverId, dubbel: dbl, naarKookboek: true })}
             ernstigeBevindingen={bevindingen.filter((b) => b.ernst === "hoog").length}
             onOpenControle={() => setControleOpen(true)}
             onOpenShelfPhoto={() => { setShelfScanError(""); setShelfScanResults([]); setShelfPhotoOpen(true); }}
+            onOpenListPhoto={() => { setListScanError(""); setListScanResults([]); setListScanSource(""); setListPhotoOpen(true); }}
           />
         )}
 
@@ -5486,6 +6249,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           <BoodschappenView
             list={shoppingList}
             categories={orderedCategories}
+            inventory={inventory}
             onToggle={toggleChecked}
             onRemove={removeShoppingItem}
             onAddManual={addManualItem}
@@ -5520,7 +6284,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             onDuplicate={duplicateWeekmenu}
             onApplyTemplate={applyWeekmenuTemplate}
             onShuffle={shuffleWeekmenu}
-            onOpenRecipe={(id, dbl, leftoverId) => { setOpenRecipeId(id); setDoublePortionDefault(!!dbl); setLeftoverContext(leftoverId || null); setTab("kookboek"); }}
+            onOpenRecipe={(id, dbl, leftoverId, dagSleutel) => openRecipeVanuit(id, { dag: dagSleutel, leftoverId, dubbel: dbl, naarKookboek: true })}
             onExportCalendar={() => setCalendarOpen(true)}
             onQuickPlan={quickPlanExpiring}
           />
@@ -5538,7 +6302,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
         boxShadow: "0 -4px 14px rgba(0,0,0,0.08)",
         zIndex: 40,
       }}>
-        <TabButton icon={<ChefHat size={18} />} label="Kookboek" active={tab === "kookboek"} onClick={() => { setTab("kookboek"); setOpenRecipeId(null); }} />
+        <TabButton icon={<ChefHat size={18} />} label="Kookboek" active={tab === "kookboek"} onClick={() => { setTab("kookboek"); openRecipeVanuit(null); }} />
         <TabButton icon={<CalendarDays size={18} />} label="Weekmenu" active={tab === "weekmenu"} onClick={() => setTab("weekmenu")} />
         <TabButton icon={<Package size={18} />} label="Voorraad" active={tab === "voorraad"} onClick={() => setTab("voorraad")} badge={lowStockCount || null} badgeTone="warn" />
         <TabButton icon={<ShoppingCart size={18} />} label="Boodschappen" active={tab === "boodschappen"} onClick={() => setTab("boodschappen")} badge={shoppingCount || null} badgeTone="mustard" />
@@ -5627,6 +6391,39 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           onApply={applyShelfScanResults}
           onClose={() => setShelfPhotoOpen(false)}
         />
+      )}
+
+      {listPhotoOpen && (
+        <ListPhotoModal
+          scanning={listScanning}
+          error={listScanError}
+          results={listScanResults}
+          bron={listScanSource}
+          onScan={scanListPhoto}
+          onBeslis={beslisListItem}
+          onWijzig={wijzigListItem}
+          onApply={applyListScanResults}
+          onClose={() => { setListPhotoOpen(false); setListScanResults([]); }}
+        />
+      )}
+
+      {listAfvinkVraag && (
+        <Modal title="Van je boodschappenlijst halen?" onClose={() => bevestigAfvinken(false)}>
+          <p style={{ fontSize: 13, color: C.inkSoft, marginTop: 0 }}>
+            Deze {listAfvinkVraag.items.length} {listAfvinkVraag.items.length === 1 ? "staat" : "staan"} ook nog op je boodschappenlijst. Je hebt ze net in je voorraad gezet — mogen ze van de lijst af?
+          </p>
+          <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, padding: "6px 0", marginBottom: 14, maxHeight: 200, overflowY: "auto" }}>
+            {listAfvinkVraag.items.map((s) => (
+              <div key={s.id} style={{ padding: "5px 12px", fontSize: 13, color: C.ink }}>
+                {s.name} <span style={{ color: C.inkSoft, fontFamily: FONT_MONO, fontSize: 11 }}>{s.amount} {s.unit}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}><PrimaryButton tone="sage" full onClick={() => bevestigAfvinken(true)}><Check size={16} /> Ja, van de lijst af</PrimaryButton></div>
+            <GhostButton onClick={() => bevestigAfvinken(false)}>Laat staan</GhostButton>
+          </div>
+        </Modal>
       )}
 
       {editingRecipe !== null && (
@@ -6277,7 +7074,7 @@ function NutritionLabel({ recipe, isMine, onRecalculate, busy }) {
   );
 }
 
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, onRecalculateNutrition, nutritionBusy }) {
+function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [usedAmounts, setUsedAmounts] = useState({}); // werkelijk gebruikte hoeveelheden bij tekort
   const [leftoverPortions, setLeftoverPortions] = useState(0);
@@ -6436,6 +7233,9 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
   }).filter(Boolean);
 
   const startCook = () => {
+    // Deze avond is al afgeboekt. Nog een keer kan — je kunt hetzelfde twee
+    // keer op een dag maken — maar dan wel bewust, niet per ongeluk.
+    if (dagAlGekooktOp && confirmCook !== "nogmaals") { setConfirmCook("nogmaals"); return; }
     if (shortfallItems.length) {
       const defaults = {};
       shortfallItems.forEach((s) => { defaults[s.item.id] = s.have; });
@@ -6750,25 +7550,88 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
 
       {isMine && !leftoverItem && confirmCook === false && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {/* Al gekookt vandaag? Dan zeggen we dat, in plaats van te blijven
-              vragen of je het gaat maken. Nogmaals koken kan gewoon. */}
-          {vandaagGekookt && (
-            <div style={{
-              display: "flex", alignItems: "center", gap: 8, background: C.cardBg,
-              border: `1.5px solid ${C.sage}`, borderRadius: 14, padding: "10px 12px",
-            }}>
-              <Check size={16} color={C.sage} style={{ flexShrink: 0 }} />
-              <span style={{ fontSize: 13, color: C.ink }}>
-                Je hebt dit vandaag al gekookt. De voorraad is bijgewerkt.
-              </span>
-            </div>
+          {/* Is déze avond uit het weekmenu al afgeboekt, dan is dat het
+              belangrijkste wat je moet weten: anders boek je dezelfde
+              ingrediënten twee keer af. De knop om toch nog eens af te boeken
+              blijft bestaan, maar is niet langer de opvallendste. */}
+          {dagAlGekooktOp ? (
+            <>
+              <div style={{
+                display: "flex", alignItems: "center", gap: 10, background: C.successBg,
+                border: `1.5px solid ${C.sage}`, borderRadius: 14, padding: "11px 12px",
+              }}>
+                <Check size={18} color={C.sage} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 13, color: C.ink, fontWeight: 600 }}>
+                    Afgeboekt op {gekooktOmschrijving(dagAlGekooktOp)}
+                  </span>
+                  <span style={{ display: "block", fontSize: 11.5, color: C.inkSoft }}>
+                    De ingrediënten zijn al van je voorraad af.
+                  </span>
+                </span>
+              </div>
+              {onUndoCook && (
+                <GhostButton full onClick={onUndoCook}>
+                  <X size={15} /> Toch niet gekookt — voorraad terugzetten
+                </GhostButton>
+              )}
+              <button
+                onClick={startCook}
+                style={{ background: "none", border: "none", color: C.inkSoft, fontSize: 12, textDecoration: "underline", cursor: "pointer", padding: "4px 0", fontFamily: FONT_BODY }}
+              >
+                Toch nog een keer afboeken
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Niet vanuit het weekmenu geopend? Dan weten we de avond niet
+                  en vallen we terug op "dit recept, vandaag gekookt". */}
+              {vandaagGekookt && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8, background: C.cardBg,
+                  border: `1.5px solid ${C.sage}`, borderRadius: 14, padding: "10px 12px",
+                }}>
+                  <Check size={16} color={C.sage} style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, color: C.ink }}>
+                    Je hebt dit vandaag al gekookt. De voorraad is bijgewerkt.
+                  </span>
+                </div>
+              )}
+              <GhostButton full onClick={() => setConfirmCook("prep")}>
+                <ShoppingCart size={15} /> Ik ga dit koken — check mijn voorraad
+              </GhostButton>
+              <PrimaryButton tone="sage" full onClick={startCook}>
+                <Flame size={16} /> {vandaagGekookt ? "Nog een keer gekookt" : "Ik heb dit gekookt"}
+              </PrimaryButton>
+            </>
           )}
-          <GhostButton full onClick={() => setConfirmCook("prep")}>
-            <ShoppingCart size={15} /> Ik ga dit koken — check mijn voorraad
-          </GhostButton>
-          <PrimaryButton tone="sage" full onClick={startCook}>
-            <Flame size={16} /> {vandaagGekookt ? "Nog een keer gekookt" : "Ik heb dit gekookt"}
-          </PrimaryButton>
+        </div>
+      )}
+
+      {isMine && confirmCook === "nogmaals" && (
+        <div style={{ background: C.cardBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14, padding: 12 }}>
+          <div style={{ fontSize: 14, color: C.ink, fontWeight: 600, marginBottom: 4 }}>Zeker weten?</div>
+          <p style={{ fontSize: 13, color: C.inkSoft, margin: "0 0 12px", lineHeight: 1.45 }}>
+            Deze avond is al afgeboekt op {gekooktOmschrijving(dagAlGekooktOp)}. Nog een keer afboeken haalt de ingrediënten
+            <strong> opnieuw</strong> van je voorraad. Heb je het echt twee keer gemaakt?
+          </p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <PrimaryButton tone="sage" full onClick={() => {
+                if (shortfallItems.length) {
+                  const defaults = {};
+                  shortfallItems.forEach((sf) => { defaults[sf.item.id] = sf.have; });
+                  setUsedAmounts(defaults);
+                  setConfirmCook("shortfall");
+                } else {
+                  setConfirmCook(true);
+                }
+              }}>
+                <Flame size={16} /> Ja, nog een keer
+              </PrimaryButton>
+            </div>
+            <GhostButton onClick={() => setConfirmCook(false)}>Nee, laat maar</GhostButton>
+          </div>
         </div>
       )}
 
@@ -6980,14 +7843,9 @@ function RecipeForm({ initial, inventoryNames, inventoryItems = [], onImport, on
 
   // Toont voorraaditems die bij het getypte woord passen. Leeg veld -> de
   // items waar je het meest van in huis hebt, zodat de lijst nooit leeg oogt.
-  const suggestionsFor = (text) => {
-    const q = norm(text);
-    const pool = inventoryItems || [];
-    if (!q) return pool.slice(0, 5);
-    const starts = pool.filter((i) => norm(i.name).startsWith(q));
-    const contains = pool.filter((i) => !norm(i.name).startsWith(q) && (norm(i.name).includes(q) || namesMatch(i.name, text)));
-    return [...starts, ...contains].slice(0, 5);
-  };
+  // Zelfde regel als in de voorraad en op de boodschappenlijst — stond hier
+  // eerder apart, met net andere uitkomsten.
+  const suggestionsFor = (text) => voorraadSuggesties(text, inventoryItems, 5);
   const updateStep = (idx, val) => setSteps(steps.map((s, i) => (i === idx ? val : s)));
   const moveStep = (idx, direction) => {
     const target = idx + direction;
@@ -7167,12 +8025,7 @@ function RecipeForm({ initial, inventoryNames, inventoryItems = [], onImport, on
 
 function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras = [], onAddExtra, onRemoveExtra, periodDays, periods, periodIndex, onPeriodChange, onPickDay, onPickCook, onPickAttendees, onSetDoublePortion, onClearDay, onGenerate, onAIGenerate, onPatternGenerate, onDuplicate, onApplyTemplate, onShuffle, onOpenRecipe, onExportCalendar, onQuickPlan }) {
   const findRecipe = (id) => recipes.find((r) => r.id === id);
-  const dayEntry = (day) => {
-    const raw = weekmenu[day];
-    if (!raw) return null;
-    if (typeof raw === "string") return { recipeId: raw, cook: "" };
-    return raw;
-  };
+  const dayEntry = (day) => leesDag(weekmenu, day);
   const [toolsOpen, setToolsOpen] = useState(false);
   const plannedCount = periodDays.filter((d) => dayEntry(d.key)?.recipeId).length;
 
@@ -7276,16 +8129,25 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
                 ) : recipe ? (
                   <>
                     <div
-                      onClick={() => onOpenRecipe(recipe.id, entry?.doublePortion, entry?.leftoverItemId)}
+                      onClick={() => onOpenRecipe(recipe.id, entry?.doublePortion, entry?.leftoverItemId, day.key)}
                       title="Open dit recept"
-                      style={{ width: 30, height: 30, borderRadius: 8, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0, cursor: "pointer" }}
+                      style={{ width: 30, height: 30, borderRadius: 8, background: entry?.cookedAt ? C.successBg : C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0, cursor: "pointer", opacity: entry?.cookedAt ? 0.7 : 1 }}
                     >
                       {recipe.emoji || "🍽️"}
                     </div>
-                    <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => onOpenRecipe(recipe.id, entry?.doublePortion, entry?.leftoverItemId)}>
-                      <div style={{ fontSize: 14, color: C.ink }}>
+                    <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => onOpenRecipe(recipe.id, entry?.doublePortion, entry?.leftoverItemId, day.key)}>
+                      <div style={{ fontSize: 14, color: entry?.cookedAt ? C.inkSoft : C.ink }}>
                         {entry?.leftoverItemId ? "🍱 " : ""}{recipe.name}
                       </div>
+                      {/* Afgeboekt? Dan zie je dat hier, zodat je niet nog
+                          eens op "ik heb dit gekookt" tikt en dezelfde
+                          ingrediënten een tweede keer van je voorraad gaan. */}
+                      {entry?.cookedAt && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, color: C.sage }}>
+                          <Check size={12} style={{ flexShrink: 0 }} />
+                          Gekookt · {gekooktOmschrijving(entry.cookedAt)}
+                        </div>
+                      )}
                       {/* Bij een kliekje erbij zetten hoeveel er is en hoe lang het nog
                           goed is — plan je iets dat eerder bederft, dan zeg ik dat. */}
                       {entry?.leftoverItemId && (() => {
@@ -7606,6 +8468,7 @@ const DIET_TAGS = ["Vegetarisch", "Veganistisch", "Glutenvrij", "Lactosevrij", "
 // staat daarom achter het abonnement.
 const PREMIUM_FEATURES = [
   { key: "photoInventory", label: "Koelkastscanner", description: "Eén foto van een kast of koelkast, automatisch omgezet naar voorraaditems.", icon: "📸" },
+  { key: "photoListImport", label: "Lijstje of bon inlezen", description: "Een foto van je boodschappenlijstje of de kassabon, product voor product in je voorraad gezet.", icon: "🧾" },
   { key: "sousChef", label: "AI-souschef", description: "Stel tijdens het koken vragen zoals \"kan ik room vervangen door melk?\".", icon: "👨‍🍳" },
   { key: "aiImport", label: "Recepten overnemen met AI", description: "Een foto van een kookboekpagina of een link, automatisch omgezet naar een recept.", icon: "✨" },
   { key: "aiWeekmenu", label: "AI-weekmenu", description: "Laat de app een hele week bedenken, afgestemd op jullie voorraad en voorkeuren.", icon: "🪄" },
@@ -8300,6 +9163,247 @@ function ShelfPhotoModal({ scanning, error, results, onScan, onToggleInclude, on
   );
 }
 
+// Boodschappenlijstje of kassabon inlezen.
+//
+// Opzet: eerst alleen de regels waar écht iets te beslissen valt — één voor
+// één, met grote knoppen. Daarna alles in één lijst om na te lopen. Zo hoef je
+// niet twintig keer dezelfde vraag te beantwoorden, maar glipt er ook niets
+// langs waar de app over twijfelde.
+function ListPhotoModal({
+  scanning, error, results, bron,
+  onScan, onBeslis, onWijzig, onApply, onClose,
+}) {
+  const [preview, setPreview] = useState("");
+  const [fase, setFase] = useState("kiezen"); // kiezen | vragen | lijst
+  const [vraagIndex, setVraagIndex] = useState(0);
+  const cameraRef = React.useRef(null);
+  const galleryRef = React.useRef(null);
+
+  // Welke regels verdienen een vraag? Ofwel we weten niet bij welk product het
+  // hoort, ofwel de hoeveelheid is ons eigen voorstel en niet wat er stond.
+  const teVragen = useMemo(
+    () => results.filter((r) => !r.beslist || !r.opFoto),
+    [results]
+  );
+
+  useEffect(() => {
+    if (!scanning && results.length && fase === "kiezen") {
+      setVraagIndex(0);
+      setFase(results.some((r) => !r.beslist || !r.opFoto) ? "vragen" : "lijst");
+    }
+  }, [scanning, results, fase]);
+
+  // Beantwoorde regels verdwijnen uit de vraagrij. Raakt die leeg of lopen we
+  // er voorbij, dan is de ronde klaar — anders staar je naar een leeg scherm.
+  useEffect(() => {
+    if (fase === "vragen" && vraagIndex >= teVragen.length) setFase("lijst");
+  }, [fase, vraagIndex, teVragen.length]);
+
+  const handleFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setPreview(URL.createObjectURL(file));
+    setFase("kiezen");
+    onScan(file);
+  };
+
+  const volgende = () => {
+    if (vraagIndex + 1 < teVragen.length) setVraagIndex(vraagIndex + 1);
+    else setFase("lijst");
+  };
+
+  const includedCount = results.filter((r) => r.include).length;
+  const huidige = teVragen[vraagIndex];
+
+  return (
+    <Modal title={bron === "bon" ? "Kassabon inlezen" : "Boodschappenlijstje inlezen"} onClose={onClose} wide>
+      <input autoComplete="off" ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
+      <input autoComplete="off" ref={galleryRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
+
+      {!preview && (
+        <>
+          <p style={{ fontSize: 13, color: C.inkSoft, marginTop: 0 }}>
+            Maak een foto van je boodschappenlijstje of van de kassabon. Pollepel leest de producten uit en vraagt daarna per product hoeveel je hebt gekocht.
+          </p>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <div style={{ flex: 1 }}><PrimaryButton full onClick={() => galleryRef.current && galleryRef.current.click()}><ImagePlus size={15} /> Foto kiezen</PrimaryButton></div>
+            <div style={{ flex: 1 }}><GhostButton onClick={() => cameraRef.current && cameraRef.current.click()}><Camera size={15} /> Direct camera</GhostButton></div>
+          </div>
+          <p style={{ fontSize: 11, color: C.inkSoft, marginTop: -4 }}>
+            Lukt "Direct camera" niet? Maak de foto eerst met je gewone camera-app en kies 'm daarna via "Foto kiezen". Zorg dat alle regels scherp in beeld staan.
+          </p>
+        </>
+      )}
+
+      {preview && fase === "kiezen" && (
+        <img src={preview} alt="Lijstje" style={{ width: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 14, border: `1.5px solid ${C.borderTint}`, background: C.ceramic, marginBottom: 12 }} />
+      )}
+
+      {scanning && <PollepelLoader tekst="Lijstje lezen…" size={40} />}
+
+      {error && !scanning && (
+        <div style={{ background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 12, padding: "8px 10px", fontSize: 13, color: C.brick, marginBottom: 10 }}>
+          {error}
+        </div>
+      )}
+
+      {/* ---- Vraagronde: één product tegelijk ---- */}
+      {!scanning && fase === "vragen" && huidige && (
+        <ListPhotoVraag
+          regel={huidige}
+          nummer={vraagIndex + 1}
+          totaal={teVragen.length}
+          onBeslis={onBeslis}
+          onWijzig={onWijzig}
+          onVolgende={volgende}
+          onOverslaan={() => { onWijzig(huidige.tempId, { include: false, beslist: true }); volgende(); }}
+          onNaarLijst={() => setFase("lijst")}
+        />
+      )}
+
+      {/* ---- Overzicht ---- */}
+      {!scanning && fase === "lijst" && results.length > 0 && (
+        <>
+          <p style={{ fontSize: 12, color: C.inkSoft }}>
+            {results.length} product{results.length !== 1 ? "en" : ""} gelezen — nog even nalopen:
+          </p>
+          <div style={{ maxHeight: 320, overflowY: "auto", background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 14 }}>
+            {results.map((r, idx) => (
+              <div key={r.tempId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderBottom: idx < results.length - 1 ? `1px solid ${C.ceramic}` : "none" }}>
+                <button
+                  onClick={() => onWijzig(r.tempId, { include: !r.include })}
+                  aria-label={r.include ? "Niet meenemen" : "Wel meenemen"}
+                  style={{ width: 20, height: 20, borderRadius: 4, border: `1.5px solid ${r.include ? C.sage : C.borderTint}`, background: r.include ? C.sage : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+                >
+                  {r.include && <Check size={13} color="#fff" />}
+                </button>
+                <div style={{ flex: 1, minWidth: 0, opacity: r.include ? 1 : 0.45 }}>
+                  <div style={{ fontSize: 13, color: C.ink }}>{r.name}</div>
+                  <div style={{ fontSize: 11, color: C.inkSoft, fontFamily: FONT_MONO }}>
+                    {r.category}{r.matchedId ? " · aanvullen op bestaand" : " · nieuw product"}
+                  </div>
+                </div>
+                <input
+                  autoComplete="off"
+                  type="number"
+                  inputMode="decimal"
+                  value={r.amount}
+                  onChange={(e) => onWijzig(r.tempId, { amount: Math.max(0, Number(e.target.value) || 0) })}
+                  style={{ ...inputStyle, width: 64, padding: "5px 7px", fontSize: 14, textAlign: "right" }}
+                />
+                <select
+                  value={r.unit}
+                  onChange={(e) => onWijzig(r.tempId, { unit: e.target.value })}
+                  style={{ ...inputStyle, width: 82, padding: "5px 7px", fontSize: 13 }}
+                >
+                  {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+          <PrimaryButton tone="sage" full disabled={includedCount === 0} onClick={() => onApply(results)}>
+            <Check size={16} /> {includedCount} product{includedCount !== 1 ? "en" : ""} in voorraad zetten
+          </PrimaryButton>
+        </>
+      )}
+
+      <div style={{ marginTop: 12 }}><GhostButton onClick={onClose}>Sluiten</GhostButton></div>
+    </Modal>
+  );
+}
+
+// Eén vraag uit de vraagronde. Twee dingen kunnen onduidelijk zijn: bij welk
+// voorraadproduct het hoort, en hoeveel het er zijn. Beide staan op één kaart,
+// zodat je per product maar één keer hoeft te kijken.
+function ListPhotoVraag({ regel, nummer, totaal, onBeslis, onWijzig, onVolgende, onOverslaan, onNaarLijst }) {
+  const stap = regel.unit === "g" || regel.unit === "ml" ? 50 : (regel.unit === "kg" || regel.unit === "l" ? 0.5 : 1);
+  const moetKiezen = !regel.beslist && regel.kandidaten.length > 0;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+        <span style={{ fontSize: 11, color: C.inkSoft, fontFamily: FONT_MONO }}>{nummer} van {totaal}</span>
+        <button onClick={onNaarLijst} style={{ background: "none", border: "none", color: C.inkSoft, fontSize: 11, cursor: "pointer", textDecoration: "underline", fontFamily: FONT_BODY }}>
+          Rest overslaan
+        </button>
+      </div>
+
+      <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, padding: 14, marginBottom: 12 }}>
+        <div style={{ fontSize: 18, fontWeight: 600, color: C.ink, marginBottom: 2 }}>{regel.name}</div>
+        <div style={{ fontSize: 11, color: C.inkSoft, fontFamily: FONT_MONO, marginBottom: 12 }}>{regel.category}</div>
+
+        {moetKiezen && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: C.inkSoft, marginBottom: 6 }}>
+              Dit lijkt op iets dat je al hebt. Is het hetzelfde?
+            </div>
+            {regel.kandidaten.map((k) => (
+              <button
+                key={k.id}
+                onClick={() => onBeslis(regel.tempId, k.id)}
+                style={{ display: "block", width: "100%", textAlign: "left", background: C.ceramic, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: "9px 11px", marginBottom: 6, cursor: "pointer", fontFamily: FONT_BODY }}
+              >
+                <div style={{ fontSize: 14, color: C.ink }}>Ja, dit is <strong>{k.name}</strong></div>
+                <div style={{ fontSize: 11, color: C.inkSoft, fontFamily: FONT_MONO }}>
+                  nu {k.current} {k.unit} in huis · {k.reden}
+                </div>
+              </button>
+            ))}
+            <GhostButton full onClick={() => onBeslis(regel.tempId, "nieuw")}>
+              Nee, dit is een nieuw product
+            </GhostButton>
+          </div>
+        )}
+
+        {!moetKiezen && (
+          <>
+            <div style={{ fontSize: 12, fontWeight: 600, color: C.inkSoft, marginBottom: 6 }}>
+              {regel.opFoto ? "Hoeveelheid van de foto — klopt dit?" : "Hoeveel heb je gekocht?"}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <GhostButton onClick={() => onWijzig(regel.tempId, { amount: round2(Math.max(0, regel.amount - stap)) })}>
+                <Minus size={16} />
+              </GhostButton>
+              <input
+                autoComplete="off"
+                type="number"
+                inputMode="decimal"
+                value={regel.amount}
+                onChange={(e) => onWijzig(regel.tempId, { amount: Math.max(0, Number(e.target.value) || 0) })}
+                style={{ ...inputStyle, flex: 1, textAlign: "center", fontSize: 20, fontFamily: FONT_MONO }}
+              />
+              <GhostButton onClick={() => onWijzig(regel.tempId, { amount: round2(regel.amount + stap) })}>
+                <Plus size={16} />
+              </GhostButton>
+              <select
+                value={regel.unit}
+                onChange={(e) => onWijzig(regel.tempId, { unit: e.target.value })}
+                style={{ ...inputStyle, width: 96 }}
+              >
+                {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+            {!regel.opFoto && (
+              <p style={{ fontSize: 11, color: C.inkSoft, margin: "0 0 10px" }}>
+                Er stond geen hoeveelheid op de foto. Dit is een voorstel op basis van een gangbare verpakking.
+              </p>
+            )}
+            {regel.matchedId && (
+              <p style={{ fontSize: 11, color: C.sage, margin: "0 0 10px", fontFamily: FONT_MONO }}>
+                wordt bij je bestaande voorraad opgeteld
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ flex: 1 }}><PrimaryButton tone="sage" full onClick={onVolgende}><Check size={16} /> Klopt</PrimaryButton></div>
+              <GhostButton onClick={onOverslaan}>Hoef ik niet</GhostButton>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TabletModeView({ inventory, onConsume, onRestock, onCreate, onClose }) {
   const inputRef = React.useRef(null);
   const wakeLockRef = React.useRef(null);
@@ -8727,7 +9831,7 @@ function getExpirySuggestions(inventory, recipes) {
     .sort((a, b) => a.daysLeft - b.daysLeft);
 }
 
-function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiumOn, ernstigeBevindingen = 0, onOpenControle, onEdit, onNew, onDelete, onScan, onOpenRecipe, onOpenShelfPhoto }) {
+function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiumOn, ernstigeBevindingen = 0, onOpenControle, onEdit, onNew, onDelete, onScan, onOpenRecipe, onOpenShelfPhoto, onOpenListPhoto }) {
   const cats = categories && categories.length ? categories : CATEGORIES;
   const [zoek, setZoek] = useState("");
   const [teVerwijderen, setTeVerwijderen] = useState(null);
@@ -8751,7 +9855,10 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
   const byCategory = useMemo(() => {
     const map = {};
     cats.forEach((c) => (map[c] = []));
-    gefilterd.forEach((i) => { (map[i.category] || (map[i.category] = [])).push(i); });
+    gefilterd.forEach((i) => {
+      const cat = normalizeCategory(i.category);
+      (map[cat] || (map[cat] = [])).push(i);
+    });
     // Binnen elke categorie alfabetisch, met Nederlandse sortering (é, ij enz.)
     Object.keys(map).forEach((c) => {
       map[c] = [...map[c]].sort((a, b) => (a.name || "").localeCompare(b.name || "", "nl", { sensitivity: "base" }));
@@ -8932,8 +10039,13 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
         <div style={{ flex: 1 }}><PrimaryButton full compact onClick={onNew}><Plus size={15} /> Toevoegen</PrimaryButton></div>
       </div>
       {isPremiumOn("photoInventory") && (
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 8 }}>
           <GhostButton onClick={onOpenShelfPhoto}><ImagePlus size={14} /> Koelkastscanner: hele voorraad bijwerken <Pill tone="auto">premium</Pill></GhostButton>
+        </div>
+      )}
+      {isPremiumOn("photoListImport") && (
+        <div style={{ marginBottom: 16 }}>
+          <GhostButton onClick={onOpenListPhoto}><ImagePlus size={14} /> Lijstje of kassabon inlezen <Pill tone="auto">premium</Pill></GhostButton>
         </div>
       )}
       {[...cats, ...Object.keys(byCategory).filter((c) => !cats.includes(c))].map((cat) => {
@@ -9023,6 +10135,26 @@ function InventoryForm({ initial, consumptionLog = [], inventory = [], nummertBa
 
   const canSave = name.trim() && current !== "" && min !== "" && max !== "";
 
+  // Maak je een nieuw product aan terwijl je er al één hebt dat zo heet? Dan
+  // is dat bijna altijd per ongeluk — zo ontstonden "Citroen" én "citroen".
+  // We blokkeren niets: soms wíl je twee verpakkingen apart bijhouden. We
+  // zeggen het alleen, en bieden aan de naam over te nemen.
+  const alBekend = useMemo(() => {
+    if (initial.id || !name.trim()) return null;
+    const { zeker, kandidaten } = vindVoorraadKandidaten(name, inventory);
+    return zeker || (kandidaten[0] && kandidaten[0].item) || null;
+  }, [initial.id, name, inventory]);
+
+  // Een product uit de eigen voorraad overnemen: naam, eenheid en categorie
+  // in één keer, zodat de schrijfwijze gegarandeerd gelijk is.
+  const neemVoorraadOver = (item) => {
+    setName(item.name);
+    setUnit(item.unit);
+    setCategory(item.category || guessCategory(item.name));
+    setShowSuggestions(false);
+    setSuggestions([]);
+  };
+
   // Live zoeken in Open Food Facts (bevat veel NL-supermarktproducten) — alleen bij nieuw item
   useEffect(() => {
     if (initial.id) return;
@@ -9083,6 +10215,14 @@ function InventoryForm({ initial, consumptionLog = [], inventory = [], nummertBa
             placeholder="Bijv. Rijst — of typ 3+ letters voor productsuggesties"
           />
           <datalist id="common-groceries">{COMMON_GROCERY_ITEMS.map((n) => <option key={n} value={n} />)}</datalist>
+          {showSuggestions && (
+            <VoorraadSuggesties
+              tekst={name}
+              inventory={inventory.filter((i) => i.id !== initial.id)}
+              onKies={neemVoorraadOver}
+              titel="Staat al in je voorraad — tikken neemt naam, eenheid en categorie over"
+            />
+          )}
           {searching && (
             <div style={{ position: "absolute", right: 10, top: 9 }}><PollepelLoader size={16} inline delay={0} /></div>
           )}
@@ -9102,6 +10242,14 @@ function InventoryForm({ initial, consumptionLog = [], inventory = [], nummertBa
           )}
         </div>
       </Field>
+      {alBekend && (
+        <div style={{ background: C.warnBg, border: `1px solid ${C.mustard}`, borderRadius: 12, padding: "9px 11px", marginTop: -8, marginBottom: 12 }}>
+          <div style={{ fontSize: 12, color: C.ink, marginBottom: 6 }}>
+            Je hebt <strong>{alBekend.name}</strong> al in je voorraad ({alBekend.current} {alBekend.unit}). Twee keer hetzelfde product maakt je lijsten rommelig.
+          </div>
+          <GhostButton onClick={() => neemVoorraadOver(alBekend)}>Die naam overnemen</GhostButton>
+        </div>
+      )}
       {!initial.id && searchError && !searching && (
         <p style={{ fontSize: 12, color: C.inkSoft, marginTop: -8, marginBottom: 12 }}>{searchError}</p>
       )}
@@ -9230,7 +10378,7 @@ const stepVlak = {
   get background() { return C.cardBg; },
 };
 
-function BoodschappenView({ list, categories, onToggle, onRemove, onAddManual, onProcess, onChangeAmount, onSetAmount }) {
+function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove, onAddManual, onProcess, onChangeAmount, onSetAmount }) {
   const [editAmountId, setEditAmountId] = useState(null);
   const [editAmountValue, setEditAmountValue] = useState("");
   const cats = categories && categories.length ? categories : CATEGORIES;
@@ -9249,7 +10397,12 @@ function BoodschappenView({ list, categories, onToggle, onRemove, onAddManual, o
   const byCategory = useMemo(() => {
     const map = {};
     cats.forEach((c) => (map[c] = []));
-    list.forEach((item) => { (map[item.category] || (map[item.category] = [])).push(item); });
+    // Oude categorienamen uit eerdere versies vertalen we hier, anders krijg je
+    // twee kopjes die hetzelfde betekenen.
+    list.forEach((item) => {
+      const cat = normalizeCategory(item.category);
+      (map[cat] || (map[cat] = [])).push(item);
+    });
     // Binnen elke categorie: onafgevinkt eerst, zodat wat je nog moet halen bovenaan blijft staan
     Object.keys(map).forEach((c) => {
       map[c] = [...map[c]].sort((a, b) => (a.checked === b.checked ? 0 : a.checked ? 1 : -1));
@@ -9337,7 +10490,7 @@ function BoodschappenView({ list, categories, onToggle, onRemove, onAddManual, o
           <p style={{ fontSize: 13 }}>Boodschappenlijst is leeg. Kook een gerecht of voeg zelf iets toe — die verschijnen hier automatisch als voorraad onder het minimum komt.</p>
         </div>
         {adding ? (
-          <ManualAddForm {...{ newName, setNewName, newAmount, setNewAmount, newUnit, setNewUnit, newCategory, setNewCategory, onCategoryTouched: () => setCategoryTouched(true), submitManual, onCancel: () => setAdding(false) }} />
+          <ManualAddForm {...{ newName, setNewName, newAmount, setNewAmount, newUnit, setNewUnit, newCategory, setNewCategory, onCategoryTouched: () => setCategoryTouched(true), submitManual, onCancel: () => setAdding(false), inventory }} />
         ) : (
           <PrimaryButton onClick={() => setAdding(true)} full><Plus size={16} /> Zelf iets toevoegen</PrimaryButton>
         )}
@@ -10033,6 +11186,19 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
           <Field label="Naam">
             <input autoComplete="off" style={inputStyle} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={lookupLoading ? "Bezig met zoeken…" : "Productnaam"} />
           </Field>
+          {/* Een onbekende barcode hoeft geen onbekend product te zijn: vaak heb
+              je het al staan onder een naam die je zelf hebt getypt. */}
+          <VoorraadSuggesties
+            tekst={newName}
+            inventory={inventory}
+            onKies={(item) => {
+              setNewName(item.name);
+              setNewUnit(item.unit);
+              setNewCategory(normalizeCategory(item.category) || guessCategory(item.name));
+              setCategoryTouched(true);
+            }}
+            titel="Heb je dit al? Tikken neemt de naam over — de barcode komt erbij"
+          />
           <Field label="Categorie">
             <select style={inputStyle} value={newCategory} onChange={(e) => { setNewCategory(e.target.value); setCategoryTouched(true); }}>
               {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -10078,14 +11244,35 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
   );
 }
 
-function ManualAddForm({ newName, setNewName, newAmount, setNewAmount, newUnit, setNewUnit, newCategory, setNewCategory, onCategoryTouched, submitManual, onCancel }) {
+function ManualAddForm({ newName, setNewName, newAmount, setNewAmount, newUnit, setNewUnit, newCategory, setNewCategory, onCategoryTouched, submitManual, onCancel, inventory = [] }) {
+  const [toonSuggesties, setToonSuggesties] = useState(false);
+  // Een boodschap aantikken uit je eigen voorraad zorgt dat de naam exact
+  // gelijk is. Alleen dan telt het afvinken straks bij het juiste product op.
+  const kiesUitVoorraad = (item) => {
+    setNewName(item.name);
+    setNewUnit(item.unit);
+    setNewCategory(normalizeCategory(item.category) || guessCategory(item.name));
+    if (onCategoryTouched) onCategoryTouched();
+    setToonSuggesties(false);
+  };
   return (
     <div style={{ background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: 10, marginTop: 8 }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-        <input autoComplete="off" style={{ ...inputStyle, flex: 1 }} placeholder="Naam" value={newName} onChange={(e) => setNewName(e.target.value)} />
+        <input
+          autoComplete="off"
+          style={{ ...inputStyle, flex: 1 }}
+          placeholder="Naam"
+          value={newName}
+          onFocus={() => setToonSuggesties(true)}
+          onBlur={() => setTimeout(() => setToonSuggesties(false), 150)}
+          onChange={(e) => { setNewName(e.target.value); setToonSuggesties(true); }}
+        />
         <VoiceInputButton onResult={(text) => setNewName(text)} title="Naam inspreken" />
         <input autoComplete="off" type="number" style={{ ...inputStyle, width: 64 }} placeholder="Aantal" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} />
       </div>
+      {toonSuggesties && (
+        <VoorraadSuggesties tekst={newName} inventory={inventory} onKies={kiesUitVoorraad} />
+      )}
       <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
         <select style={{ ...inputStyle, flex: 1 }} value={newUnit} onChange={(e) => setNewUnit(e.target.value)}>
           {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}

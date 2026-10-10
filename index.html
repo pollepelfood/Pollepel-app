@@ -991,17 +991,23 @@
                 recipeId: d.recipe_id, cook: d.cook || "", attendees: d.attendees || [],
                 offNight: !!d.off_night, doublePortion: !!d.double_portion,
                 leftoverItemId: d.leftover_item_id || null,
+                cookedAt: d.cooked_at || null,
               };
             });
             return obj;
           },
           async setDay(datum, entry, table) {
             const t = table || "weekmenu_days";
+            // Alleen het echte weekmenu houdt bij of een avond is afgeboekt.
+            // De sjabloontabel kent die kolom niet, en een sjabloon hoort ook
+            // geen kooksporen te bewaren.
+            const houdtGekooktBij = t === "weekmenu_days";
             const { error } = await supabase.from(t).upsert({
               household_id: householdId, menu_date: datum, recipe_id: entry.recipeId || null,
               cook: entry.cook || null, attendees: entry.attendees || [],
               off_night: !!entry.offNight, double_portion: !!entry.doublePortion,
               leftover_item_id: entry.leftoverItemId || null,
+              ...(houdtGekooktBij ? { cooked_at: entry.cookedAt || null } : {}),
             }, { onConflict: "household_id,menu_date" });
             if (error) throw error;
           },
@@ -1011,6 +1017,7 @@
           },
           async replaceAll(days, table) {
             const t = table || "weekmenu_days";
+            const houdtGekooktBij = t === "weekmenu_days";
             await supabase.from(t).delete().eq("household_id", householdId);
             const rows = Object.entries(days)
               .filter(([, v]) => v && (v.recipeId || v.offNight))
@@ -1019,6 +1026,7 @@
                 cook: v.cook || null, attendees: v.attendees || [],
                 off_night: !!v.offNight, double_portion: !!v.doublePortion,
                 leftover_item_id: v.leftoverItemId || null,
+                ...(houdtGekooktBij ? { cooked_at: v.cookedAt || null } : {}),
               }));
             if (rows.length) await supabase.from(t).insert(rows);
           },
@@ -1047,14 +1055,28 @@
         cookLog: {
           async list(limit) {
             const { data } = await supabase.from("cook_log").select("*").eq("household_id", householdId).order("cooked_at", { ascending: false }).limit(limit || 200);
-            return (data || []).map((e) => ({ id: e.id, recipeId: e.recipe_id, recipeName: e.recipe_name, emoji: e.emoji, servings: e.servings, date: e.cooked_at, leftover: !!e.leftover }));
+            return (data || []).map((e) => ({ id: e.id, recipeId: e.recipe_id, recipeName: e.recipe_name, emoji: e.emoji, servings: e.servings, date: e.cooked_at, leftover: !!e.leftover, dayKey: e.day_key || null, deducted: e.deducted || [] }));
           },
           async add(entry) {
             await supabase.from("cook_log").insert({
               household_id: householdId, recipe_id: entry.recipeId || null, recipe_name: entry.recipeName,
               emoji: entry.emoji, servings: entry.servings, cooked_at: entry.date || new Date().toISOString(),
               leftover: !!entry.leftover,
+              day_key: entry.dayKey || null, deducted: entry.deducted || [],
             });
+          },
+          // Een teruggedraaide kookbeurt hoort ook uit de geschiedenis.
+          // Zoeken op tijdstip en niet op id: de database geeft bij het
+          // toevoegen een eigen id, dus het id dat de app in het geheugen
+          // heeft bestaat daar niet. Het tijdstip is wel van de app en komt
+          // exact overeen.
+          async remove(entry) {
+            if (!entry || !entry.date) return;
+            let q = supabase.from("cook_log").delete()
+              .eq("household_id", householdId)
+              .eq("cooked_at", entry.date);
+            if (entry.recipeId) q = q.eq("recipe_id", entry.recipeId);
+            await q;
           },
         },
 
