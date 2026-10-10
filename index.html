@@ -921,6 +921,7 @@
               onSale: i.on_sale, sourceRecipeId: i.source_recipe_id,
               containers: i.containers || [],
               aliases: i.aliases || [],
+              packSizes: i.pack_sizes || [],
             }));
           },
           async create(item) {
@@ -930,6 +931,7 @@
               expiry_date: item.expiryDate || null, on_sale: !!item.onSale, source_recipe_id: item.sourceRecipeId || null,
               containers: item.containers || [],
               aliases: item.aliases || [],
+              pack_sizes: item.packSizes || [],
             }).select().single();
             if (error) throw error;
             return data.id;
@@ -941,6 +943,7 @@
               on_sale: !!item.onSale, updated_at: new Date().toISOString(),
               containers: item.containers || [],
               aliases: item.aliases || [],
+              pack_sizes: item.packSizes || [],
             }).eq("id", id);
             if (error) throw error;
           },
@@ -954,11 +957,24 @@
           async list() {
             const { data, error } = await supabase.from("shopping_list_items").select("*").eq("household_id", householdId).order("created_at");
             if (error || !data) return [];
-            return data.map((s) => ({ id: s.id, name: s.name, amount: Number(s.amount), unit: s.unit, category: s.category, checked: s.checked, auto: s.auto }));
+            return data.map((s) => ({
+              id: s.id, name: s.name, amount: Number(s.amount), unit: s.unit, category: s.category,
+              checked: s.checked, auto: s.auto,
+              bookedAmount: s.booked_amount == null ? null : Number(s.booked_amount),
+              bookedUnit: s.booked_unit || null,
+              bookedItemId: s.booked_item_id || null,
+              bookedBy: s.booked_by || null,
+              bookedReview: !!s.booked_review,
+            }));
           },
           async create(item) {
             const { data, error } = await supabase.from("shopping_list_items").insert({
               household_id: householdId, name: item.name, amount: item.amount, unit: item.unit, category: item.category, checked: !!item.checked, auto: !!item.auto,
+              booked_amount: item.bookedAmount == null ? null : item.bookedAmount,
+              booked_unit: item.bookedUnit || null,
+              booked_item_id: item.bookedItemId || null,
+              booked_by: item.bookedBy || null,
+              booked_review: !!item.bookedReview,
             }).select().single();
             if (error) throw error;
             return data.id;
@@ -992,6 +1008,8 @@
                 offNight: !!d.off_night, doublePortion: !!d.double_portion,
                 leftoverItemId: d.leftover_item_id || null,
                 cookedAt: d.cooked_at || null,
+                producedLeftoverId: d.produced_leftover_id || null,
+                cookSkipped: !!d.cook_skipped,
               };
             });
             return obj;
@@ -1007,7 +1025,11 @@
               cook: entry.cook || null, attendees: entry.attendees || [],
               off_night: !!entry.offNight, double_portion: !!entry.doublePortion,
               leftover_item_id: entry.leftoverItemId || null,
-              ...(houdtGekooktBij ? { cooked_at: entry.cookedAt || null } : {}),
+              ...(houdtGekooktBij ? {
+                cooked_at: entry.cookedAt || null,
+                produced_leftover_id: entry.producedLeftoverId || null,
+                cook_skipped: !!entry.cookSkipped,
+              } : {}),
             }, { onConflict: "household_id,menu_date" });
             if (error) throw error;
           },
@@ -1026,7 +1048,11 @@
                 cook: v.cook || null, attendees: v.attendees || [],
                 off_night: !!v.offNight, double_portion: !!v.doublePortion,
                 leftover_item_id: v.leftoverItemId || null,
-                ...(houdtGekooktBij ? { cooked_at: v.cookedAt || null } : {}),
+                ...(houdtGekooktBij ? {
+                  cooked_at: v.cookedAt || null,
+                  produced_leftover_id: v.producedLeftoverId || null,
+                  cook_skipped: !!v.cookSkipped,
+                } : {}),
               }));
             if (rows.length) await supabase.from(t).insert(rows);
           },
