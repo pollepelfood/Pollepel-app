@@ -1043,8 +1043,19 @@
             const t = table || "weekmenu_days";
             const houdtGekooktBij = t === "weekmenu_days";
             await supabase.from(t).delete().eq("household_id", householdId);
+            // Niet alleen op recipeId of offNight filteren: een dag waarop
+            // alleen al bekend is wie kookt, wie mee-eet of welk kliekje er
+            // gepland staat hoort ook bewaard te worden. Die filter gooide dat
+            // stil weg, waardoor de naam even in beeld stond en bij de
+            // volgende verversing verdwenen was.
+            const heeftInhoud = (v) => !!(v && (
+              v.recipeId || v.offNight || v.leftoverItemId ||
+              (v.cook && String(v.cook).trim()) ||
+              (Array.isArray(v.attendees) && v.attendees.length) ||
+              v.doublePortion || v.cookedAt || v.producedLeftoverId || v.cookSkipped
+            ));
             const rows = Object.entries(days)
-              .filter(([, v]) => v && (v.recipeId || v.offNight))
+              .filter(([, v]) => heeftInhoud(v))
               .map(([datum, v]) => ({
                 household_id: householdId, menu_date: datum, recipe_id: v.recipeId || null,
                 cook: v.cook || null, attendees: v.attendees || [],
@@ -1179,9 +1190,70 @@
       window.householdAPI = {
         householdId,
         async getInfo() {
-          const { data, error } = await supabase.from("households").select("name, invite_code, calendar_token, premium_until, premium_source").eq("id", householdId).maybeSingle();
+          const { data, error } = await supabase.from("households")
+            .select("name, invite_code, calendar_token, premium_until, premium_source, data_consent_at, data_consent_version, data_consent_withdrawn_at, region_pc2, adults, children")
+            .eq("id", householdId).maybeSingle();
           if (error || !data) throw new Error("kon huishouden niet ophalen");
           return data;
+        },
+
+        // ---------- Toestemming en geanonimiseerd logboek ----------
+        //
+        // Het logboek kent het huishouden niet. Er wordt eerst een pseudoniem
+        // opgehaald of aangemaakt, en alleen dat pseudoniem gaat mee de regels
+        // in. De database bewaakt zelf dat er niets geschreven wordt zonder
+        // geldige toestemming — dat mag niet alleen van de app afhangen.
+        async setDataConsent(aan, versie) {
+          const velden = aan
+            ? { data_consent_at: new Date().toISOString(), data_consent_version: versie, data_consent_withdrawn_at: null }
+            : { data_consent_withdrawn_at: new Date().toISOString() };
+          const { error } = await supabase.from("households").update(velden).eq("id", householdId);
+          if (error) throw error;
+        },
+
+        async setHouseholdFacts({ regionPc2, adults, children }) {
+          const velden = {};
+          if (regionPc2 !== undefined) velden.region_pc2 = regionPc2 || null;
+          if (adults !== undefined) velden.adults = adults == null ? null : Number(adults);
+          if (children !== undefined) velden.children = children == null ? null : Number(children);
+          if (!Object.keys(velden).length) return;
+          const { error } = await supabase.from("households").update(velden).eq("id", householdId);
+          if (error) throw error;
+        },
+
+        async getAnalyticsKey() {
+          const { data } = await supabase.from("analytics_keys").select("analytics_key").eq("household_id", householdId).maybeSingle();
+          if (data && data.analytics_key) return data.analytics_key;
+          const { data: nieuw, error } = await supabase.from("analytics_keys")
+            .insert({ household_id: householdId }).select("analytics_key").single();
+          if (error) return null;
+          return nieuw ? nieuw.analytics_key : null;
+        },
+
+        async logEvents(rows) {
+          if (!rows || !rows.length) return;
+          const key = await this.getAnalyticsKey();
+          if (!key) return;
+          // Mislukt dit, dan gebeurt er verder niets. Een logboek mag nooit
+          // in de weg zitten van waar de gebruiker mee bezig is.
+          await supabase.from("analytics_events").insert(
+            rows.map((r) => ({
+              analytics_key: key,
+              event: r.event,
+              product: r.product || null,
+              amount: r.amount == null ? null : r.amount,
+              unit: r.unit || null,
+              eters: r.eters == null ? null : r.eters,
+              meta: r.meta || {},
+            }))
+          );
+        },
+
+        async myEvents(limit) {
+          const { data } = await supabase.from("analytics_events")
+            .select("occurred_at, event, product, amount, unit, eters, meta")
+            .order("occurred_at", { ascending: false }).limit(limit || 50);
+          return data || [];
         },
         async updateName(name) {
           const { error } = await supabase.from("households").update({ name }).eq("id", householdId);

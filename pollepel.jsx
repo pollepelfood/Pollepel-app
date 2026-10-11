@@ -7,6 +7,7 @@ import {
   Sandwich, ClipboardList, ImagePlus, Wand2, Settings, Copy, LogOut,
   Printer, UserPlus, Shuffle, WifiOff, CalendarClock, StickyNote, Sun,
   Moon, ChevronUp, ChevronDown, ChevronRight, Tag, Mic, Timer as TimerIcon, SlidersHorizontal,
+  BarChart3,
 } from "lucide-react";
 
 /* ---------------------------------------------------------------- */
@@ -257,7 +258,12 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v76 · 11 oktober 2026";
+const APP_VERSIE = "v79 · 11 oktober 2026";
+
+// Versie van de toestemmingstekst. Verandert de tekst wezenlijk, dan gaat dit
+// omhoog en moet er opnieuw gevraagd worden — oude toestemming dekt een nieuwe
+// belofte niet.
+const TOESTEMMING_VERSIE = 1;
 
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
@@ -1237,7 +1243,56 @@ function VoiceInputButton({ onResult, title, size = 15 }) {
   );
 }
 
-function resizeImageFile(file, maxDim = 1024, quality = 0.75) {
+// Hoeveel verzoektekst de AI-tussenlaag aanneemt. De server weigert alles
+// daarboven met een 413. Base64 maakt een afbeelding een derde groter, dus een
+// foto van 700 KB wordt hier bijna een megabyte aan tekst.
+const AI_VERZOEK_BUDGET = 900 * 1024;
+
+// Trappetje van grof naar fijn. Eerst zo groot als mogelijk — bij een
+// kookboekpagina is scherpte het verschil tussen "8 ingrediënten" en
+// "onleesbaar" — en alleen kleiner maken zolang het niet past.
+const FOTO_TRAPPEN = [
+  [1600, 0.82], [1400, 0.78], [1200, 0.72], [1024, 0.68], [900, 0.58], [768, 0.48],
+];
+
+// Is er werkelijk iets getekend? Een rasterje beeldpunten aftasten en kijken
+// of er überhaupt verschil in zit. Een egaal vlak betekent dat het tekenen
+// mislukte; een foto van een pagina heeft altijd variatie.
+//
+// Lukt het uitlezen niet (dat kan bij een afbeelding van een ander domein),
+// dan gaan we ervan uit dat het goed is: liever een foto doorlaten die
+// misschien leeg is, dan een goede foto weigeren.
+function canvasIsLeeg(ctx, width, height) {
+  try {
+    const stappen = 8;
+    let eerste = null;
+    for (let gx = 0; gx < stappen; gx++) {
+      for (let gy = 0; gy < stappen; gy++) {
+        const x = Math.min(width - 1, Math.floor((gx + 0.5) * width / stappen));
+        const y = Math.min(height - 1, Math.floor((gy + 0.5) * height / stappen));
+        const d = ctx.getImageData(x, y, 1, 1).data;
+        if (eerste === null) { eerste = d; continue; }
+        if (Math.abs(d[0] - eerste[0]) > 6 || Math.abs(d[1] - eerste[1]) > 6 || Math.abs(d[2] - eerste[2]) > 6) {
+          return false;
+        }
+      }
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Verkleint een foto tot iets dat de AI-tussenlaag wél aanneemt.
+//
+// Dit stond eerder vast op 1024 px bij kwaliteit 0.75. Een boodschappenlijstje
+// op wit papier werd daarmee zo'n 36 KB en ging altijd goed. Een kookboekpagina
+// — een scherpe foodfoto met tekst eronder — comprimeert veel slechter en
+// kwam op 160 tot 205 KB uit. Boven de serverlimiet werd dat een 413, en dan
+// kreeg je "deze foto is te groot" met het verzoek een andere foto te maken.
+// Maar het is niet aan jou om te raden hoeveel detail de server aankan: de app
+// weet precies hoe groot het verzoek wordt en kan dus zelf inschikken.
+function resizeImageFile(file, budget = AI_VERZOEK_BUDGET) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("lezen mislukt"));
@@ -1245,19 +1300,44 @@ function resizeImageFile(file, maxDim = 1024, quality = 0.75) {
       const img = new Image();
       img.onerror = () => reject(new Error("afbeelding ongeldig"));
       img.onload = () => {
-        let { width, height } = img;
-        if (width > maxDim || height > maxDim) {
-          const scale = maxDim / Math.max(width, height);
-          width = Math.round(width * scale);
-          height = Math.round(height * scale);
-        }
+        if (!img.width || !img.height) { reject(new Error("afbeelding ongeldig")); return; }
         const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
         const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL("image/jpeg", quality);
-        resolve({ base64: dataUrl.split(",")[1], mediaType: "image/jpeg" });
+        if (!ctx) { reject(new Error("canvas niet beschikbaar")); return; }
+
+        let laatste = null;
+        let eersteTrap = true;
+        for (const [maxDim, quality] of FOTO_TRAPPEN) {
+          let width = img.width, height = img.height;
+          if (width > maxDim || height > maxDim) {
+            const scale = maxDim / Math.max(width, height);
+            width = Math.max(1, Math.round(width * scale));
+            height = Math.max(1, Math.round(height * scale));
+          }
+          canvas.width = width;
+          canvas.height = height;
+          // Wit eronder: een PNG met doorzichtige delen wordt in JPEG anders
+          // zwart, en zwart op zwarte tekst leest niemand meer.
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          // Safari legt een grens op de oppervlakte van een canvas. Zit je
+          // erboven, dan tekent drawImage niets en houd je een egaal vlak over
+          // dat qua bestandsgrootte volkomen normaal lijkt — een leeg canvas
+          // van 1600 bij 1200 is zo'n 40 KB. Op de grootte kun je het dus niet
+          // zien; je moet in de beeldpunten kijken.
+          if (eersteTrap && canvasIsLeeg(ctx, width, height)) { reject(new Error("leeg canvas")); return; }
+          eersteTrap = false;
+
+          const base64 = canvas.toDataURL("image/jpeg", quality).split(",")[1] || "";
+          if (!base64) continue;
+          laatste = { base64, mediaType: "image/jpeg", bytes: base64.length, maxDim, quality };
+          if (base64.length <= budget) { resolve(laatste); return; }
+        }
+        // Zelfs de kleinste trap past niet. Dan maar opsturen en de server laten
+        // beslissen: die zegt het eerlijk als het te veel is.
+        if (laatste) { resolve(laatste); return; }
+        reject(new Error("afbeelding ongeldig"));
       };
       img.src = reader.result;
     };
@@ -1299,6 +1379,24 @@ function leesDag(weekmenu, day) {
   if (!raw) return null;
   if (typeof raw === "string") return { recipeId: raw, cook: "" };
   return raw;
+}
+
+// Heeft deze weekmenu-dag iets dat het bewaren waard is?
+//
+// Dit stond eerder als `v.recipeId || v.offNight` in de opslagfunctie, en dat
+// gooide stilletjes weg wie er kookte, wie mee-at en welk kliekje er gepland
+// stond zolang er nog geen gerecht gekozen was. Je zag de naam even staan en
+// bij de volgende verversing was hij weg. Eén plek, zodat de opslag en het
+// opruimen nooit meer van elkaar kunnen afwijken.
+function dagHeeftInhoud(entry) {
+  const d = (entry && typeof entry === "string") ? { recipeId: entry } : entry;
+  if (!d) return false;
+  return !!(
+    d.recipeId || d.offNight || d.leftoverItemId ||
+    (d.cook && String(d.cook).trim()) ||
+    (Array.isArray(d.attendees) && d.attendees.length) ||
+    d.doublePortion || d.cookedAt || d.producedLeftoverId || d.cookSkipped
+  );
 }
 
 function addToStock(item, erbij) {
@@ -3564,6 +3662,8 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   // recept kan twee keer in de week staan, en je kookt niet altijd op de dag
   // waarop het gepland stond.
   const [cookDayContext, setCookDayContext] = useState(null);
+  // Moet het receptscherm meteen de afboekvraag tonen zodra het opent?
+  const [autoStartKoken, setAutoStartKoken] = useState(false);
   // Welke afgeboekte avond wacht nog op de vraag "is er iets over?".
   // Bevat de dagsleutel; het scherm zelf is hetzelfde als tijdens het koken.
   const [kliekjeVraagDag, setKliekjeVraagDag] = useState(null);
@@ -3623,11 +3723,15 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   //
   // Staat bewust ná de staat die hij gebruikt: een helper boven zijn eigen
   // useState-regels liet de app eerder bij het openen al crashen.
-  const openRecipeVanuit = (id, { dag = null, leftoverId = null, dubbel = false, naarKookboek = false } = {}) => {
+  const openRecipeVanuit = (id, { dag = null, leftoverId = null, dubbel = false, naarKookboek = false, startKoken = false } = {}) => {
     setOpenRecipeId(id);
     setCookDayContext(id ? dag : null);
     setLeftoverContext(id ? leftoverId : null);
     setDoublePortionDefault(!!dubbel);
+    // "Ja, afboeken" bij een vergeten dag moet ook echt afboeken. Alleen het
+    // recept openen was te weinig: de kookknop staat ver naar beneden, dus
+    // vanaf het scherm gezien gebeurde er niets.
+    setAutoStartKoken(id ? !!startKoken : false);
     if (naarKookboek) setTab("kookboek");
   };
 
@@ -3907,7 +4011,35 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
     }
     if (key === "weekmenu" || key === "weekmenuTemplate") {
       const table = key === "weekmenu" ? "weekmenu_days" : "weekmenu_template_days";
-      await window.dataAPI.weekmenu.replaceAll(value, table);
+
+      // Een sjabloon is een momentopname die je in één keer vastlegt; daar mag
+      // alles tegelijk vervangen worden.
+      if (key === "weekmenuTemplate") {
+        await window.dataAPI.weekmenu.replaceAll(value, table);
+        return;
+      }
+
+      // Het echte weekmenu gaat per dag. Eerder wiste elke wijziging — ook het
+      // kiezen van wie kookt — de hele tabel om hem daarna opnieuw te vullen.
+      // Viel de verbinding weg tussen het wissen en het vullen, dan was je hele
+      // week kwijt, en de terugrol in persist() zet alleen het scherm terug,
+      // niet de database. Nu raken we alleen de dagen aan die veranderd zijn.
+      const vorige = weekmenu || {};
+      const nieuw = value || {};
+      const alleDagen = new Set([...Object.keys(vorige), ...Object.keys(nieuw)]);
+      for (const dag of alleDagen) {
+        const was = leesDag(vorige, dag);
+        const wordt = leesDag(nieuw, dag);
+        const hadInhoud = dagHeeftInhoud(was);
+        const heeftInhoud = dagHeeftInhoud(wordt);
+        if (!heeftInhoud) {
+          if (hadInhoud) await window.dataAPI.weekmenu.clearDay(dag, table);
+          continue;
+        }
+        if (!hadInhoud || JSON.stringify(was) !== JSON.stringify(wordt)) {
+          await window.dataAPI.weekmenu.setDay(dag, wordt, table);
+        }
+      }
       return;
     }
     // Onbekende sleutel (bijv. legacy): stil negeren, niets in de nieuwe schema-opzet voor nodig
@@ -4245,7 +4377,7 @@ Regels:
     const detailSuffix = detail ? ` [Detail: ${detail.slice(0, 200)}]` : "";
     if (code && code.startsWith("serverfout-")) {
       const status = Number(code.split("-")[1]);
-      if (status === 413) return "Deze foto is te groot om te versturen. Probeer een foto met minder detail, of een kleiner deel van de pagina." + detailSuffix;
+      if (status === 413) return "Deze foto bleef te groot, ook na verkleinen. Maak een foto van een kleiner deel van de pagina." + detailSuffix;
       if (status === 429) return "De AI heeft het op dit moment te druk. Wacht een minuutje en probeer het opnieuw." + detailSuffix;
       if (status === 401) return "Je bent niet (meer) ingelogd. Log opnieuw in en probeer het nogmaals." + detailSuffix;
       if (status === 403) return "Geen toegang tot de AI-dienst op dit moment. Probeer het later opnieuw." + detailSuffix;
@@ -4253,7 +4385,9 @@ Regels:
       return `De AI wees dit verzoek af (foutcode ${status}).${detailSuffix}`;
     }
     const messages = {
-      resize: "Kon deze foto niet verwerken op je toestel. Probeer een andere foto, of gebruik 'Uploaden' in plaats van 'Foto maken'.",
+      resize: "Kon deze foto niet verwerken op je toestel. Dat gebeurt soms bij hele grote foto's — maak er een schermafbeelding van, of kies een andere foto.",
+      "leeg canvas": "Je toestel kon deze foto niet verwerken; hij is vermoedelijk te groot. Maak er een schermafbeelding van en kies die, dan werkt het wel.",
+      "afbeelding ongeldig": "Dit bestand kon niet als afbeelding gelezen worden. Kies een gewone foto (JPEG of PNG).",
       netwerk: "Kon geen verbinding maken met de AI. Controleer je internetverbinding en probeer het opnieuw." + detailSuffix,
       json: "De AI-respons was te lang en brak af. Probeer het nog eens, of maak een foto van een kleiner deel.",
       vorm: "De AI gaf een onverwacht antwoord terug. Probeer het nog eens, of typ het over in het tekstveld." + detailSuffix,
@@ -4272,7 +4406,7 @@ Regels:
         ({ base64, mediaType } = await resizeImageFile(file));
       } catch (e) {
         console.error("Foto verwerken mislukt:", e);
-        throw new Error("resize");
+        throw new Error(e && e.message ? e.message : "resize");
       }
       let raw;
       try {
@@ -4335,7 +4469,7 @@ Regels:
         ({ base64, mediaType } = await resizeImageFile(file));
       } catch (e) {
         console.error("Kastfoto verwerken mislukt:", e);
-        throw new Error("resize");
+        throw new Error(e && e.message ? e.message : "resize");
       }
       let raw;
       try {
@@ -4457,7 +4591,7 @@ Maximaal 30 producten. Staat er niets bruikbaars op de foto, antwoord dan met {"
         ({ base64, mediaType } = await resizeImageFile(file));
       } catch (e) {
         console.error("Foto van lijstje verwerken mislukt:", e);
-        throw new Error("resize");
+        throw new Error(e && e.message ? e.message : "resize");
       }
       let raw;
       try {
@@ -5019,6 +5153,34 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     if (dagSleutel && weekmenu[dagSleutel]) {
       persist("weekmenu", { ...weekmenu, [dagSleutel]: { ...leesDag(weekmenu, dagSleutel), cookedAt: nu } }, setWeekmenu);
     }
+
+    // Geanonimiseerd: één regel "er is gekookt", en per product wat eraf ging.
+    //
+    // De receptnaam gaat alleen mee als het recept uit het gedeelde kookboek
+    // komt. Een zelf getypte naam kan alles zijn — "Oma's soep", de naam van
+    // een kind — en hoort niet in een bestand dat ooit buiten dit huis komt.
+    // Wat werkelijk iets zegt zijn de ingrediënten, en die gaan wél mee.
+    logAnalytics([
+      {
+        event: "gekookt",
+        product: recipe.community ? recipe.name : null,
+        eters: Math.round((recipe.servings || 0) * scale) || null,
+        meta: {
+          dagdeel: nu.slice(11, 13),
+          weekdag: new Date(nu).getDay(),
+          gepland: !!dagSleutel,
+          ingredienten: (recipe.ingredients || []).length,
+          afgeboekt: afgeboekt.length,
+        },
+      },
+      ...afgeboekt.map((d) => ({
+        event: "verbruikt",
+        product: d.name,
+        amount: d.amount,
+        unit: d.unit,
+        eters: Math.round((recipe.servings || 0) * scale) || null,
+      })),
+    ]);
   };
 
   // Een kookbeurt terugdraaien. Zet de afgeboekte hoeveelheden exact terug —
@@ -5129,6 +5291,9 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     if (!dag) return;
     persist("weekmenu", { ...weekmenu, [dagSleutel]: { ...dag, cookSkipped: true } }, setWeekmenu);
     showToast("Genoteerd dat er die dag niet gekookt is. Je voorraad blijft zoals hij was.");
+    // Hoe vaak een gepland gerecht niet doorgaat is op zichzelf iets waard:
+    // het zegt iets over hoe realistisch weekplanningen zijn.
+    logAnalytics([{ event: "niet_gekookt", product: null, meta: { weekdag: new Date().getDay() } }]);
   };
 
   /* ---------- Voorkeuren (donkere modus, categorie-volgorde, dieetwensen) ---------- */
@@ -5161,6 +5326,107 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   };
 
   const heeftPremium = !!(household && household.premium_until && new Date(household.premium_until) > new Date());
+
+  /* ---------- Geanonimiseerd gebruikslogboek ---------- */
+  //
+  // Doel: over een jaar kunnen laten zien wat Nederland kookt, koopt en
+  // weggooit — zonder dat er ooit iets over een persoon te herleiden is.
+  //
+  // Drie harde grenzen:
+  //   * standaard uit, alleen aan te zetten in Instellingen
+  //   * nooit namen, dieetwensen, afkeuren of vrije tekst
+  //   * mislukt het schrijven, dan gebeurt er verder niets — een logboek mag
+  //     nooit in de weg zitten van waar iemand mee bezig is
+  //
+  // De database bewaakt zelf dat er niets geschreven wordt zonder geldige
+  // toestemming. Deze controle hier is de eerste poort, niet de enige.
+  const [dataConsent, setDataConsent] = useState(
+    () => !!(household && household.data_consent_at && !household.data_consent_withdrawn_at)
+  );
+
+  // Een kliekje heet in de voorraad "Vriezer: Boerenkoolstamppot" of
+  // "Restje Lasagne". Daar zit een receptnaam in, en die kan van alles zijn —
+  // "Oma's soep" bijvoorbeeld. Zulke namen gaan er niet in.
+  const schoonProduct = (naam) => {
+    const n = String(naam || "").trim();
+    if (!n) return null;
+    if (/^(vriezer\s*:|restje\s)/i.test(n)) return "kliekje";
+    return n.slice(0, 60);
+  };
+
+  const logAnalytics = (rows) => {
+    if (!dataConsent) return;
+    if (!hasDataAPI || !window.householdAPI || !window.householdAPI.logEvents) return;
+    const schoon = (rows || []).filter(Boolean).map((r) => ({
+      ...r,
+      product: r.product === undefined ? null : schoonProduct(r.product),
+    }));
+    if (!schoon.length) return;
+    window.householdAPI.logEvents(schoon).catch((e) => console.warn("logboek overgeslagen:", e && e.message));
+  };
+
+  // Regio en samenstelling. Blijven in de app bewaard nadat ze zijn opgeslagen:
+  // de household-gegevens komen van buiten AppInner en verversen niet, dus
+  // zonder dit zouden de velden bij heropenen weer leeg lijken — alsof het
+  // bewaren niet gelukt was.
+  const [huishoudFeiten, setHuishoudFeiten] = useState(() => ({
+    regionPc2: (household && household.region_pc2) || "",
+    adults: household && household.adults != null ? household.adults : null,
+    children: household && household.children != null ? household.children : null,
+  }));
+
+  // De huishoudgegevens worden na het opstarten opgehaald, dus bij de eerste
+  // render is household nog leeg. Zonder deze twee regels zou de toestemming
+  // van een huishouden dat hem al had gegeven altijd op "uit" blijven staan —
+  // en dus nooit iets loggen, zonder dat iemand dat zag.
+  //
+  // De afhankelijkheden zijn bewust de drie velden zelf en niet het hele
+  // household-object: dat wordt bij elke naamswijziging opnieuw aangemaakt, en
+  // dan zou deze regel een schakelaar die je net omzette weer terugzetten.
+  const consentUit = household && household.data_consent_at;
+  const consentAf = household && household.data_consent_withdrawn_at;
+  useEffect(() => {
+    setDataConsent(!!(consentUit && !consentAf));
+  }, [consentUit, consentAf]);
+
+  const feitPc = household && household.region_pc2;
+  const feitAdults = household && household.adults;
+  const feitChildren = household && household.children;
+  useEffect(() => {
+    setHuishoudFeiten({
+      regionPc2: feitPc || "",
+      adults: feitAdults == null ? null : feitAdults,
+      children: feitChildren == null ? null : feitChildren,
+    });
+  }, [feitPc, feitAdults, feitChildren]);
+
+  const zetHuishoudFeiten = async (feiten) => {
+    if (!window.householdAPI || !window.householdAPI.setHouseholdFacts) return;
+    try {
+      await window.householdAPI.setHouseholdFacts(feiten);
+      setHuishoudFeiten({
+        regionPc2: feiten.regionPc2 || "",
+        adults: feiten.adults,
+        children: feiten.children,
+      });
+    } catch (e) {
+      showToast("Dat lukte niet. Probeer het zo nog eens.");
+      throw e;
+    }
+  };
+
+  const zetDataConsent = async (aan) => {
+    if (!window.householdAPI || !window.householdAPI.setDataConsent) return;
+    try {
+      await window.householdAPI.setDataConsent(aan, TOESTEMMING_VERSIE);
+      setDataConsent(aan);
+      showToast(aan
+        ? "Dank je. Vanaf nu telt je gebruik geanonimiseerd mee. Je kunt dit altijd weer uitzetten."
+        : "Uitgezet. Er wordt niets meer vastgelegd, en wat er stond telt nergens meer in mee.");
+    } catch (e) {
+      showToast("Dat lukte niet. Probeer het zo nog eens.");
+    }
+  };
 
   const isPremiumOn = (key) => {
     // Gratis functies staan altijd aan: het is rekenwerk op je eigen gegevens.
@@ -5230,6 +5496,13 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   // pas de volgende ochtend vast, dan is het nog twee dagen goed en niet drie.
   // Geeft het aangemaakte voorraaditem terug, zodat de weekmenu-dag kan
   // onthouden welk kliekje die avond heeft opgeleverd.
+  // Welke bakjenummers zou je nú pakken voor zoveel porties? Puur om het te
+  // kunnen laten zien vóórdat er iets is opgeslagen; kiest niets vast.
+  const bakjesVoor = useCallback((aantal) => {
+    if (!preferences.containerNumbering) return [];
+    return kiesVrijeBakjes(inventory, aantal, Number(preferences.containerCount) || 40);
+  }, [inventory, preferences.containerNumbering, preferences.containerCount]);
+
   const addLeftover = async (recipe, portions, bewaarplek = "koelkast", gekooktOp = null) => {
     if (!portions || portions <= 0) return null;
     const naarVriezer = bewaarplek === "vriezer";
@@ -5271,24 +5544,29 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     // gaf er steeds een dag te veel.
     const verlopen = startOfDay(expiry) < startOfDay(new Date());
 
+    // Het bakjenummer gaat vóór de rest. Eerder was dit een if/else-ketting
+    // met `verlopen` bovenaan, en dan kreeg je bij een te oud kliekje alleen de
+    // waarschuwing te zien — terwijl er wél een nummer was toegekend dat op het
+    // bakje geschreven moest worden. Dat nummer vond je daarna nergens terug op
+    // het moment dat je het nodig had.
+    const stukken = [];
+    if (nummertOp && bakjes.length) {
+      stukken.push(bakjes.length < portions
+        ? `Pak bakje ${bakjesTekst(bakjes)} — niet genoeg vrije nummers voor alle ${portions} porties.`
+        : `Pak bakje ${bakjesTekst(bakjes)} — ${recipe.name}.`);
+    } else if (nummertOp) {
+      stukken.push("Alle genummerde bakjes zijn in gebruik, dus dit is niet genummerd.");
+    }
+
     if (verlopen) {
-      showToast(`${portions} portie${portions > 1 ? "s" : ""} bewaard, maar let op: gerekend vanaf het koken is dit al over de houdbaarheidsdatum.`);
-    } else if (nummertOp && bakjes.length) {
-      showToast(
-        bakjes.length < portions
-          ? `Pak bakje ${bakjesTekst(bakjes)}. Je hebt niet genoeg vrije nummers voor alle porties.`
-          : `Pak bakje ${bakjesTekst(bakjes)} — ${recipe.name}, houdbaar tot over 3 maanden.`
-      );
-    } else if (nummertOp && !bakjes.length) {
-      showToast("Alle genummerde bakjes zijn in gebruik. Er is niets genummerd.");
+      stukken.push("Let op: gerekend vanaf het koken is dit al over de houdbaarheidsdatum.");
+    } else if (naarVriezer) {
+      stukken.push(`${portions} portie${portions > 1 ? "s" : ""} in de vriezer (houdbaar tot over 3 maanden).`);
     } else {
       const restDagen = Math.max(0, Math.round((startOfDay(expiry) - startOfDay(new Date())) / 86400000));
-      showToast(
-        naarVriezer
-          ? `${portions} portie${portions > 1 ? "s" : ""} in de vriezer gezet (houdbaar tot over 3 maanden).`
-          : `${portions} portie${portions > 1 ? "s" : ""} in de koelkast gezet (nog ${restDagen} ${restDagen === 1 ? "dag" : "dagen"} houdbaar).`
-      );
+      stukken.push(`${portions} portie${portions > 1 ? "s" : ""} in de koelkast (nog ${restDagen} ${restDagen === 1 ? "dag" : "dagen"} houdbaar).`);
     }
+    showToast(stukken.join(" "));
     return newItem;
   };
 
@@ -5396,7 +5674,25 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   };
 
   const deleteInventoryItem = (id) => {
+    const weg = inventory.find((i) => i.id === id);
     persist("inventory", inventory.filter((i) => i.id !== id), setInventory);
+
+    // Weggooien is niet hetzelfde als opgebruiken. We kunnen het verschil
+    // alleen zien bij iets met een houdbaarheidsdatum die al verstreken is en
+    // waar nog wat van over was. Bij de rest weten we het niet, en dan loggen
+    // we het ook niet — een gok is geen gegeven.
+    if (weg && weg.expiry && Number(weg.current || 0) > 0) {
+      const over = startOfDay(new Date(weg.expiry)) < startOfDay(new Date());
+      if (over) {
+        logAnalytics([{
+          event: "verlopen",
+          product: weg.name,
+          amount: Number(weg.current) || null,
+          unit: weg.unit || null,
+          meta: { kliekje: !!weg.sourceRecipeId, dagenOver: Math.round((startOfDay(new Date()) - startOfDay(new Date(weg.expiry))) / 86400000) },
+        }]);
+      }
+    }
   };
 
   /* ---------- Boodschappenlijst ---------- */
@@ -5470,6 +5766,14 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       bookedItemId: geboekt.itemId, bookedBy: currentUserName || null,
       bookedReview: onzeker || geboekt.amount === null || !!geboekt.nieuw,
     } : s)), setShoppingList);
+
+    logAnalytics([{
+      event: "gekocht",
+      product: regel.name,
+      amount: geboekt.amount != null ? geboekt.amount : (Number(hoeveelheid) || null),
+      unit: geboekt.unit || eenheid || null,
+      meta: { nieuwProduct: !!geboekt.nieuw, vanRecept: !!regel.auto, weekdag: new Date().getDay() },
+    }]);
   };
 
   const maakAfvinkenOngedaan = (regel) => {
@@ -5514,6 +5818,17 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       ...s, amount: nieuweHoeveelheid, unit: nieuweEenheid,
       bookedAmount: erbij, bookedUnit: item.unit, bookedReview: false,
     } : s)), setShoppingList);
+
+    // Het verschil tussen "wat stond er op de lijst" en "wat heb ik werkelijk
+    // meegenomen" is het interessantste gegeven van de hele app: daar zitten
+    // aanbiedingen, verpakkingsmaten en uitverkochte schappen in.
+    logAnalytics([{
+      event: "afgeweken",
+      product: regel.name,
+      amount: erbij,
+      unit: item.unit,
+      meta: { eerder: Number(regel.bookedAmount) || null, eerderEenheid: regel.bookedUnit || null },
+    }]);
   };
 
   const addManualItem = (item) => {
@@ -6489,6 +6804,8 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             onCook={(scale, overrides) => cookRecipe(openRecipe, scale, overrides, cookDayContext)}
             dagAlGekooktOp={cookDayContext ? (leesDag(weekmenu, cookDayContext) || {}).cookedAt || null : null}
             onUndoCook={cookDayContext ? () => undoCook(cookDayContext) : null}
+            autoStartKoken={autoStartKoken}
+            onAutoStartGedaan={() => setAutoStartKoken(false)}
             onKliekjeVraag={
               cookDayContext
                 && (leesDag(weekmenu, cookDayContext) || {}).cookedAt
@@ -6511,6 +6828,9 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             cookLog={cookLog}
             toonBakjesTip={!preferences.containerNumbering && !preferences.containerHintSeen}
             onBakjesTipGezien={() => updatePreferences({ containerHintSeen: true })}
+            nummertBakjes={!!preferences.containerNumbering}
+            bakjesVoor={bakjesVoor}
+            onNummerenAan={() => updatePreferences({ containerNumbering: true, containerHintSeen: true })}
             leftoverItem={leftoverContext ? inventory.find((i) => i.id === leftoverContext) : null}
             onEatLeftover={(porties, bakjes) => { eatLeftover(leftoverContext, porties, openRecipe, bakjes); openRecipeVanuit(null); }}
             onRecalculateNutrition={() => recalculateNutrition(openRecipe.id)}
@@ -6529,7 +6849,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             onNew={() => setEditingItem({})}
             onDelete={deleteInventoryItem}
             onScan={() => setScanOpen(true)}
-            onOpenRecipe={(id, dbl, leftoverId, dagSleutel) => openRecipeVanuit(id, { dag: dagSleutel, leftoverId, dubbel: dbl, naarKookboek: true })}
+            onOpenRecipe={(id, dbl, leftoverId, dagSleutel, metenKoken) => openRecipeVanuit(id, { dag: dagSleutel, leftoverId, dubbel: dbl, naarKookboek: true, startKoken: metenKoken })}
             ernstigeBevindingen={bevindingen.filter((b) => b.ernst === "hoog").length}
             onOpenControle={() => setControleOpen(true)}
             onOpenShelfPhoto={() => { setShelfScanError(""); setShelfScanResults([]); setShelfPhotoOpen(true); }}
@@ -6577,7 +6897,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             onDuplicate={duplicateWeekmenu}
             onApplyTemplate={applyWeekmenuTemplate}
             onShuffle={shuffleWeekmenu}
-            onOpenRecipe={(id, dbl, leftoverId, dagSleutel) => openRecipeVanuit(id, { dag: dagSleutel, leftoverId, dubbel: dbl, naarKookboek: true })}
+            onOpenRecipe={(id, dbl, leftoverId, dagSleutel, metenKoken) => openRecipeVanuit(id, { dag: dagSleutel, leftoverId, dubbel: dbl, naarKookboek: true, startKoken: metenKoken })}
             onExportCalendar={() => setCalendarOpen(true)}
             onQuickPlan={quickPlanExpiring}
             onKliekjeVraag={(dagSleutel) => setKliekjeVraagDag(dagSleutel)}
@@ -6654,6 +6974,10 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           onOpenLogboek={() => { setSettingsOpen(false); setLogboekOpen(true); }}
           aantalBevindingen={bevindingen.length}
           heeftPremium={heeftPremium}
+          dataConsent={dataConsent}
+          onSetDataConsent={zetDataConsent}
+          onSetHouseholdFacts={zetHuishoudFeiten}
+          huishoudFeiten={huishoudFeiten}
           onMoveCategoryOrder={moveCategoryOrder}
           onUpdateCookDiets={updateCookDiets}
           onUpdateCookDislikes={updateCookDislikes}
@@ -6714,6 +7038,9 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             <KliekjeVraag
               gekooktOp={dag.cookedAt}
               toonBakjesTip={!preferences.containerNumbering && !preferences.containerHintSeen}
+              nummertBakjes={!!preferences.containerNumbering}
+              bakjesVoor={bakjesVoor}
+              onNummerenAan={() => updatePreferences({ containerNumbering: true, containerHintSeen: true })}
               compact
               onBewaar={(porties, plek) => {
                 bewaarKliekjeVoorDag(kliekjeVraagDag, porties, plek);
@@ -7400,7 +7727,7 @@ function NutritionLabel({ recipe, isMine, onRecalculate, busy }) {
 // Dat is juist het moment waarop je het nog níét weet: het eten staat op
 // tafel. Nu kan dezelfde vraag ook later gesteld worden — vanuit de
 // Vanavond-strook en vanuit het weekmenu — met precies dezelfde knoppen.
-function KliekjeVraag({ gekooktOp, toonBakjesTip, onBewaar, onNiets, compact = false }) {
+function KliekjeVraag({ gekooktOp, toonBakjesTip, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onBewaar, onNiets, compact = false }) {
   const [porties, setPorties] = useState(0);
   const [bewaarplek, setBewaarplek] = useState("koelkast");
 
@@ -7454,11 +7781,54 @@ function KliekjeVraag({ gekooktOp, toonBakjesTip, onBewaar, onNiets, compact = f
         </>
       )}
 
-      {/* Eén keer laten weten dat nummeren bestaat. Anders ontdekt niemand het. */}
-      {porties > 0 && bewaarplek === "vriezer" && toonBakjesTip && (
-        <p style={{ fontSize: 11.5, color: C.inkSoft, margin: "0 0 10px", lineHeight: 1.45, background: C.paper, borderRadius: 10, padding: "8px 10px" }}>
-          Werk je met genummerde bakjes? Dan zegt Pollepel voortaan welk nummer je moet pakken.
-          Aan te zetten in Instellingen.
+      {/* Het nummer hoort hier te staan, vóór je op Bewaren drukt. Je staat met
+          een bakje en een stift bij de vriezer: dan wil je weten welk bakje je
+          moet pakken, niet een melding die drie seconden later weer weg is. */}
+      {porties > 0 && bewaarplek === "vriezer" && nummertBakjes && (() => {
+        const nummers = bakjesVoor ? bakjesVoor(porties) : [];
+        if (!nummers.length) {
+          return (
+            <p style={{ fontSize: 12, color: C.brick, margin: "0 0 10px", lineHeight: 1.45, background: C.warnBg, borderRadius: 10, padding: "8px 10px" }}>
+              Alle genummerde bakjes zijn in gebruik. Dit wordt bewaard zonder nummer.
+            </p>
+          );
+        }
+        return (
+          <div style={{ margin: "0 0 10px", background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: "9px 11px" }}>
+            <div style={{ fontSize: 13, color: C.ink, fontWeight: 600 }}>
+              Pak bakje {bakjesTekst(nummers)}
+            </div>
+            <div style={{ fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>
+              {nummers.length < porties
+                ? `Er zijn maar ${nummers.length} vrije nummers voor ${porties} porties.`
+                : "Schrijf dit nummer op het bakje, dan weet je later wat erin zit."}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Nummeren bestaat, maar staat uit. Eerder wees deze tip naar
+          Instellingen — dan moet je midden in het opruimen de app uit. Nu kun
+          je het hier aanzetten en meteen je nummer zien. */}
+      {porties > 0 && bewaarplek === "vriezer" && !nummertBakjes && toonBakjesTip && (
+        <div style={{ margin: "0 0 10px", background: C.paper, borderRadius: 10, padding: "9px 11px" }}>
+          <p style={{ fontSize: 11.5, color: C.inkSoft, margin: 0, lineHeight: 1.45 }}>
+            Werk je met genummerde bakjes? Dan zegt Pollepel welk nummer je moet pakken,
+            en onthoudt hij wat erin zit.
+          </p>
+          {onNummerenAan && (
+            <div style={{ marginTop: 7 }}>
+              <GhostButton onClick={onNummerenAan}>Nummeren aanzetten</GhostButton>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Koelkastrestjes krijgen geen nummer. Dat is een keuze, geen vergeten
+          geval, dus zeggen we het ook — anders zoek je naar iets dat er niet is. */}
+      {porties > 0 && bewaarplek === "koelkast" && nummertBakjes && (
+        <p style={{ fontSize: 11.5, color: C.inkSoft, margin: "0 0 10px", lineHeight: 1.45 }}>
+          Geen bakjenummer nodig: dit eet je binnen een paar dagen op.
         </p>
       )}
 
@@ -7472,7 +7842,7 @@ function KliekjeVraag({ gekooktOp, toonBakjesTip, onBewaar, onNiets, compact = f
   );
 }
 
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook, onKliekjeVraag }) {
+function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook, onKliekjeVraag, autoStartKoken = false, onAutoStartGedaan }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [usedAmounts, setUsedAmounts] = useState({}); // werkelijk gebruikte hoeveelheden bij tekort
   const [eatPortions, setEatPortions] = useState(1);
@@ -7641,6 +8011,28 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       setConfirmCook(true);
     }
   };
+
+  // Komt het scherm binnen met de opdracht "boek meteen af" — vanuit de vraag
+  // "heb je dit gekookt?" in het weekmenu — dan zetten we de afboekvraag
+  // meteen klaar en schuiven we hem in beeld. Zonder dat laatste opent het
+  // recept bovenaan en staat de vraag buiten beeld, en dan lijkt het alsof er
+  // niets gebeurt.
+  const kookAnkerRef = React.useRef(null);
+  useEffect(() => {
+    if (!autoStartKoken) return;
+    startCook();
+    // Het terugzetten van de vlag gebeurt pas ná het scrollen. Zette ik hem
+    // meteen terug, dan verandert de afhankelijkheid van dit effect, draait
+    // het opruimen, en wordt de tijdklok afgebroken voordat er gescrold is.
+    const t = setTimeout(() => {
+      if (kookAnkerRef.current && kookAnkerRef.current.scrollIntoView) {
+        kookAnkerRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      if (onAutoStartGedaan) onAutoStartGedaan();
+    }, 80);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStartKoken]);
 
   const finishCook = (overrides) => {
     onCook(wantDoublePortion ? scale * 2 : scale, overrides || {});
@@ -7944,6 +8336,8 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         </div>
       )}
 
+      <div ref={kookAnkerRef} />
+
       {isMine && !leftoverItem && confirmCook === false && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {/* Is déze avond uit het weekmenu al afgeboekt, dan is dat het
@@ -8148,6 +8542,9 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         <KliekjeVraag
           gekooktOp={new Date().toISOString()}
           toonBakjesTip={toonBakjesTip}
+          nummertBakjes={nummertBakjes}
+          bakjesVoor={bakjesVoor}
+          onNummerenAan={onNummerenAan}
           onBewaar={(porties, plek) => {
             onAddLeftover(recipe, porties, plek, new Date().toISOString());
             setConfirmCook(false);
@@ -8632,7 +9029,7 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
                     Heb je dit gekookt?
                   </span>
                   <button
-                    onClick={() => onOpenRecipe(recipe.id, entry?.doublePortion, entry?.leftoverItemId, day.key)}
+                    onClick={() => onOpenRecipe(recipe.id, entry?.doublePortion, entry?.leftoverItemId, day.key, true)}
                     style={{ display: "inline-flex", alignItems: "center", gap: 4, background: C.sage, border: "none", borderRadius: 20, padding: "4px 12px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 600, fontFamily: FONT_BODY }}
                   >
                     <Check size={12} /> Ja, afboeken
@@ -8977,7 +9374,7 @@ function CookDislikeRow({ name, preferences, onUpdate }) {
   );
 }
 
-function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onShowWelcome, onExportBackup, onToggleDarkMode, onSetShoppingDay, onSetContainerNumbering, onSetContainerCount, onOpenControle, onOpenLogboek, aantalBevindingen = 0, heeftPremium = false, onMoveCategoryOrder, onUpdateCookDiets, onUpdateCookDislikes, onTogglePremium, onClose }) {
+function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onShowWelcome, onExportBackup, onToggleDarkMode, onSetShoppingDay, onSetContainerNumbering, onSetContainerCount, onOpenControle, onOpenLogboek, aantalBevindingen = 0, heeftPremium = false, dataConsent = false, onSetDataConsent, onSetHouseholdFacts, huishoudFeiten = null, onMoveCategoryOrder, onUpdateCookDiets, onUpdateCookDislikes, onTogglePremium, onClose }) {
   const [name, setName] = useState(household?.name || "");
   const [savingName, setSavingName] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -8988,6 +9385,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
   const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [delenOpen, setDelenOpen] = useState(false);
 
   const [nameError, setNameError] = useState("");
 
@@ -9338,6 +9736,32 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
       </div>
 
 
+      {/* Meehelpen. Staat bewust hier en nergens anders: niet in een
+          welkomstscherm, niet als melding, niet met een stipje erbij. Wie
+          hiernaar zoekt vindt het; wie er nooit komt wordt nooit iets
+          gevraagd. Standaard uit. */}
+      <div style={{ fontSize: 11.5, fontWeight: 700, color: C.inkSoft, letterSpacing: "0.04em", textTransform: "uppercase", margin: "22px 0 8px" }}>
+        Meehelpen
+      </div>
+      <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 6, overflow: "hidden" }}>
+        <button
+          onClick={() => setDelenOpen(true)}
+          style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 12px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}
+        >
+          <BarChart3 size={16} color={C.blueDeep} />
+          <span style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+            <span style={{ fontSize: 14, color: C.ink }}>Geanonimiseerd meetellen</span>
+            <span style={{ fontSize: 11, color: C.inkSoft }}>
+              {dataConsent
+                ? "Staat aan \u2014 bekijk wat er precies meegaat"
+                : "Staat uit. Er gaat niets van jullie naar buiten"}
+            </span>
+          </span>
+          {dataConsent && <Pill tone="ok">aan</Pill>}
+          <ChevronRight size={16} color={C.inkSoft} />
+        </button>
+      </div>
+
       {/* Privacy en accountverwijdering. Beide zijn verplicht in de App Store
           en Google Play, en horen er sowieso te zijn. */}
       <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.ceramic}` }}>
@@ -9418,6 +9842,213 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
       </p>
 
       {privacyOpen && <PrivacyModal onClose={() => setPrivacyOpen(false)} />}
+      {delenOpen && (
+        <DataDelenModal
+          household={household}
+          dataConsent={dataConsent}
+          onSetDataConsent={onSetDataConsent}
+          onSetHouseholdFacts={onSetHouseholdFacts}
+          huishoudFeiten={huishoudFeiten}
+          onClose={() => setDelenOpen(false)}
+        />
+      )}
+    </Modal>
+  );
+}
+
+// Geanonimiseerd meetellen. Eén scherm met drie dingen: wat het is, de
+// schakelaar, en — als hij aanstaat — precies wat er van jullie is vastgelegd.
+//
+// Dat laatste is de kern. Een toestemmingsvraag die je niet kunt nakijken is
+// geen toestemming maar een gok. Daarom is de lijst echt: hij komt uit
+// dezelfde tabel waar het in staat, niet uit een voorbeeld.
+function DataDelenModal({ household, dataConsent, onSetDataConsent, onSetHouseholdFacts, huishoudFeiten, onClose }) {
+  const [bezig, setBezig] = useState(false);
+  const [rijen, setRijen] = useState(null);     // null = nog niet geladen
+  const [laadFout, setLaadFout] = useState("");
+  const bron = huishoudFeiten || {
+    regionPc2: (household && household.region_pc2) || "",
+    adults: household && household.adults != null ? household.adults : null,
+    children: household && household.children != null ? household.children : null,
+  };
+  const [pc2, setPc2] = useState(bron.regionPc2 || "");
+  const [adults, setAdults] = useState(bron.adults == null ? "" : String(bron.adults));
+  const [children, setChildren] = useState(bron.children == null ? "" : String(bron.children));
+  const [feitenBezig, setFeitenBezig] = useState(false);
+  const [feitenKlaar, setFeitenKlaar] = useState(false);
+
+  const kop = { fontFamily: FONT_DISPLAY, fontSize: 15, margin: "18px 0 4px", color: C.ink };
+  const tekst = { fontSize: 13, color: C.ink, lineHeight: 1.55, margin: "0 0 8px" };
+  const lijst = { fontSize: 13, color: C.ink, lineHeight: 1.55, margin: "0 0 8px", paddingLeft: 18 };
+
+  const laadRijen = useCallback(() => {
+    if (!window.householdAPI || !window.householdAPI.myEvents) { setRijen([]); return; }
+    setLaadFout("");
+    window.householdAPI.myEvents(50)
+      .then((r) => setRijen(Array.isArray(r) ? r : []))
+      .catch((e) => { setRijen([]); setLaadFout("De lijst kon niet geladen worden."); console.warn(e); });
+  }, []);
+
+  useEffect(() => { if (dataConsent) laadRijen(); }, [dataConsent, laadRijen]);
+
+  const schakel = async (aan) => {
+    setBezig(true);
+    await onSetDataConsent(aan);
+    setBezig(false);
+    if (aan) laadRijen();
+  };
+
+  const bewaarFeiten = async () => {
+    setFeitenBezig(true);
+    setFeitenKlaar(false);
+    const cijfers = (v) => (String(v).trim() === "" ? null : Math.max(0, Math.min(20, parseInt(v, 10) || 0)));
+    try {
+      await onSetHouseholdFacts({
+        regionPc2: String(pc2).replace(/\D/g, "").slice(0, 2) || null,
+        adults: cijfers(adults),
+        children: cijfers(children),
+      });
+      setFeitenKlaar(true);
+    } catch (e) {
+      // De melding komt al uit zetHuishoudFeiten; hier alleen de knop weer vrij.
+    }
+    setFeitenBezig(false);
+  };
+
+  const WOORD = {
+    gekookt: "gekookt", verbruikt: "uit de voorraad", gekocht: "gekocht",
+    afgeweken: "anders gekocht dan gepland", niet_gekookt: "niet gekookt", verlopen: "over de datum weggegooid",
+  };
+
+  return (
+    <Modal title="Geanonimiseerd meetellen" onClose={onClose}>
+      <p style={{ ...tekst, marginTop: 0 }}>
+        Pollepel kan optellen wat er in Nederlandse keukens gebeurt: wat er gekookt wordt,
+        welke verpakkingsmaten mensen werkelijk meenemen, en wat er over de datum gaat.
+        Die cijfers zijn waardevol voor supermarkten en fabrikanten, en daarmee kan deze
+        app blijven bestaan zonder dat jullie ervoor betalen.
+      </p>
+      <p style={tekst}>
+        Het staat <strong>standaard uit</strong>. Zet je het aan, dan gaat er geen enkel
+        gegeven mee waar jullie in te herkennen zijn.
+      </p>
+
+      <h3 style={kop}>Wat er wél meegaat</h3>
+      <ul style={lijst}>
+        <li>Dat er gekookt is, op welk moment van de dag en voor hoeveel mensen</li>
+        <li>Welke producten eraf gingen en hoeveel</li>
+        <li>Wat er gekocht is, en of dat afweek van de boodschappenlijst</li>
+        <li>Wat er over de datum ging</li>
+      </ul>
+
+      <h3 style={kop}>Wat er nooit meegaat</h3>
+      <ul style={lijst}>
+        <li>Je naam, e-mailadres, huishoudnaam of die van je huisgenoten</li>
+        <li>De namen van je eigen recepten — alleen die uit het gedeelde kookboek</li>
+        <li>Namen van kliekjes: "Vriezer: oma's soep" wordt simpelweg "kliekje"</li>
+        <li>Dieetwensen, allergieën, wat iemand niet lust, en elke vrije tekst</li>
+        <li>Je adres of locatie — hooguit de eerste twee cijfers van je postcode, en dat alleen als je dat zelf invult</li>
+      </ul>
+      <p style={{ fontSize: 12, color: C.inkSoft, margin: "0 0 10px", lineHeight: 1.5 }}>
+        De regels staan niet onder jullie huishouden, maar onder een los nummer zonder
+        verband met jullie account. Wij kunnen ze zelf niet meer naar jullie terugleiden.
+        Na twee jaar worden ze verwijderd.
+      </p>
+
+      {/* De schakelaar */}
+      <div style={{ background: dataConsent ? C.successBg : C.cardBg, border: `1.5px solid ${dataConsent ? C.sage : C.borderTint}`, borderRadius: 14, padding: 13, margin: "16px 0 6px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: C.ink }}>
+            {dataConsent ? "Jullie tellen mee" : "Meetellen staat uit"}
+          </span>
+          <button
+            onClick={() => schakel(!dataConsent)}
+            disabled={bezig}
+            aria-label={dataConsent ? "Meetellen uitzetten" : "Meetellen aanzetten"}
+            style={{ width: 44, height: 25, borderRadius: 20, background: dataConsent ? C.sage : C.ceramicDark, position: "relative", border: "none", cursor: bezig ? "default" : "pointer", transition: "background 0.15s", flexShrink: 0, opacity: bezig ? 0.6 : 1 }}
+          >
+            <div style={{ position: "absolute", top: 2, left: dataConsent ? 21 : 2, width: 21, height: 21, borderRadius: "50%", background: "#fff", transition: "left 0.15s" }} />
+          </button>
+        </div>
+        <p style={{ fontSize: 11.5, color: C.inkSoft, margin: "8px 0 0", lineHeight: 1.5 }}>
+          Je kunt dit altijd weer uitzetten. Wat er dan al stond telt nergens meer in mee.
+        </p>
+      </div>
+
+      {dataConsent && (
+        <>
+          {/* Optioneel, en dat is geen formaliteit: het mag gewoon leeg blijven. */}
+          <h3 style={kop}>Twee dingen die de cijfers scherper maken</h3>
+          <p style={{ fontSize: 12.5, color: C.inkSoft, margin: "0 0 10px", lineHeight: 1.5 }}>
+            Helemaal vrijwillig, en je mag het leeg laten. Met de eerste twee cijfers van
+            je postcode kunnen we zien of Groningen anders kookt dan Zeeland. Met het
+            aantal mensen kunnen we hoeveelheden per persoon uitrekenen in plaats van
+            per huishouden.
+          </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            <label style={{ flex: "1 1 90px", minWidth: 90 }}>
+              <span style={{ fontSize: 11, color: C.inkSoft, display: "block", marginBottom: 3 }}>Postcode (2 cijfers)</span>
+              <input
+                inputMode="numeric" autoComplete="off" maxLength={2} placeholder="30"
+                style={inputStyle} value={pc2}
+                onChange={(e) => { setPc2(e.target.value.replace(/\D/g, "").slice(0, 2)); setFeitenKlaar(false); }}
+              />
+            </label>
+            <label style={{ flex: "1 1 80px", minWidth: 80 }}>
+              <span style={{ fontSize: 11, color: C.inkSoft, display: "block", marginBottom: 3 }}>Volwassenen</span>
+              <input
+                inputMode="numeric" autoComplete="off" placeholder="2"
+                style={inputStyle} value={adults}
+                onChange={(e) => { setAdults(e.target.value.replace(/\D/g, "").slice(0, 2)); setFeitenKlaar(false); }}
+              />
+            </label>
+            <label style={{ flex: "1 1 80px", minWidth: 80 }}>
+              <span style={{ fontSize: 11, color: C.inkSoft, display: "block", marginBottom: 3 }}>Kinderen</span>
+              <input
+                inputMode="numeric" autoComplete="off" placeholder="0"
+                style={inputStyle} value={children}
+                onChange={(e) => { setChildren(e.target.value.replace(/\D/g, "").slice(0, 2)); setFeitenKlaar(false); }}
+              />
+            </label>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <GhostButton onClick={bewaarFeiten} disabled={feitenBezig}>
+              {feitenBezig ? "Bezig\u2026" : "Bewaren"}
+            </GhostButton>
+            {feitenKlaar && <span style={{ fontSize: 12, color: C.sage }}>Bewaard.</span>}
+          </div>
+
+          {/* Wat deel ik? */}
+          <h3 style={kop}>Wat er van jullie is vastgelegd</h3>
+          {rijen === null ? (
+            <p style={{ fontSize: 12.5, color: C.inkSoft, margin: 0 }}>Bezig met ophalen\u2026</p>
+          ) : rijen.length === 0 ? (
+            <p style={{ fontSize: 12.5, color: C.inkSoft, margin: 0, lineHeight: 1.5 }}>
+              {laadFout || "Nog niets. Zodra je iets kookt of afvinkt, verschijnt het hier \u2014 dan zie je precies wat er meegaat."}
+            </p>
+          ) : (
+            <>
+              <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, overflow: "hidden" }}>
+                {rijen.map((r, idx) => (
+                  <div key={r.id || idx} style={{ padding: "9px 12px", borderBottom: idx < rijen.length - 1 ? `1px solid ${C.ceramic}` : "none", display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+                    <span style={{ fontSize: 12.5, color: C.ink }}>
+                      {WOORD[r.event] || r.event}
+                      {r.product ? <span style={{ color: C.inkSoft }}> \u2014 {r.product}</span> : null}
+                      {r.amount != null ? <span style={{ color: C.inkSoft }}> ({r.amount}{r.unit ? " " + r.unit : ""})</span> : null}
+                    </span>
+                    <span style={{ fontSize: 10.5, color: C.inkSoft, fontFamily: FONT_MONO, whiteSpace: "nowrap" }}>
+                      {String(r.occurred_at || "").slice(8, 10)}-{String(r.occurred_at || "").slice(5, 7)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p style={{ fontSize: 11, color: C.inkSoft, margin: "8px 0 0", lineHeight: 1.45 }}>
+                De laatste {rijen.length}. Dit is letterlijk wat er staat \u2014 niet een voorbeeld ervan.
+              </p>
+            </>
+          )}
+        </>
+      )}
     </Modal>
   );
 }
@@ -9447,10 +10078,30 @@ function PrivacyModal({ onClose }) {
 
       <h3 style={kop}>Wat we niet doen</h3>
       <ul style={lijst}>
-        <li>Geen advertenties, en niets wordt verkocht of gedeeld met adverteerders</li>
+        <li>Geen advertenties</li>
         <li>Geen volgtechnieken om je gedrag buiten de app te volgen</li>
         <li>Geen toegang tot je gegevens door andere huishoudens</li>
+        <li>Niets over jou persoonlijk wordt verkocht of weggegeven</li>
       </ul>
+
+      <h3 style={kop}>Geanonimiseerd meetellen</h3>
+      <p style={tekst}>
+        In Instellingen staat een schakelaar waarmee je kunt laten meetellen wat er in
+        jullie keuken gebeurt: wat er gekookt wordt, welke verpakkingsmaten mensen
+        werkelijk meenemen, en wat er over de datum gaat. Van die opgetelde cijfers
+        \u2014 van duizenden huishoudens bij elkaar \u2014 kunnen supermarkten en
+        fabrikanten iets leren, en daarvoor kunnen wij geld vragen. Zo kan deze app
+        blijven bestaan.
+      </p>
+      <p style={tekst}>
+        Die schakelaar staat <strong>standaard uit</strong>, en er wordt nooit om
+        gevraagd met een melding of een vinkje dat al aanstaat. Zet je hem aan, dan gaan
+        er geen namen mee, geen e-mailadressen, geen dieetwensen of allergie\u00ebn, geen
+        namen van je eigen recepten en geen vrije tekst. De regels staan onder een los
+        nummer dat geen verband heeft met jullie account, en na twee jaar worden ze
+        verwijderd. In datzelfde scherm kun je op elk moment nakijken wat er precies
+        van jullie is vastgelegd, en het weer uitzetten.
+      </p>
 
       <h3 style={kop}>Met wie het gedeeld wordt</h3>
       <p style={tekst}>
