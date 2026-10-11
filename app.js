@@ -298,7 +298,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v81 \xB7 11 oktober 2026";
+const APP_VERSIE = "v82 \xB7 11 oktober 2026";
 const TOESTEMMING_VERSIE = 1;
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
@@ -3788,7 +3788,7 @@ function ControleModal({ bevindingen, onHerstel, onClose }) {
     /* @__PURE__ */ jsx("div", { style: { marginTop: 12 }, children: /* @__PURE__ */ jsx(PrimaryButton, { full: true, onClick: onClose, children: "Sluiten" }) })
   ] });
 }
-function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, onOpen, onVerrasMe, onNaarWeekmenu, onKliekjeVraag }) {
+function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, inventory = [], onOpen, onVerrasMe, onNaarWeekmenu, onKliekjeVraag }) {
   const basis = {
     display: "flex",
     alignItems: "center",
@@ -3831,6 +3831,7 @@ function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, onOpen,
   const mist = readiness ? readiness.missing.length : 0;
   if (alGekookt) {
     const kliekjeNogVragen = onKliekjeVraag && entry && entry.cookedAt && !entry.producedLeftoverId;
+    const bewaard = entry && entry.producedLeftoverId && entry.producedLeftoverId !== "geen" ? (inventory || []).find((i) => i.id === entry.producedLeftoverId) : null;
     return /* @__PURE__ */ jsxs("div", { style: { marginBottom: 12 }, children: [
       /* @__PURE__ */ jsxs("button", { onClick: () => onOpen(recipe.id), style: { ...basis, borderColor: C.sage, marginBottom: kliekjeNogVragen ? 6 : 0 }, children: [
         /* @__PURE__ */ jsx("span", { style: { fontSize: 26, flexShrink: 0 }, children: recipe.emoji || "\u{1F37D}\uFE0F" }),
@@ -3839,7 +3840,7 @@ function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, onOpen,
           /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 15, color: C.ink, fontWeight: 600, lineHeight: 1.25 }, children: recipe.name }),
           /* @__PURE__ */ jsxs("span", { style: { display: "block", fontSize: 12, color: C.sage, marginTop: 2 }, children: [
             /* @__PURE__ */ jsx(Check, { size: 12, style: { verticalAlign: -1, marginRight: 3 } }),
-            "Gekookt \u2014 eet smakelijk"
+            bewaard ? `Gekookt \xB7 ${bewaard.current} ${Number(bewaard.current) === 1 ? "portie" : "porties"} bewaard` : "Gekookt \u2014 eet smakelijk"
           ] })
         ] }),
         /* @__PURE__ */ jsx(ChevronRight, { size: 18, color: C.inkSoft, style: { flexShrink: 0 } })
@@ -5419,6 +5420,25 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     }, setWeekmenu);
     setKliekjeVraagDag(null);
   };
+  const kliekjeVanuitRecept = async (recept, porties, bewaarplek, gekooktOp) => {
+    const item = await addLeftover(recept, porties, bewaarplek, gekooktOp);
+    if (cookDayContext) {
+      const dag = leesDag(weekmenu, cookDayContext);
+      if (dag && dag.recipeId === recept.id) {
+        persist("weekmenu", {
+          ...weekmenu,
+          [cookDayContext]: { ...dag, producedLeftoverId: item ? item.id : "geen" }
+        }, setWeekmenu);
+      }
+    }
+    return item;
+  };
+  const geenKliekjeVanuitRecept = () => {
+    if (!cookDayContext) return;
+    const dag = leesDag(weekmenu, cookDayContext);
+    if (!dag || !dag.cookedAt || dag.producedLeftoverId) return;
+    persist("weekmenu", { ...weekmenu, [cookDayContext]: { ...dag, producedLeftoverId: "geen" } }, setWeekmenu);
+  };
   const geenKliekjeVoorDag = (dagSleutel) => {
     const dag = leesDag(weekmenu, dagSleutel);
     if (dag) {
@@ -6607,6 +6627,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingredi\xEBntenlijst na en vraag
           readiness: vanavondRecept ? recipeReadiness(vanavondRecept, inventory) : null,
           cookNaam: (weekmenu[dateKey(/* @__PURE__ */ new Date())] || {}).cook,
           alGekookt: vanavondAlGekookt,
+          inventory,
           onKliekjeVraag: () => setKliekjeVraagDag(dateKey(/* @__PURE__ */ new Date())),
           onOpen: (id) => openRecipeVanuit(id, { dag: dateKey(/* @__PURE__ */ new Date()), dubbel: (weekmenu[dateKey(/* @__PURE__ */ new Date())] || {}).doublePortion }),
           onVerrasMe: verrasMeVanavond,
@@ -6669,7 +6690,8 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingredi\xEBntenlijst na en vraag
           onAutoStartGedaan: () => setAutoStartKoken(false),
           onKliekjeVraag: cookDayContext && (leesDag(weekmenu, cookDayContext) || {}).cookedAt && !(leesDag(weekmenu, cookDayContext) || {}).producedLeftoverId ? () => setKliekjeVraagDag(cookDayContext) : null,
           onDuplicate: () => duplicateToMyBook(openRecipe.id),
-          onAddLeftover: addLeftover,
+          onAddLeftover: kliekjeVanuitRecept,
+          onGeenKliekje: geenKliekjeVanuitRecept,
           onAddFreezerPortion: addFreezerPortion,
           onAskSousChef: askSousChef,
           isPremiumOn,
@@ -7779,7 +7801,7 @@ function KliekjeVraag({ gekooktOp, toonBakjesTip, nummertBakjes = false, bakjesV
     ] })
   ] });
 }
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onPlanOpDag = null, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook, onKliekjeVraag, autoStartKoken = false, onAutoStartGedaan }) {
+function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onPlanOpDag = null, onGeenKliekje = null, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook, onKliekjeVraag, autoStartKoken = false, onAutoStartGedaan }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [usedAmounts, setUsedAmounts] = useState({});
   const [eatPortions, setEatPortions] = useState(1);
@@ -8490,7 +8512,10 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
           setConfirmCook(false);
           if (toonBakjesTip && onBakjesTipGezien) onBakjesTipGezien();
         },
-        onNiets: () => setConfirmCook(false)
+        onNiets: () => {
+          if (onGeenKliekje) onGeenKliekje();
+          setConfirmCook(false);
+        }
       }
     ),
     !isMine && /* @__PURE__ */ jsxs(PrimaryButton, { tone: "mustard", full: true, onClick: onDuplicate, children: [

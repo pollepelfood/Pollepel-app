@@ -258,7 +258,7 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v81 · 11 oktober 2026";
+const APP_VERSIE = "v82 · 11 oktober 2026";
 
 // Versie van de toestemmingstekst. Verandert de tekst wezenlijk, dan gaat dit
 // omhoog en moet er opnieuw gevraagd worden — oude toestemming dekt een nieuwe
@@ -3444,7 +3444,7 @@ function ControleModal({ bevindingen, onHerstel, onClose }) {
   );
 }
 
-function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, onOpen, onVerrasMe, onNaarWeekmenu, onKliekjeVraag }) {
+function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, inventory = [], onOpen, onVerrasMe, onNaarWeekmenu, onKliekjeVraag }) {
   const basis = {
     display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left",
     borderRadius: 16, padding: "12px 14px", marginBottom: 12, cursor: "pointer",
@@ -3489,6 +3489,11 @@ function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, onOpen,
     // Is er al gevraagd of er iets over was? Zolang dat niet zo is, bieden we
     // het hier aan. Dit is het moment waarop je het wél weet: je hebt gegeten.
     const kliekjeNogVragen = onKliekjeVraag && entry && entry.cookedAt && !entry.producedLeftoverId;
+    // Is er al iets bewaard, dan is dat nieuws: laat dat zien in plaats van de
+    // vraag opnieuw te stellen.
+    const bewaard = entry && entry.producedLeftoverId && entry.producedLeftoverId !== "geen"
+      ? (inventory || []).find((i) => i.id === entry.producedLeftoverId)
+      : null;
     return (
       <div style={{ marginBottom: 12 }}>
         <button onClick={() => onOpen(recipe.id)} style={{ ...basis, borderColor: C.sage, marginBottom: kliekjeNogVragen ? 6 : 0 }}>
@@ -3497,7 +3502,10 @@ function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, onOpen,
             <span style={{ display: "block", fontSize: 11, color: C.inkSoft, textTransform: "uppercase", letterSpacing: "0.04em" }}>Vanavond</span>
             <span style={{ display: "block", fontSize: 15, color: C.ink, fontWeight: 600, lineHeight: 1.25 }}>{recipe.name}</span>
             <span style={{ display: "block", fontSize: 12, color: C.sage, marginTop: 2 }}>
-              <Check size={12} style={{ verticalAlign: -1, marginRight: 3 }} />Gekookt — eet smakelijk
+              <Check size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
+              {bewaard
+                ? `Gekookt · ${bewaard.current} ${Number(bewaard.current) === 1 ? "portie" : "porties"} bewaard`
+                : "Gekookt — eet smakelijk"}
             </span>
           </span>
           <ChevronRight size={18} color={C.inkSoft} style={{ flexShrink: 0 }} />
@@ -5341,6 +5349,39 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     setKliekjeVraagDag(null);
   };
 
+  // Het kliekje dat je meteen na het koken vastlegt, vanuit het receptscherm.
+  //
+  // Dit ging mis: die route riep alleen addLeftover aan. Het kliekje kwam dus
+  // wel in de voorraad, maar de avond onthield niet dat hij het had
+  // opgeleverd. Gevolg: op het hoofdscherm bleef "Is er iets over?" staan voor
+  // iets dat al bewaard was, terwijl je in het recept zelf wél zag dat het
+  // gedaan was. Twee schermen die hetzelfde moesten weten en het niet deelden.
+  const kliekjeVanuitRecept = async (recept, porties, bewaarplek, gekooktOp) => {
+    const item = await addLeftover(recept, porties, bewaarplek, gekooktOp);
+    // Alleen stempelen als we weten om welke avond het gaat, en die avond
+    // werkelijk over dit gerecht gaat. Kook je los uit het kookboek, dan is er
+    // geen dag om bij te werken en hoeft er ook niets te gebeuren.
+    if (cookDayContext) {
+      const dag = leesDag(weekmenu, cookDayContext);
+      if (dag && dag.recipeId === recept.id) {
+        persist("weekmenu", {
+          ...weekmenu,
+          [cookDayContext]: { ...dag, producedLeftoverId: item ? item.id : "geen" },
+        }, setWeekmenu);
+      }
+    }
+    return item;
+  };
+
+  // En hetzelfde voor "overslaan" in het receptscherm: zonder dit kwam de
+  // vraag op het hoofdscherm gewoon weer terug.
+  const geenKliekjeVanuitRecept = () => {
+    if (!cookDayContext) return;
+    const dag = leesDag(weekmenu, cookDayContext);
+    if (!dag || !dag.cookedAt || dag.producedLeftoverId) return;
+    persist("weekmenu", { ...weekmenu, [cookDayContext]: { ...dag, producedLeftoverId: "geen" } }, setWeekmenu);
+  };
+
   // "Niets over." We leggen dat vast als "geen", zodat de vraag niet elke keer
   // terugkomt. Leeg zou betekenen: nog niet gevraagd.
   const geenKliekjeVoorDag = (dagSleutel) => {
@@ -6851,6 +6892,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             readiness={vanavondRecept ? recipeReadiness(vanavondRecept, inventory) : null}
             cookNaam={(weekmenu[dateKey(new Date())] || {}).cook}
             alGekookt={vanavondAlGekookt}
+            inventory={inventory}
             onKliekjeVraag={() => setKliekjeVraagDag(dateKey(new Date()))}
             onOpen={(id) => openRecipeVanuit(id, { dag: dateKey(new Date()), dubbel: (weekmenu[dateKey(new Date())] || {}).doublePortion })}
             onVerrasMe={verrasMeVanavond}
@@ -6911,7 +6953,8 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
                 : null
             }
             onDuplicate={() => duplicateToMyBook(openRecipe.id)}
-            onAddLeftover={addLeftover}
+            onAddLeftover={kliekjeVanuitRecept}
+            onGeenKliekje={geenKliekjeVanuitRecept}
             onAddFreezerPortion={addFreezerPortion}
             onAskSousChef={askSousChef}
             isPremiumOn={isPremiumOn}
@@ -8083,7 +8126,7 @@ function KliekjeVraag({ gekooktOp, toonBakjesTip, nummertBakjes = false, bakjesV
   );
 }
 
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onPlanOpDag = null, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook, onKliekjeVraag, autoStartKoken = false, onAutoStartGedaan }) {
+function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onPlanOpDag = null, onGeenKliekje = null, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook, onKliekjeVraag, autoStartKoken = false, onAutoStartGedaan }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [usedAmounts, setUsedAmounts] = useState({}); // werkelijk gebruikte hoeveelheden bij tekort
   const [eatPortions, setEatPortions] = useState(1);
@@ -8796,7 +8839,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
             setConfirmCook(false);
             if (toonBakjesTip && onBakjesTipGezien) onBakjesTipGezien();
           }}
-          onNiets={() => setConfirmCook(false)}
+          onNiets={() => { if (onGeenKliekje) onGeenKliekje(); setConfirmCook(false); }}
         />
       )}
 
