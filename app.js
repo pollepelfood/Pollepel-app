@@ -298,7 +298,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v79 \xB7 11 oktober 2026";
+const APP_VERSIE = "v80 \xB7 11 oktober 2026";
 const TOESTEMMING_VERSIE = 1;
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";

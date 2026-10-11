@@ -223,6 +223,23 @@
             setError("Er zijn te veel berichten verstuurd. Probeer het over een uur opnieuw.");
           } else if (ruw.includes("already registered")) {
             setError("Dit e-mailadres is al bekend. Log in met je wachtwoord in plaats van een nieuw account te maken.");
+          } else if (e.code === "weak_password" || ruw.includes("password should")) {
+            // Zet je in Supabase eisen aan het wachtwoord, dan komt hier een
+            // Engelse technische tekst uit: "Password should contain at least
+            // one character of each: abcdefghijklmnopqrstuvwxyz, ...". Dat is
+            // geen melding waar iemand iets aan heeft, dus we zeggen het zelf.
+            //
+            // De eisen staan niet hard in de app: ze staan in Supabase en
+            // kunnen daar veranderen. Daarom beschrijven we wat er nodig is
+            // zonder getallen te noemen die kunnen gaan afwijken, en zetten we
+            // de oorspronkelijke tekst eronder voor wie wil weten wat er mist.
+            const lengte = ruw.match(/at least (\d+) characters/);
+            setError(
+              "Dit wachtwoord is te zwak. Kies er een van minstens "
+              + (lengte ? lengte[1] : "acht") + " tekens, met hoofdletters, "
+              + "kleine letters en cijfers erin. Een wachtwoordbeheerder maakt in "
+              + "\u00e9\u00e9n tik een goede."
+            );
           } else {
             setError(e.message || "Er ging iets mis. Probeer het opnieuw.");
           }
