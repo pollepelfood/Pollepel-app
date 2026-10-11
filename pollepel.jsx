@@ -257,7 +257,7 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v74 · 10 oktober 2026";
+const APP_VERSIE = "v76 · 11 oktober 2026";
 
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
@@ -505,9 +505,23 @@ function woordLijktOp(a, b) {
 // de gebruiker. De eenheid speelt hier bewust GEEN rol —
 // dat je ketchup in grammen bijhoudt en op je briefje "ketchup" schrijft maakt
 // het nog steeds hetzelfde product. Juist die eis zorgde voor dubbelingen.
-function vindVoorraadKandidaten(naam, inventory) {
+// eenheid is een doorslaggever, géén eis. Dat onderscheid is belangrijk:
+// als eis zorgde het ervoor dat "Ketchup" in grammen en "Ketchup" in stuks als
+// twee producten golden (de fout van v70). Als doorslaggever lost het juist
+// iets op: staat "Tomatenpuree" twee keer in je voorraad, één keer in stuks en
+// één keer in gram, dan hoort 70 g bij de gram-versie.
+function vindVoorraadKandidaten(naam, inventory, eenheid = null) {
   const kern = naamKern(naam);
   const gevraagd = norm(naam);
+
+  // Kleine opslag bovenop de naamscore, zodat hij alleen tussen even goede
+  // naamtreffers de doorslag geeft en nooit een slechtere naam omhoog duwt.
+  const eenheidBonus = (item) => {
+    if (!eenheid) return 0;
+    const a = (eenheid || "").toLowerCase(), b = (item.unit || "").toLowerCase();
+    if (a === b) return 6;
+    return convertAmount(1, a, b) !== null ? 3 : 0;
+  };
   const sterk = [];   // naam klopt volgens de strenge regel of een bijnaam
   const zwak = [];    // alleen een vermoeden
 
@@ -521,17 +535,17 @@ function vindVoorraadKandidaten(naam, inventory) {
     const itemNaam = norm(item.name);
 
     if (bijnamen.some((a) => norm(a) === gevraagd)) {
-      sterk.push({ item, reden: "eerder zo genoemd", score: 280 });
+      sterk.push({ item, reden: "eerder zo genoemd", score: 280 + eenheidBonus(item) });
       return;
     }
     if (itemNaam === gevraagd) {
-      sterk.push({ item, reden: "precies dezelfde naam", score: 300 });
+      sterk.push({ item, reden: "precies dezelfde naam", score: 300 + eenheidBonus(item) });
       return;
     }
     if (namesMatch(item.name, naam)) {
       // Hoe dichter de naam bij elkaar ligt, hoe waarschijnlijker. Zo wint
       // "Ui" van "Ui poeder" in plaats van wie toevallig vooraan staat.
-      sterk.push({ item, reden: "zelfde naam", score: 100 - Math.abs(itemNaam.length - gevraagd.length) * 0.5 });
+      sterk.push({ item, reden: "zelfde naam", score: 100 - Math.abs(itemNaam.length - gevraagd.length) * 0.5 + eenheidBonus(item) });
       return;
     }
 
@@ -576,10 +590,14 @@ function vindVoorraadKandidaten(naam, inventory) {
   // kast, dan is dat precies het moment om het niet zelf te bedenken.
   const beste = sterk[0];
   const overduidelijk = beste && beste.score >= 280;
+  // Twee producten met exact dezelfde naam, en de eenheid geeft geen uitsluitsel?
+  // Dan is het geen uitgemaakte zaak en vragen we het alsnog.
+  const gelijkspel = sterk.length > 1 && Math.abs(sterk[0].score - sterk[1].score) < 0.5;
   const enige = sterk.length === 1 && zwak.length === 0;
+  const beslist = (overduidelijk && !gelijkspel) || enige;
   return {
-    zeker: overduidelijk || enige ? beste.item : null,
-    kandidaten: overduidelijk || enige ? [] : [...sterk, ...zwak].slice(0, 4),
+    zeker: beslist ? beste.item : null,
+    kandidaten: beslist ? [] : [...sterk, ...zwak].slice(0, 4),
   };
 }
 
@@ -787,6 +805,53 @@ function stockVsNeed(item, ing, scale = 1) {
     return { have: Number(item.current || 0), need: inGram / gram, unit: "stuks", geschat: true };
   }
   return null;
+}
+
+// Welke maten bied je aan als je in de winkel een hoeveelheid wilt bijstellen?
+//
+// Plus- en minknoppen werken niet bij gewicht: van 500 naar 1000 gram zijn dat
+// tien tikken. Je koopt ook geen grammen maar verpakkingen. Dus tonen we een
+// handvol maten waarvan er één bijna altijd klopt.
+//
+// De maten die jij eerder bij dít product koos staan vooraan. Daarna ×2 (de
+// veruit meest voorkomende correctie: je pakt een tweede pak of een dubbele
+// verpakking), en dan een paar gangbare maten voor deze eenheid.
+const GANGBARE_MATEN = {
+  g: [100, 250, 500, 750, 1000, 1500],
+  ml: [250, 500, 750, 1000],
+  kg: [0.5, 1, 1.5, 2, 2.5],
+  l: [0.5, 1, 1.5, 2],
+  stuks: [1, 2, 3, 4, 6, 10, 12],
+};
+
+function maatSuggesties(huidig, eenheid, eerderGekozen = [], max = 5) {
+  const e = (eenheid || "").toLowerCase();
+  const nu = Number(huidig) || 0;
+  const uit = [];
+  const voegToe = (waarde) => {
+    const w = round2(Number(waarde));
+    if (!isFinite(w) || w <= 0 || w === nu) return;
+    if (uit.some((x) => x === w)) return;
+    uit.push(w);
+  };
+
+  // 1. Wat jij bij dit product eerder pakte.
+  (eerderGekozen || []).forEach(voegToe);
+  // 2. Het dubbele van wat er staat — de gewoonste correctie van allemaal.
+  //
+  // Maar alleen als wat er staat zelf een beetje op een verpakking lijkt. Het
+  // dubbele van "2 eetlepel ketjap" is 60 ml, en zo'n flesje bestaat niet. In
+  // die gevallen zijn de gangbare maten hieronder nuttiger.
+  const kleineMaat = (e === "g" || e === "ml") && nu < 100;
+  if (!kleineMaat) voegToe(nu * 2);
+  // 3. Gangbare maten voor deze eenheid. Groter dan wat er staat eerst, want
+  // je pakt vaker een grotere verpakking dan een kleinere.
+  const standaard = GANGBARE_MATEN[e] || [];
+  const groter = standaard.filter((m) => m > nu).sort((a, b) => a - b);
+  const kleiner = standaard.filter((m) => m < nu).sort((a, b) => b - a);
+  [...groter, ...kleiner].forEach(voegToe);
+
+  return uit.slice(0, max);
 }
 
 // Maakt een hoeveelheid presentabel voor op een boodschappenlijst. 1000 gram
@@ -3214,7 +3279,7 @@ function ControleModal({ bevindingen, onHerstel, onClose }) {
   );
 }
 
-function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, onOpen, onVerrasMe, onNaarWeekmenu }) {
+function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, onOpen, onVerrasMe, onNaarWeekmenu, onKliekjeVraag }) {
   const basis = {
     display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left",
     borderRadius: 16, padding: "12px 14px", marginBottom: 12, cursor: "pointer",
@@ -3256,18 +3321,28 @@ function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, onOpen,
   const mist = readiness ? readiness.missing.length : 0;
 
   if (alGekookt) {
+    // Is er al gevraagd of er iets over was? Zolang dat niet zo is, bieden we
+    // het hier aan. Dit is het moment waarop je het wél weet: je hebt gegeten.
+    const kliekjeNogVragen = onKliekjeVraag && entry && entry.cookedAt && !entry.producedLeftoverId;
     return (
-      <button onClick={() => onOpen(recipe.id)} style={{ ...basis, borderColor: C.sage }}>
-        <span style={{ fontSize: 26, flexShrink: 0 }}>{recipe.emoji || "🍽️"}</span>
-        <span style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ display: "block", fontSize: 11, color: C.inkSoft, textTransform: "uppercase", letterSpacing: "0.04em" }}>Vanavond</span>
-          <span style={{ display: "block", fontSize: 15, color: C.ink, fontWeight: 600, lineHeight: 1.25 }}>{recipe.name}</span>
-          <span style={{ display: "block", fontSize: 12, color: C.sage, marginTop: 2 }}>
-            <Check size={12} style={{ verticalAlign: -1, marginRight: 3 }} />Gekookt — eet smakelijk
+      <div style={{ marginBottom: 12 }}>
+        <button onClick={() => onOpen(recipe.id)} style={{ ...basis, borderColor: C.sage, marginBottom: kliekjeNogVragen ? 6 : 0 }}>
+          <span style={{ fontSize: 26, flexShrink: 0 }}>{recipe.emoji || "🍽️"}</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: "block", fontSize: 11, color: C.inkSoft, textTransform: "uppercase", letterSpacing: "0.04em" }}>Vanavond</span>
+            <span style={{ display: "block", fontSize: 15, color: C.ink, fontWeight: 600, lineHeight: 1.25 }}>{recipe.name}</span>
+            <span style={{ display: "block", fontSize: 12, color: C.sage, marginTop: 2 }}>
+              <Check size={12} style={{ verticalAlign: -1, marginRight: 3 }} />Gekookt — eet smakelijk
+            </span>
           </span>
-        </span>
-        <ChevronRight size={18} color={C.inkSoft} style={{ flexShrink: 0 }} />
-      </button>
+          <ChevronRight size={18} color={C.inkSoft} style={{ flexShrink: 0 }} />
+        </button>
+        {kliekjeNogVragen && (
+          <GhostButton full onClick={onKliekjeVraag}>
+            🍱 Is er iets over? Bewaren voor later
+          </GhostButton>
+        )}
+      </div>
     );
   }
 
@@ -3489,6 +3564,9 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   // recept kan twee keer in de week staan, en je kookt niet altijd op de dag
   // waarop het gepland stond.
   const [cookDayContext, setCookDayContext] = useState(null);
+  // Welke afgeboekte avond wacht nog op de vraag "is er iets over?".
+  // Bevat de dagsleutel; het scherm zelf is hetzelfde als tijdens het koken.
+  const [kliekjeVraagDag, setKliekjeVraagDag] = useState(null);
   const [controleOpen, setControleOpen] = useState(false);
   const [logboekOpen, setLogboekOpen] = useState(false);
   const [extras, setExtras] = useState([]); // extra gerechten naast het avondeten
@@ -3784,7 +3862,15 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
           const newId = await window.dataAPI.shopping.create(item);
           item.id = newId;
         } else if (JSON.stringify(before) !== JSON.stringify(item)) {
-          await window.dataAPI.shopping.patch(item.id, { name: item.name, amount: item.amount, unit: item.unit, category: item.category, checked: !!item.checked, auto: !!item.auto });
+          await window.dataAPI.shopping.patch(item.id, {
+            name: item.name, amount: item.amount, unit: item.unit, category: item.category,
+            checked: !!item.checked, auto: !!item.auto,
+            booked_amount: item.bookedAmount == null ? null : item.bookedAmount,
+            booked_unit: item.bookedUnit || null,
+            booked_item_id: item.bookedItemId || null,
+            booked_by: item.bookedBy || null,
+            booked_review: !!item.bookedReview,
+          });
         }
       }
       return;
@@ -4278,7 +4364,7 @@ Regels:
           // herkende de foto "1 stuks", dan gold dat als een ander product en
           // kreeg je er een tweede bij. De naam bepaalt wat het is; de eenheid
           // rekenen we om.
-          const { zeker } = vindVoorraadKandidaten(it.name, inventory);
+          const { zeker } = vindVoorraadKandidaten(it.name, inventory, it.unit);
           const existing = zeker;
           return {
             tempId: uid(),
@@ -4401,9 +4487,9 @@ Maximaal 30 producten. Staat er niets bruikbaars op de foto, antwoord dan met {"
         results = items.slice(0, 30).map((it) => {
           const naam = String(it.naam || it.name || "").slice(0, 60).trim();
           if (!naam) return null;
-          const { zeker, kandidaten } = vindVoorraadKandidaten(naam, inventory);
-          const opFoto = it.opfoto === true && Number(it.hoeveelheid) > 0;
           const eenheid = UNITS.includes(it.eenheid) ? it.eenheid : "stuks";
+          const opFoto = it.opfoto === true && Number(it.hoeveelheid) > 0;
+          const { zeker, kandidaten } = vindVoorraadKandidaten(naam, inventory, eenheid);
           return {
             tempId: uid(),
             name: naam,
@@ -4952,18 +5038,44 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
 
     const terug = (regel && Array.isArray(regel.deducted)) ? regel.deducted : [];
     let hersteld = 0;
+    let nextInventory = inventory.map((i) => ({ ...i }));
+    let voorraadGewijzigd = false;
+
     if (terug.length) {
-      const nextInventory = inventory.map((i) => ({ ...i }));
       terug.forEach((d) => {
         const idx = nextInventory.findIndex((i) => i.id === d.itemId);
         if (idx === -1) return; // product bestaat niet meer
         nextInventory[idx] = { ...nextInventory[idx], current: addToStock(nextInventory[idx], d.amount) };
         hersteld += 1;
       });
-      persist("inventory", nextInventory, setInventory);
+      voorraadGewijzigd = hersteld > 0;
     }
 
-    persist("weekmenu", { ...weekmenu, [dagSleutel]: { ...leesDag(weekmenu, dagSleutel), cookedAt: null } }, setWeekmenu);
+    // Heeft deze avond een kliekje opgeleverd, dan hoort dat er ook niet meer
+    // te zijn — anders tel je de maaltijd dubbel: één keer als teruggezette
+    // ingrediënten, één keer als portie in de koelkast. Is er al van gegeten,
+    // dan laten we het staan en zeggen we dat.
+    let kliekjeWeg = false;
+    let kliekjeBleef = null;
+    if (entry.producedLeftoverId && entry.producedLeftoverId !== "geen") {
+      const kl = nextInventory.find((i) => i.id === entry.producedLeftoverId);
+      if (kl) {
+        if (Number(kl.current) >= Number(kl.max || 0) && Number(kl.max || 0) > 0) {
+          nextInventory = nextInventory.filter((i) => i.id !== kl.id);
+          voorraadGewijzigd = true;
+          kliekjeWeg = true;
+        } else {
+          kliekjeBleef = kl;
+        }
+      }
+    }
+
+    if (voorraadGewijzigd) persist("inventory", nextInventory, setInventory);
+
+    persist("weekmenu", {
+      ...weekmenu,
+      [dagSleutel]: { ...leesDag(weekmenu, dagSleutel), cookedAt: null, producedLeftoverId: null },
+    }, setWeekmenu);
     if (regel) persist("cookLog", cookLog.filter((e) => e.id !== regel.id), setCookLog);
 
     if (!terug.length) {
@@ -4977,6 +5089,46 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       const rest = terug.length - 4;
       showToast(`Teruggezet op \u201Cnog niet gekookt\u201D. Aangevuld: ${toon}${rest > 0 ? ` en nog ${rest} ${rest === 1 ? "product" : "producten"}` : ""}.`);
     }
+
+    if (kliekjeWeg) {
+      setTimeout(() => showToast("Het bewaarde kliekje van deze avond is ook weggehaald."), 2600);
+    } else if (kliekjeBleef) {
+      setTimeout(() => showToast(`Let op: "${kliekjeBleef.name}" staat nog in je voorraad. Daar is al van gegeten, dus die heb ik laten staan.`), 2600);
+    }
+  };
+
+  // Een kliekje alsnog vastleggen, los van het moment van koken. De avond
+  // onthoudt welk voorraaditem eruit is gekomen, zodat de vraag daarna niet
+  // opnieuw gesteld wordt en de dagkaart kan tonen hoeveel er is bewaard.
+  const bewaarKliekjeVoorDag = async (dagSleutel, porties, bewaarplek) => {
+    const dag = leesDag(weekmenu, dagSleutel);
+    const recept = dag && recipes.find((r) => r.id === dag.recipeId);
+    if (!dag || !recept) { setKliekjeVraagDag(null); return; }
+    const item = await addLeftover(recept, porties, bewaarplek, dag.cookedAt || new Date().toISOString());
+    persist("weekmenu", {
+      ...weekmenu,
+      [dagSleutel]: { ...dag, producedLeftoverId: item ? item.id : "geen" },
+    }, setWeekmenu);
+    setKliekjeVraagDag(null);
+  };
+
+  // "Niets over." We leggen dat vast als "geen", zodat de vraag niet elke keer
+  // terugkomt. Leeg zou betekenen: nog niet gevraagd.
+  const geenKliekjeVoorDag = (dagSleutel) => {
+    const dag = leesDag(weekmenu, dagSleutel);
+    if (dag) {
+      persist("weekmenu", { ...weekmenu, [dagSleutel]: { ...dag, producedLeftoverId: "geen" } }, setWeekmenu);
+    }
+    setKliekjeVraagDag(null);
+  };
+
+  // "Nee, niet gekookt." De planning blijft staan — je kunt nog zien wat er
+  // gepland stond — maar de app houdt op met vragen.
+  const markeerNietGekookt = (dagSleutel) => {
+    const dag = leesDag(weekmenu, dagSleutel);
+    if (!dag) return;
+    persist("weekmenu", { ...weekmenu, [dagSleutel]: { ...dag, cookSkipped: true } }, setWeekmenu);
+    showToast("Genoteerd dat er die dag niet gekookt is. Je voorraad blijft zoals hij was.");
   };
 
   /* ---------- Voorkeuren (donkere modus, categorie-volgorde, dieetwensen) ---------- */
@@ -5074,8 +5226,12 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   // Waar het restje heen gaat bepaalt hoe lang het goed blijft: een paar dagen
   // in de koelkast, maanden in de vriezer. Eerder stond dat vast op drie dagen,
   // ook voor wat je invroor.
-  const addLeftover = (recipe, portions, bewaarplek = "koelkast") => {
-    if (!portions || portions <= 0) return;
+  // gekooktOp bepaalt vanaf wanneer de houdbaarheid telt. Leg je een restje
+  // pas de volgende ochtend vast, dan is het nog twee dagen goed en niet drie.
+  // Geeft het aangemaakte voorraaditem terug, zodat de weekmenu-dag kan
+  // onthouden welk kliekje die avond heeft opgeleverd.
+  const addLeftover = async (recipe, portions, bewaarplek = "koelkast", gekooktOp = null) => {
+    if (!portions || portions <= 0) return null;
     const naarVriezer = bewaarplek === "vriezer";
     const dagen = naarVriezer ? 90 : 3;
 
@@ -5085,7 +5241,10 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     const bakjes = nummertOp
       ? kiesVrijeBakjes(inventory, portions, Number(preferences.containerCount) || 40)
       : [];
-    const expiry = new Date();
+    // Vanaf het kooktijdstip, niet vanaf nu. Een kliekje van gisteravond is
+    // vandaag nog twee dagen houdbaar.
+    const basis = gekooktOp ? new Date(gekooktOp) : new Date();
+    const expiry = isNaN(basis) ? new Date() : basis;
     expiry.setDate(expiry.getDate() + dagen);
     const newItem = {
       id: uid(),
@@ -5099,9 +5258,22 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       sourceRecipeId: recipe.id,
       containers: bakjes,
     };
-    persist("inventory", [...inventory, newItem], setInventory);
+    // Wachten: de datalaag vervangt het tijdelijke kenmerk door dat van de
+    // database, in ditzelfde object. Wie het item terugkrijgt mag erop
+    // rekenen dat het kenmerk klopt, anders verwijst de weekmenu-dag straks
+    // naar een kliekje dat na het herladen niet bestaat.
+    await persist("inventory", [...inventory, newItem], setInventory);
 
-    if (nummertOp && bakjes.length) {
+    // Al over de datum heen? Dat is geen fout van de app, maar je moet het
+    // wel weten voordat je het in de koelkast legt.
+    // Op de dag vergelijken, niet op het tijdstip: de houdbaarheidsdatum die
+    // we opslaan is een datum zonder klok. Rekenen met het kooktijdstip erin
+    // gaf er steeds een dag te veel.
+    const verlopen = startOfDay(expiry) < startOfDay(new Date());
+
+    if (verlopen) {
+      showToast(`${portions} portie${portions > 1 ? "s" : ""} bewaard, maar let op: gerekend vanaf het koken is dit al over de houdbaarheidsdatum.`);
+    } else if (nummertOp && bakjes.length) {
       showToast(
         bakjes.length < portions
           ? `Pak bakje ${bakjesTekst(bakjes)}. Je hebt niet genoeg vrije nummers voor alle porties.`
@@ -5110,12 +5282,14 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     } else if (nummertOp && !bakjes.length) {
       showToast("Alle genummerde bakjes zijn in gebruik. Er is niets genummerd.");
     } else {
+      const restDagen = Math.max(0, Math.round((startOfDay(expiry) - startOfDay(new Date())) / 86400000));
       showToast(
         naarVriezer
           ? `${portions} portie${portions > 1 ? "s" : ""} in de vriezer gezet (houdbaar tot over 3 maanden).`
-          : `${portions} portie${portions > 1 ? "s" : ""} in de koelkast gezet (eet binnen 3 dagen op).`
+          : `${portions} portie${portions > 1 ? "s" : ""} in de koelkast gezet (nog ${restDagen} ${restDagen === 1 ? "dag" : "dagen"} houdbaar).`
       );
     }
+    return newItem;
   };
 
   // Een gepland kliekje opeten: dat gaat van de restjesvoorraad af, niet van de
@@ -5227,8 +5401,119 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
 
   /* ---------- Boodschappenlijst ---------- */
 
+  // Afvinken in de winkel boekt meteen in de voorraad. Vroeger gebeurde dat
+  // pas aan het eind, in één klap. Direct boeken heeft twee voordelen: je
+  // huisgenoot ziet live wat er al in de kar ligt, en je kunt de hoeveelheid
+  // ter plekke bijstellen op wat je werkelijk pakte.
+  //
+  // Wat er geboekt is onthouden we op de regel zelf. Pas je het aantal daarna
+  // aan, dan klopt "trek de lijstwaarde af" niet meer — alleen het werkelijk
+  // geboekte getal kan er weer af.
   const toggleChecked = (id) => {
-    persist("shoppingList", shoppingList.map((s) => (s.id === id ? { ...s, checked: !s.checked } : s)), setShoppingList);
+    const regel = shoppingList.find((s) => s.id === id);
+    if (!regel) return;
+    if (regel.checked) { maakAfvinkenOngedaan(regel); return; }
+    boekBoodschapIn(regel, regel.amount, regel.unit);
+  };
+
+  // Bepaalt waar een boodschap in de voorraad terechtkomt en in welke eenheid.
+  // Geeft null terug wanneer er niets bestaat om bij op te tellen.
+  const voorraadDoelVoor = (regel) => {
+    const { zeker, kandidaten } = vindVoorraadKandidaten(regel.name, inventory, regel.unit);
+    const item = zeker || null;
+    return { item, onzeker: !zeker && kandidaten.length > 0, kandidaten };
+  };
+
+  // async met opzet: een nieuw voorraadproduct krijgt zijn definitieve
+  // kenmerk pas van de database. Schrijven we de boodschappenregel eerder weg,
+  // dan wijst die naar een kenmerk dat na het herladen niet meer bestaat — en
+  // dan kan het ongedaan maken het product niet terugvinden.
+  const boekBoodschapIn = async (regel, hoeveelheid, eenheid) => {
+    const { item, onzeker } = voorraadDoelVoor(regel);
+    const nextInventory = inventory.map((i) => ({ ...i }));
+    let geboekt = null;
+
+    if (item) {
+      const idx = nextInventory.findIndex((i) => i.id === item.id);
+      const erbij = naarVoorraadEenheid(hoeveelheid, eenheid, item);
+      if (erbij === null) {
+        // Stuks tegenover grammen zonder bruikbaar stukgewicht: liever niets
+        // boeken dan een verzonnen getal. De regel wordt wel afgevinkt en
+        // gemarkeerd, zodat je hem bij het afsluiten tegenkomt.
+        geboekt = { amount: null, unit: null, itemId: item.id };
+      } else {
+        nextInventory[idx] = { ...nextInventory[idx], current: addToStock(nextInventory[idx], erbij) };
+        geboekt = { amount: erbij, unit: item.unit, itemId: item.id };
+        persist("inventory", nextInventory, setInventory);
+      }
+    } else {
+      // Nog geen voorraadproduct. Aanmaken met minimum en maximum op nul: je
+      // kocht dit voor een recept, niet om op voorraad te houden. Met een
+      // minimum zou het na het koken meteen weer op je lijst staan.
+      const nieuwId = uid();
+      nextInventory.push({
+        id: nieuwId, name: regel.name,
+        category: normalizeCategory(regel.category) === "Overig" ? guessCategory(regel.name) : normalizeCategory(regel.category),
+        unit: eenheid, current: Number(hoeveelheid) || 1, min: 0, max: 0,
+        aliases: [], packSizes: [],
+      });
+      const nieuwItem = nextInventory[nextInventory.length - 1];
+      // Wachten tot het is opgeslagen: de datalaag vervangt het tijdelijke
+      // kenmerk dan door dat van de database, in ditzelfde object.
+      await persist("inventory", nextInventory, setInventory);
+      geboekt = { amount: Number(hoeveelheid) || 1, unit: eenheid, itemId: nieuwItem.id || nieuwId, nieuw: true };
+    }
+
+    persist("shoppingList", shoppingList.map((s) => (s.id === regel.id ? {
+      ...s, checked: true, amount: hoeveelheid, unit: eenheid,
+      bookedAmount: geboekt.amount, bookedUnit: geboekt.unit,
+      bookedItemId: geboekt.itemId, bookedBy: currentUserName || null,
+      bookedReview: onzeker || geboekt.amount === null || !!geboekt.nieuw,
+    } : s)), setShoppingList);
+  };
+
+  const maakAfvinkenOngedaan = (regel) => {
+    if (regel.bookedAmount != null && regel.bookedItemId) {
+      const idx = inventory.findIndex((i) => i.id === regel.bookedItemId);
+      if (idx > -1) {
+        const nextInventory = inventory.map((i) => ({ ...i }));
+        nextInventory[idx] = {
+          ...nextInventory[idx],
+          current: round2(Math.max(0, Number(nextInventory[idx].current || 0) - Number(regel.bookedAmount))),
+        };
+        persist("inventory", nextInventory, setInventory);
+      }
+    }
+    persist("shoppingList", shoppingList.map((s) => (s.id === regel.id ? {
+      ...s, checked: false, bookedAmount: null, bookedUnit: null,
+      bookedItemId: null, bookedBy: null, bookedReview: false,
+    } : s)), setShoppingList);
+  };
+
+  // De hoeveelheid bijstellen nádat je hebt afgevinkt: eerst het oude bedrag
+  // eraf, dan het nieuwe erbij. Zo blijft de voorraad kloppen hoe vaak je ook
+  // van gedachten verandert.
+  const herzieGeboekt = (regel, nieuweHoeveelheid, nieuweEenheid) => {
+    const item = regel.bookedItemId ? inventory.find((i) => i.id === regel.bookedItemId) : null;
+    if (!item) { boekBoodschapIn(regel, nieuweHoeveelheid, nieuweEenheid); return; }
+
+    const erbij = naarVoorraadEenheid(nieuweHoeveelheid, nieuweEenheid, item);
+    if (erbij === null) { showToast(`${nieuweEenheid} is niet om te rekenen naar ${item.unit}.`); return; }
+
+    const nextInventory = inventory.map((i) => ({ ...i }));
+    const idx = nextInventory.findIndex((i) => i.id === item.id);
+    const zonderOud = round2(Math.max(0, Number(item.current || 0) - Number(regel.bookedAmount || 0)));
+    nextInventory[idx] = { ...item, current: round2(zonderOud + erbij) };
+
+    // De maat die je koos onthouden, zodat hij de volgende keer vooraan staat.
+    const bestaand = Array.isArray(item.packSizes) ? item.packSizes : [];
+    nextInventory[idx].packSizes = [erbij, ...bestaand.filter((m) => Number(m) !== erbij)].slice(0, 5);
+
+    persist("inventory", nextInventory, setInventory);
+    persist("shoppingList", shoppingList.map((s) => (s.id === regel.id ? {
+      ...s, amount: nieuweHoeveelheid, unit: nieuweEenheid,
+      bookedAmount: erbij, bookedUnit: item.unit, bookedReview: false,
+    } : s)), setShoppingList);
   };
 
   const addManualItem = (item) => {
@@ -5287,43 +5572,40 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   };
 
   const removeShoppingItem = (id) => {
+    const regel = shoppingList.find((s) => s.id === id);
+    // Een afgevinkte regel weghalen zonder de boeking terug te draaien zou de
+    // voorraad opgehoogd laten met iets waarvan geen spoor meer is.
+    if (regel && regel.checked && regel.bookedAmount != null && regel.bookedItemId) {
+      const idx = inventory.findIndex((i) => i.id === regel.bookedItemId);
+      if (idx > -1) {
+        const nextInventory = inventory.map((i) => ({ ...i }));
+        nextInventory[idx] = {
+          ...nextInventory[idx],
+          current: round2(Math.max(0, Number(nextInventory[idx].current || 0) - Number(regel.bookedAmount))),
+        };
+        persist("inventory", nextInventory, setInventory);
+        showToast(`${regel.name} van de lijst gehaald en de ${regel.bookedAmount} ${regel.bookedUnit} weer van je voorraad af.`);
+      }
+    }
     persist("shoppingList", shoppingList.filter((s) => s.id !== id), setShoppingList);
   };
 
+  // Afronden na het winkelen. Het boeken zelf is al gebeurd bij elk vinkje —
+  // hier halen we alleen de afgehandelde regels van de lijst. Wat nog aandacht
+  // vraagt blijft staan tot je het hebt bekeken.
   const processChecked = () => {
-    const checkedItems = shoppingList.filter((s) => s.checked);
-    if (!checkedItems.length) return;
-    const nextInventory = inventory.map((i) => ({ ...i }));
-    let createdCount = 0;
-    checkedItems.forEach((s) => {
-      const idx = nextInventory.findIndex((i) => namesMatch(i.name, s.name) && i.unit === s.unit);
-      if (idx > -1) {
-        const item = nextInventory[idx];
-        nextInventory[idx] = { ...item, current: addToStock(item, s.amount) };
-      } else {
-        // Nog geen voorraaditem met deze naam/eenheid: nieuw aanmaken op basis van het gekochte aantal.
-        const amount = Number(s.amount || 0) || 1;
-        nextInventory.push({
-          id: uid(),
-          name: s.name,
-          category: s.category || guessCategory(s.name),
-          unit: s.unit,
-          current: amount,
-          // Bewust 0: dit product kocht je voor een recept, niet om op voorraad
-          // te houden. Met een minimum zou het na het koken meteen weer op je
-          // boodschappenlijst staan. Wil je het wél aanhouden, zet dan zelf een
-          // minimum en maximum bij het product.
-          min: 0,
-          max: 0,
-        });
-        createdCount += 1;
-      }
-    });
-    persist("inventory", nextInventory, setInventory);
-    persist("shoppingList", shoppingList.filter((s) => !s.checked), setShoppingList);
-    showToast(createdCount
-      ? `${checkedItems.length} artikel${checkedItems.length > 1 ? "en" : ""} afgevinkt, voorraad bijgewerkt (${createdCount} nieuw toegevoegd — check zelf even het minimum/maximum).`
-      : `${checkedItems.length} artikel${checkedItems.length > 1 ? "en" : ""} afgevinkt en voorraad bijgewerkt.`);
+    const afgevinkt = shoppingList.filter((s) => s.checked);
+    if (!afgevinkt.length) return;
+    const naTeKijken = afgevinkt.filter((s) => s.bookedReview);
+    const klaar = afgevinkt.filter((s) => !s.bookedReview);
+
+    persist("shoppingList", shoppingList.filter((s) => !s.checked || s.bookedReview), setShoppingList);
+
+    if (naTeKijken.length) {
+      showToast(`${klaar.length} van de lijst gehaald. ${naTeKijken.length} regel${naTeKijken.length > 1 ? "s vragen" : " vraagt"} nog even aandacht — die ${naTeKijken.length > 1 ? "blijven" : "blijft"} staan.`);
+    } else {
+      showToast(`${klaar.length} artikel${klaar.length > 1 ? "en" : ""} van de lijst gehaald. Je voorraad was al bijgewerkt tijdens het afvinken.`);
+    }
   };
 
   /* ---------- Weekmenu ---------- */
@@ -5351,6 +5633,8 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       [day]: {
         ...vorige, recipeId, offNight: false, leftoverItemId: leftoverItemId || null,
         cookedAt: anderGerecht ? null : (vorige.cookedAt || null),
+        producedLeftoverId: anderGerecht ? null : (vorige.producedLeftoverId || null),
+        cookSkipped: anderGerecht ? false : !!vorige.cookSkipped,
       },
     };
     persist("weekmenu", next, setWeekmenu);
@@ -5386,7 +5670,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       showToast("Alle dagen zijn al ingepland — maak eerst een dag leeg om dit te plannen.");
       return;
     }
-    const next = { ...weekmenu, [emptyDay.key]: { ...dayEntry(emptyDay.key), recipeId, cookedAt: null } };
+    const next = { ...weekmenu, [emptyDay.key]: { ...dayEntry(emptyDay.key), recipeId, cookedAt: null, producedLeftoverId: null, cookSkipped: false } };
     persist("weekmenu", next, setWeekmenu);
     showToast(`${recipeName} ingepland op ${emptyDay.label}.`);
   };
@@ -5410,7 +5694,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     Object.entries(menu || {}).forEach(([dag, waarde]) => {
       const regel = leesDag(menu, dag);
       if (!regel) return;
-      schoon[dag] = { ...regel, cookedAt: null };
+      schoon[dag] = { ...regel, cookedAt: null, producedLeftoverId: null, cookSkipped: false };
     });
     return schoon;
   };
@@ -5723,7 +6007,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
       if (!candidates.length) return; // niets bruikbaars gevonden voor deze dag, gewoon overslaan
       const pick = candidates[0];
       usedThisRun.push(pick);
-      next[day.key] = { ...dayEntry(day.key), recipeId: pick, cookedAt: null };
+      next[day.key] = { ...dayEntry(day.key), recipeId: pick, cookedAt: null, producedLeftoverId: null, cookSkipped: false };
     });
 
     persist("weekmenu", next, setWeekmenu);
@@ -5876,7 +6160,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
         }
         newRecipes.push(recipeWithId);
         opeenvolgendeFouten = 0;
-        nextWeekmenu[days[i].key] = { ...dayEntry(days[i].key), recipeId: recipeWithId.id, cookedAt: null };
+        nextWeekmenu[days[i].key] = { ...dayEntry(days[i].key), recipeId: recipeWithId.id, cookedAt: null, producedLeftoverId: null, cookSkipped: false };
       } catch (e) {
         console.error(`Dag ${days[i].key} mislukt:`, e.status || "", e.message, e.body || "");
         if (e.status === 429) {
@@ -6155,6 +6439,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             readiness={vanavondRecept ? recipeReadiness(vanavondRecept, inventory) : null}
             cookNaam={(weekmenu[dateKey(new Date())] || {}).cook}
             alGekookt={vanavondAlGekookt}
+            onKliekjeVraag={() => setKliekjeVraagDag(dateKey(new Date()))}
             onOpen={(id) => openRecipeVanuit(id, { dag: dateKey(new Date()), dubbel: (weekmenu[dateKey(new Date())] || {}).doublePortion })}
             onVerrasMe={verrasMeVanavond}
             onNaarWeekmenu={() => setTab("weekmenu")}
@@ -6204,6 +6489,13 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             onCook={(scale, overrides) => cookRecipe(openRecipe, scale, overrides, cookDayContext)}
             dagAlGekooktOp={cookDayContext ? (leesDag(weekmenu, cookDayContext) || {}).cookedAt || null : null}
             onUndoCook={cookDayContext ? () => undoCook(cookDayContext) : null}
+            onKliekjeVraag={
+              cookDayContext
+                && (leesDag(weekmenu, cookDayContext) || {}).cookedAt
+                && !(leesDag(weekmenu, cookDayContext) || {}).producedLeftoverId
+                ? () => setKliekjeVraagDag(cookDayContext)
+                : null
+            }
             onDuplicate={() => duplicateToMyBook(openRecipe.id)}
             onAddLeftover={addLeftover}
             onAddFreezerPortion={addFreezerPortion}
@@ -6254,6 +6546,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             onRemove={removeShoppingItem}
             onAddManual={addManualItem}
             onChangeAmount={changeShoppingAmount}
+            onHerzie={herzieGeboekt}
             onSetAmount={setShoppingAmount}
             onProcess={processChecked}
           />
@@ -6287,6 +6580,8 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             onOpenRecipe={(id, dbl, leftoverId, dagSleutel) => openRecipeVanuit(id, { dag: dagSleutel, leftoverId, dubbel: dbl, naarKookboek: true })}
             onExportCalendar={() => setCalendarOpen(true)}
             onQuickPlan={quickPlanExpiring}
+            onKliekjeVraag={(dagSleutel) => setKliekjeVraagDag(dagSleutel)}
+            onNietGekookt={markeerNietGekookt}
           />
         )}
       </div>
@@ -6406,6 +6701,31 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           onClose={() => { setListPhotoOpen(false); setListScanResults([]); }}
         />
       )}
+
+      {kliekjeVraagDag && (() => {
+        const dag = leesDag(weekmenu, kliekjeVraagDag) || {};
+        const recept = recipes.find((r) => r.id === dag.recipeId);
+        if (!recept) return null;
+        return (
+          <Modal title={recept.name} onClose={() => setKliekjeVraagDag(null)}>
+            <p style={{ fontSize: 12, color: C.inkSoft, marginTop: 0 }}>
+              Gekookt {gekooktOmschrijving(dag.cookedAt)}. Wat je nu bewaart blijft houdbaar gerekend vanaf dat moment.
+            </p>
+            <KliekjeVraag
+              gekooktOp={dag.cookedAt}
+              toonBakjesTip={!preferences.containerNumbering && !preferences.containerHintSeen}
+              compact
+              onBewaar={(porties, plek) => {
+                bewaarKliekjeVoorDag(kliekjeVraagDag, porties, plek);
+                if (!preferences.containerNumbering && !preferences.containerHintSeen) {
+                  updatePreferences({ containerHintSeen: true });
+                }
+              }}
+              onNiets={() => geenKliekjeVoorDag(kliekjeVraagDag)}
+            />
+          </Modal>
+        );
+      })()}
 
       {listAfvinkVraag && (
         <Modal title="Van je boodschappenlijst halen?" onClose={() => bevestigAfvinken(false)}>
@@ -7074,11 +7394,87 @@ function NutritionLabel({ recipe, isMine, onRecalculate, busy }) {
   );
 }
 
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook }) {
+// De vraag "is er iets overgebleven?" als zelfstandig onderdeel.
+//
+// Stond eerder alleen als stap in het receptscherm, direct na het afboeken.
+// Dat is juist het moment waarop je het nog níét weet: het eten staat op
+// tafel. Nu kan dezelfde vraag ook later gesteld worden — vanuit de
+// Vanavond-strook en vanuit het weekmenu — met precies dezelfde knoppen.
+function KliekjeVraag({ gekooktOp, toonBakjesTip, onBewaar, onNiets, compact = false }) {
+  const [porties, setPorties] = useState(0);
+  const [bewaarplek, setBewaarplek] = useState("koelkast");
+
+  // De houdbaarheid rekent vanaf het moment dat je kookte, niet vanaf nu.
+  // Leg je donderdagavond pas vrijdagochtend vast, dan is het restje nog twee
+  // dagen goed en niet drie.
+  const dagenOver = (() => {
+    if (bewaarplek !== "koelkast" || !gekooktOp) return null;
+    const verstreken = Math.floor((Date.now() - new Date(gekooktOp).getTime()) / 86400000);
+    return 3 - Math.max(0, verstreken);
+  })();
+
+  return (
+    <div style={{ background: C.cardBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14, padding: 12 }}>
+      <p style={{ fontSize: 13, margin: "0 0 10px", color: C.ink }}>Is er iets van dit gerecht overgebleven?</p>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginBottom: 10 }}>
+        <button aria-label="Minder porties" onClick={() => setPorties((p) => Math.max(0, p - 1))} style={{ width: 44, height: 44, borderRadius: 8, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }}><Minus size={14} /></button>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 15, minWidth: 90, textAlign: "center" }}>
+          {porties === 0 ? "Niets over" : `${porties} portie${porties > 1 ? "s" : ""}`}
+        </span>
+        <button aria-label="Meer porties" onClick={() => setPorties((p) => p + 1)} style={{ width: 44, height: 44, borderRadius: 8, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }}><Plus size={14} /></button>
+      </div>
+
+      {porties > 0 && (
+        <>
+          {/* Waar het heen gaat bepaalt hoe lang het goed blijft. */}
+          <div style={{ fontSize: 12, color: C.inkSoft, marginBottom: 6 }}>Waar bewaar je het?</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            {[
+              ["koelkast", "\u2744\uFE0F Koelkast", dagenOver == null ? "eet binnen 3 dagen op"
+                : dagenOver > 0 ? `nog ${dagenOver} ${dagenOver === 1 ? "dag" : "dagen"} houdbaar`
+                : "let op: dit is al te oud"],
+              ["vriezer", "\uD83E\uDDCA Vriezer", "houdbaar tot 3 maanden"],
+            ].map(([waarde, label, uitleg]) => (
+              <button
+                key={waarde}
+                onClick={() => setBewaarplek(waarde)}
+                style={{
+                  flex: 1, padding: "10px 8px", borderRadius: 14, cursor: "pointer",
+                  fontFamily: FONT_BODY, textAlign: "center", minHeight: 44,
+                  background: bewaarplek === waarde ? C.blue : C.cardBg,
+                  color: bewaarplek === waarde ? "#fff" : C.ink,
+                  border: `1.5px solid ${bewaarplek === waarde ? C.blue : C.borderTint}`,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div>
+                <div style={{ fontSize: 11, opacity: 0.85, marginTop: 1 }}>{uitleg}</div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Eén keer laten weten dat nummeren bestaat. Anders ontdekt niemand het. */}
+      {porties > 0 && bewaarplek === "vriezer" && toonBakjesTip && (
+        <p style={{ fontSize: 11.5, color: C.inkSoft, margin: "0 0 10px", lineHeight: 1.45, background: C.paper, borderRadius: 10, padding: "8px 10px" }}>
+          Werk je met genummerde bakjes? Dan zegt Pollepel voortaan welk nummer je moet pakken.
+          Aan te zetten in Instellingen.
+        </p>
+      )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <PrimaryButton tone="mustard" onClick={() => (porties > 0 ? onBewaar(porties, bewaarplek) : onNiets())}>
+          {porties > 0 ? "Bewaren" : (compact ? "Niets over" : "Klaar")}
+        </PrimaryButton>
+        {porties > 0 && <GhostButton onClick={onNiets}>Overslaan</GhostButton>}
+      </div>
+    </div>
+  );
+}
+
+function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook, onKliekjeVraag }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [usedAmounts, setUsedAmounts] = useState({}); // werkelijk gebruikte hoeveelheden bij tekort
-  const [leftoverPortions, setLeftoverPortions] = useState(0);
-  const [bewaarplek, setBewaarplek] = useState("koelkast");
   const [eatPortions, setEatPortions] = useState(1);
   const [gekozenBakjes, setGekozenBakjes] = useState([]);
 
@@ -7570,6 +7966,13 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
                   </span>
                 </span>
               </div>
+              {/* Nog niet gevraagd of er iets over was? Dan kan dat hier
+                  alsnog — je weet het pas na het eten. */}
+              {onKliekjeVraag && (
+                <GhostButton full onClick={onKliekjeVraag}>
+                  🍱 Is er iets over? Bewaren voor later
+                </GhostButton>
+              )}
               {onUndoCook && (
                 <GhostButton full onClick={onUndoCook}>
                   <X size={15} /> Toch niet gekookt — voorraad terugzetten
@@ -7742,56 +8145,16 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       )}
 
       {isMine && confirmCook === "leftover" && (
-        <div style={{ background: C.cardBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14, padding: 12 }}>
-          <p style={{ fontSize: 13, margin: "0 0 10px", color: C.ink }}>Is er iets van dit gerecht overgebleven?</p>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginBottom: 10 }}>
-            <button onClick={() => setLeftoverPortions((p) => Math.max(0, p - 1))} style={{ width: 44, height: 44, borderRadius: 8, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }}><Minus size={14} /></button>
-            <span style={{ fontFamily: FONT_MONO, fontSize: 15, minWidth: 90, textAlign: "center" }}>{leftoverPortions === 0 ? "Niets over" : `${leftoverPortions} portie${leftoverPortions > 1 ? "s" : ""}`}</span>
-            <button onClick={() => setLeftoverPortions((p) => p + 1)} style={{ width: 44, height: 44, borderRadius: 8, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }}><Plus size={14} /></button>
-          </div>
-          {leftoverPortions > 0 && (
-            <>
-              {/* Waar het heen gaat bepaalt hoe lang het goed blijft. */}
-              <div style={{ fontSize: 12, color: C.inkSoft, marginBottom: 6 }}>Waar bewaar je het?</div>
-              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                {[
-                  ["koelkast", "❄️ Koelkast", "eet binnen 3 dagen op"],
-                  ["vriezer", "🧊 Vriezer", "houdbaar tot 3 maanden"],
-                ].map(([waarde, label, uitleg]) => (
-                  <button
-                    key={waarde}
-                    onClick={() => setBewaarplek(waarde)}
-                    style={{
-                      flex: 1, padding: "10px 8px", borderRadius: 14, cursor: "pointer",
-                      fontFamily: FONT_BODY, textAlign: "center", minHeight: 44,
-                      background: bewaarplek === waarde ? C.blue : C.cardBg,
-                      color: bewaarplek === waarde ? "#fff" : C.ink,
-                      border: `1.5px solid ${bewaarplek === waarde ? C.blue : C.borderTint}`,
-                    }}
-                  >
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div>
-                    <div style={{ fontSize: 11, opacity: 0.85, marginTop: 1 }}>{uitleg}</div>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* Eén keer laten weten dat nummeren bestaat. Anders ontdekt niemand het. */}
-          {leftoverPortions > 0 && bewaarplek === "vriezer" && toonBakjesTip && (
-            <p style={{ fontSize: 11.5, color: C.inkSoft, margin: "0 0 10px", lineHeight: 1.45, background: C.paper, borderRadius: 10, padding: "8px 10px" }}>
-              Werk je met genummerde bakjes? Dan zegt Pollepel voortaan welk nummer je moet pakken.
-              Aan te zetten in Instellingen.
-            </p>
-          )}
-
-          <div style={{ display: "flex", gap: 8 }}>
-            <PrimaryButton tone="mustard" onClick={() => { if (leftoverPortions > 0) onAddLeftover(recipe, leftoverPortions, bewaarplek); setConfirmCook(false); setLeftoverPortions(0); setBewaarplek("koelkast"); if (toonBakjesTip && onBakjesTipGezien) onBakjesTipGezien(); }}>
-              {leftoverPortions > 0 ? "Bewaren" : "Klaar"}
-            </PrimaryButton>
-            {leftoverPortions > 0 && <GhostButton onClick={() => { setConfirmCook(false); setLeftoverPortions(0); setBewaarplek("koelkast"); }}>Overslaan</GhostButton>}
-          </div>
-        </div>
+        <KliekjeVraag
+          gekooktOp={new Date().toISOString()}
+          toonBakjesTip={toonBakjesTip}
+          onBewaar={(porties, plek) => {
+            onAddLeftover(recipe, porties, plek, new Date().toISOString());
+            setConfirmCook(false);
+            if (toonBakjesTip && onBakjesTipGezien) onBakjesTipGezien();
+          }}
+          onNiets={() => setConfirmCook(false)}
+        />
       )}
 
       {!isMine && (
@@ -8023,7 +8386,7 @@ function RecipeForm({ initial, inventoryNames, inventoryItems = [], onImport, on
 /*  Voorraad                                                         */
 /* ---------------------------------------------------------------- */
 
-function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras = [], onAddExtra, onRemoveExtra, periodDays, periods, periodIndex, onPeriodChange, onPickDay, onPickCook, onPickAttendees, onSetDoublePortion, onClearDay, onGenerate, onAIGenerate, onPatternGenerate, onDuplicate, onApplyTemplate, onShuffle, onOpenRecipe, onExportCalendar, onQuickPlan }) {
+function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras = [], onAddExtra, onRemoveExtra, periodDays, periods, periodIndex, onPeriodChange, onPickDay, onPickCook, onPickAttendees, onSetDoublePortion, onClearDay, onGenerate, onAIGenerate, onPatternGenerate, onDuplicate, onApplyTemplate, onShuffle, onOpenRecipe, onExportCalendar, onQuickPlan, onKliekjeVraag, onNietGekookt }) {
   const findRecipe = (id) => recipes.find((r) => r.id === id);
   const dayEntry = (day) => leesDag(weekmenu, day);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -8142,12 +8505,18 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
                       {/* Afgeboekt? Dan zie je dat hier, zodat je niet nog
                           eens op "ik heb dit gekookt" tikt en dezelfde
                           ingrediënten een tweede keer van je voorraad gaan. */}
-                      {entry?.cookedAt && (
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, color: C.sage }}>
-                          <Check size={12} style={{ flexShrink: 0 }} />
-                          Gekookt · {gekooktOmschrijving(entry.cookedAt)}
-                        </div>
-                      )}
+                      {entry?.cookedAt && (() => {
+                        const bewaard = entry.producedLeftoverId && entry.producedLeftoverId !== "geen"
+                          ? (inventory || []).find((i) => i.id === entry.producedLeftoverId)
+                          : null;
+                        return (
+                          <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, color: C.sage }}>
+                            <Check size={12} style={{ flexShrink: 0 }} />
+                            Gekookt · {gekooktOmschrijving(entry.cookedAt)}
+                            {bewaard ? ` · ${bewaard.current} ${bewaard.current === 1 ? "portie" : "porties"} bewaard` : ""}
+                          </div>
+                        );
+                      })()}
                       {/* Bij een kliekje erbij zetten hoeveel er is en hoe lang het nog
                           goed is — plan je iets dat eerder bederft, dan zeg ik dat. */}
                       {entry?.leftoverItemId && (() => {
@@ -8230,6 +8599,50 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
                       </span>
                     </button>
                   )}
+
+                  {/* Afgeboekt, maar nog nooit gevraagd of er iets over was.
+                      Dat weet je pas na het eten, dus dit mag ook morgen nog. */}
+                  {recipe && entry?.cookedAt && !entry?.producedLeftoverId && onKliekjeVraag && (
+                    <button
+                      onClick={() => onKliekjeVraag(day.key)}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 5,
+                        background: "none", border: `1px dashed ${C.mustard}`,
+                        borderRadius: 20, padding: "3px 10px", cursor: "pointer",
+                      }}
+                    >
+                      <span style={{ fontSize: 12 }}>🍱</span>
+                      <span style={{ fontSize: 12, color: C.mustardDeep }}>Restje bewaren</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Voorbije dag met een gerecht erop waar nooit op is afgeboekt.
+                  Zonder deze vraag klopt je voorraad stilletjes niet meer: je
+                  hebt gekookt, maar de app weet van niets. */}
+              {recipe && !entry?.offNight && !entry?.cookedAt && !entry?.cookSkipped
+                && !entry?.leftoverItemId && day.key < dateKey(new Date()) && onNietGekookt && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+                  marginLeft: 76, marginTop: 7, background: C.noteBg,
+                  border: `1px solid ${C.mustard}`, borderRadius: 12, padding: "7px 10px",
+                }}>
+                  <span style={{ flex: 1, minWidth: 130, fontSize: 12, color: C.ink }}>
+                    Heb je dit gekookt?
+                  </span>
+                  <button
+                    onClick={() => onOpenRecipe(recipe.id, entry?.doublePortion, entry?.leftoverItemId, day.key)}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 4, background: C.sage, border: "none", borderRadius: 20, padding: "4px 12px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 600, fontFamily: FONT_BODY }}
+                  >
+                    <Check size={12} /> Ja, afboeken
+                  </button>
+                  <button
+                    onClick={() => onNietGekookt(day.key)}
+                    style={{ background: "none", border: `1px solid ${C.borderTint}`, borderRadius: 20, padding: "4px 12px", cursor: "pointer", color: C.inkSoft, fontSize: 12, fontFamily: FONT_BODY }}
+                  >
+                    Nee
+                  </button>
                 </div>
               )}
 
@@ -10141,7 +10554,7 @@ function InventoryForm({ initial, consumptionLog = [], inventory = [], nummertBa
   // zeggen het alleen, en bieden aan de naam over te nemen.
   const alBekend = useMemo(() => {
     if (initial.id || !name.trim()) return null;
-    const { zeker, kandidaten } = vindVoorraadKandidaten(name, inventory);
+    const { zeker, kandidaten } = vindVoorraadKandidaten(name, inventory, unit);
     return zeker || (kandidaten[0] && kandidaten[0].item) || null;
   }, [initial.id, name, inventory]);
 
@@ -10378,11 +10791,13 @@ const stepVlak = {
   get background() { return C.cardBg; },
 };
 
-function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove, onAddManual, onProcess, onChangeAmount, onSetAmount }) {
+function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove, onAddManual, onProcess, onChangeAmount, onSetAmount, onHerzie }) {
   const [editAmountId, setEditAmountId] = useState(null);
   const [editAmountValue, setEditAmountValue] = useState("");
   const cats = categories && categories.length ? categories : CATEGORIES;
   const [adding, setAdding] = useState(false);
+  const [maatOpenId, setMaatOpenId] = useState(null);
+  const [openKlaarCats, setOpenKlaarCats] = useState([]);
   const [newName, setNewName] = useState("");
   const [newAmount, setNewAmount] = useState("");
   const [newUnit, setNewUnit] = useState("stuks");
@@ -10513,12 +10928,28 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
         const items = byCategory[cat];
         if (!items || !items.length) return null;
         const isDone = items.every((i) => i.checked);
-        if (isDone) {
+        const moetNagekeken = items.some((i) => i.bookedReview);
+        // Een afgeronde categorie klapt in, zodat je tijdens het winkelen
+        // bovenaan verder kunt. Maar hij moet open kunnen: een afgevinkte regel
+        // is nu bij te stellen, en dat kan niet als hij onzichtbaar is. Een
+        // categorie met iets dat nagekeken moet worden klapt helemaal niet in.
+        if (isDone && !moetNagekeken && !openKlaarCats.includes(cat)) {
           return (
-            <div key={cat} style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6, padding: "6px 2px", opacity: 0.6 }}>
+            <button
+              key={cat}
+              onClick={() => setOpenKlaarCats((v) => [...v, cat])}
+              style={{
+                marginBottom: 8, display: "flex", alignItems: "center", gap: 6, padding: "8px 2px",
+                opacity: 0.7, background: "none", border: "none", cursor: "pointer", width: "100%",
+                textAlign: "left", fontFamily: FONT_BODY, minHeight: 40,
+              }}
+            >
               <CheckCircle2 size={13} color={C.sage} />
-              <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: 0.5, color: C.sage, textTransform: "uppercase" }}>{cat} — klaar ({items.length})</span>
-            </div>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: 0.5, color: C.sage, textTransform: "uppercase" }}>
+                {cat} — klaar ({items.length})
+              </span>
+              <span style={{ fontSize: 11, color: C.inkSoft }}>· tik om bij te stellen</span>
+            </button>
           );
         }
         return (
@@ -10533,8 +10964,8 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
                   }}>
                     {item.checked && <Check size={13} color="#fff" />}
                   </button>
-                  <div style={{ flex: 1, minWidth: 0, textDecoration: item.checked ? "line-through" : "none", opacity: item.checked ? 0.55 : 1 }}>
-                    <div style={{ fontSize: 14, color: C.ink }}>
+                  <div style={{ flex: 1, minWidth: 0, opacity: item.checked ? 0.75 : 1 }}>
+                    <div style={{ fontSize: 14, color: C.ink, textDecoration: item.checked ? "line-through" : "none" }}>
                 {item.name}
                 {(item.containers || []).length > 0 && (
                   <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.blueSoft, marginLeft: 6 }}>
@@ -10543,8 +10974,18 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
                 )}
               </div>
 
-                    {/* Aantal aanpassen in de winkel: knopjes voor snel bijstellen,
-                        of tik het getal aan om het zelf in te typen. */}
+                    {/* Afgevinkt? Dan staat hier wat er daadwerkelijk in je
+                        voorraad is bijgeschreven, in de eenheid van dat
+                        product. Tikken opent de maten. */}
+                    {item.checked ? (
+                      <GeboekteRegel
+                        item={item}
+                        inventory={inventory}
+                        open={maatOpenId === item.id}
+                        onOpen={() => setMaatOpenId(maatOpenId === item.id ? null : item.id)}
+                        onKies={(hoeveelheid, eenheid) => { onHerzie(item, hoeveelheid, eenheid); setMaatOpenId(null); }}
+                      />
+                    ) : (
                     <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
                       <button
                         aria-label={`Minder ${item.name}`}
@@ -10592,8 +11033,10 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
                         <span style={stepVlak}><Plus size={13} color={C.inkSoft} /></span>
                       </button>
                     </div>
+                    )}
                   </div>
-                  {item.auto && <Pill tone="auto">via voorraad</Pill>}
+                  {item.checked && item.bookedReview && <Pill tone="warn">nakijken</Pill>}
+                  {!item.checked && item.auto && <Pill tone="auto">via voorraad</Pill>}
                   <button onClick={() => onRemove(item.id)} style={{ background: "none", border: "none", cursor: "pointer" }}>
                     <X size={15} color={C.inkSoft} />
                   </button>
@@ -10613,8 +11056,11 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
       {checkedCount > 0 && (
         <div style={{ marginTop: 14 }}>
           <PrimaryButton tone="sage" full onClick={onProcess}>
-            <Check size={16} /> {checkedCount} artikel{checkedCount > 1 ? "en" : ""} afvinken &amp; voorraad bijwerken
+            <Check size={16} /> Klaar met winkelen — {checkedCount} van de lijst halen
           </PrimaryButton>
+          <p style={{ fontSize: 11, color: C.inkSoft, marginTop: 6, marginBottom: 0 }}>
+            Je voorraad is al bijgewerkt bij het afvinken. Dit ruimt alleen de lijst op.
+          </p>
         </div>
       )}
     </div>
@@ -11241,6 +11687,96 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
         </div>
       )}
     </Modal>
+  );
+}
+
+// Wat er bij het afvinken in je voorraad is bijgeschreven, plus de mogelijkheid
+// het bij te stellen. Staat er iets anders in je kar dan op de lijst — een
+// aanbieding, een grotere verpakking omdat de kleine op was — dan tik je het
+// getal aan en kies je een maat.
+//
+// De maten staan in de eenheid van je vóórraad, niet die van de lijst. Op je
+// lijst kan "2 eetlepel ketjap" staan, maar in de winkel pak je een fles van
+// 250 ml. Eetlepels aanbieden zou daar niets oplossen.
+function GeboekteRegel({ item, inventory, open, onOpen, onKies }) {
+  const [eigenWaarde, setEigenWaarde] = useState("");
+  const [zelfInvullen, setZelfInvullen] = useState(false);
+
+  const doel = item.bookedItemId ? (inventory || []).find((i) => i.id === item.bookedItemId) : null;
+  const eenheid = item.bookedUnit || (doel && doel.unit) || item.unit;
+  const bedrag = item.bookedAmount;
+
+  // Niets geboekt: de eenheden waren niet te vergelijken. Dat zeggen we, want
+  // stilletjes niets doen is hoe een voorraad ongemerkt gaat afwijken.
+  if (bedrag == null) {
+    return (
+      <div style={{ fontSize: 11.5, color: C.brick, marginTop: 2 }}>
+        Afgevinkt, maar niet bijgeschreven: {item.unit} is niet om te rekenen naar {doel ? doel.unit : "de voorraad"}.
+      </div>
+    );
+  }
+
+  const maten = maatSuggesties(bedrag, eenheid, doel ? doel.packSizes : []);
+
+  return (
+    <div style={{ marginTop: 2 }}>
+      <button
+        onClick={onOpen}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none",
+          padding: "2px 0", cursor: "pointer", fontFamily: FONT_MONO, fontSize: 12, color: C.sage,
+          borderBottom: `1px dashed ${C.sage}`,
+        }}
+      >
+        + {bedrag} {eenheid}
+        {doel && doel.name !== item.name ? ` bij ${doel.name}` : ""}
+        {item.bookedBy ? ` · ${item.bookedBy}` : ""}
+      </button>
+
+      {open && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 7, marginBottom: 2 }}>
+          {maten.map((m, i) => (
+            <button
+              key={m}
+              onClick={() => onKies(m, eenheid)}
+              style={{
+                padding: "6px 11px", minHeight: 36, borderRadius: 20, cursor: "pointer",
+                fontFamily: FONT_MONO, fontSize: 12.5,
+                background: i === 0 ? C.sage : C.cardBg,
+                color: i === 0 ? "#fff" : C.ink,
+                border: `1.5px solid ${i === 0 ? C.sage : C.borderTint}`,
+              }}
+            >
+              {m} {eenheid}
+            </button>
+          ))}
+          {zelfInvullen ? (
+            <input
+              autoComplete="off"
+              type="number"
+              inputMode="decimal"
+              autoFocus
+              value={eigenWaarde}
+              onChange={(e) => setEigenWaarde(e.target.value)}
+              onBlur={() => {
+                const w = Number(String(eigenWaarde).replace(",", "."));
+                if (w > 0) onKies(round2(w), eenheid);
+                setZelfInvullen(false); setEigenWaarde("");
+              }}
+              onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+              style={{ width: 82, padding: "6px 9px", minHeight: 36, borderRadius: 20, border: `1.5px solid ${C.mustard}`, fontFamily: FONT_MONO, fontSize: 12.5, background: C.cardBg, color: C.ink }}
+            />
+          ) : (
+            <button
+              onClick={() => { setZelfInvullen(true); setEigenWaarde(String(bedrag)); }}
+              style={{ padding: "6px 11px", minHeight: 36, borderRadius: 20, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 12.5, background: C.cardBg, color: C.inkSoft, border: `1.5px dashed ${C.borderTint}` }}
+            >
+              zelf invullen
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
