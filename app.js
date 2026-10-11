@@ -298,7 +298,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v80 \xB7 11 oktober 2026";
+const APP_VERSIE = "v81 \xB7 11 oktober 2026";
 const TOESTEMMING_VERSIE = 1;
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
@@ -3489,6 +3489,53 @@ function controleerGegevens({ inventory = [], weekmenu = {}, recipes = [], shopp
       gevolg: "Die categorie bestaat niet meer in de lijst."
     });
   });
+  const MINIMAAL_ZINVOL = { g: 5, ml: 5 };
+  inventory.forEach((i) => {
+    const eenheid = String(i.unit || "").toLowerCase();
+    const grens = MINIMAAL_ZINVOL[eenheid];
+    const max = Number(i.max || 0);
+    if (!grens || max <= 0 || max >= grens) return;
+    const voorstel = Math.max(10, Math.round(Number(i.current || 0)) || 10);
+    bevindingen.push({
+      soort: "maateenheid",
+      ernst: "midden",
+      itemId: i.id,
+      tekst: `${i.name}: het maximum staat op ${max} ${eenheid}.`,
+      gevolg: `Zodra dit op raakt vraagt de boodschappenlijst om ${max} ${eenheid}. Waarschijnlijk is de eenheid ooit gewijzigd zonder het maximum.`,
+      herstel: { max: voorstel }
+    });
+  });
+  const opNaam = /* @__PURE__ */ new Map();
+  inventory.forEach((i) => {
+    if (i.sourceRecipeId) return;
+    const sleutel = String(i.name || "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (!sleutel) return;
+    if (!opNaam.has(sleutel)) opNaam.set(sleutel, []);
+    opNaam.get(sleutel).push(i);
+  });
+  opNaam.forEach((groep) => {
+    if (groep.length < 2) return;
+    bevindingen.push({
+      soort: "dubbel",
+      ernst: "midden",
+      itemId: groep[0].id,
+      tekst: `${groep[0].name} staat ${groep.length} keer in je voorraad: ${groep.map((g) => `${g.current} ${g.unit}`).join(" en ")}.`,
+      gevolg: "Recepten kijken maar naar \xE9\xE9n van de twee, dus je lijkt minder in huis te hebben dan werkelijk zo is. Voeg ze samen of geef er een duidelijker naam aan."
+    });
+  });
+  inventory.forEach((i) => {
+    const eenheid = String(i.unit || "").toLowerCase();
+    const huidig = Number(i.current || 0);
+    if (!MINIMAAL_ZINVOL[eenheid]) return;
+    if (huidig <= 0 || huidig >= 5) return;
+    bevindingen.push({
+      soort: "hoeveelheid",
+      ernst: "midden",
+      itemId: i.id,
+      tekst: `${i.name}: er staat ${huidig} ${eenheid} in je voorraad.`,
+      gevolg: "Dat is zo weinig dat het waarschijnlijk een vergissing is \u2014 een getal dat bij stuks hoorde, bijvoorbeeld. Recepten die dit nodig hebben vallen er allemaal op om."
+    });
+  });
   const nummerGebruik = /* @__PURE__ */ new Map();
   inventory.forEach((i) => {
     (i.containers || []).forEach((n) => {
@@ -5862,6 +5909,31 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     const e = dayEntry(day);
     return !e || !e.recipeId && !e.offNight;
   };
+  const [planRecept, setPlanRecept] = useState(null);
+  const planGerechtOpDag = (recipeId, dagSleutel) => {
+    const vorige = leesDag(weekmenu, dagSleutel) || {};
+    const anderGerecht = vorige.recipeId !== recipeId;
+    const next = {
+      ...weekmenu,
+      [dagSleutel]: {
+        ...vorige,
+        recipeId,
+        offNight: false,
+        // Een ander gerecht op dezelfde avond betekent dat de kooksporen van
+        // het vorige gerecht er niet meer bij horen.
+        leftoverItemId: anderGerecht ? null : vorige.leftoverItemId || null,
+        cookedAt: anderGerecht ? null : vorige.cookedAt || null,
+        producedLeftoverId: anderGerecht ? null : vorige.producedLeftoverId || null,
+        cookSkipped: anderGerecht ? false : !!vorige.cookSkipped
+      }
+    };
+    persist("weekmenu", next, setWeekmenu);
+    setPlanRecept(null);
+    const d = /* @__PURE__ */ new Date(dagSleutel + "T12:00:00");
+    const wanneer = isNaN(d) ? dagSleutel : `${DAG_LANG[d.getDay()]} ${d.getDate()} ${MAAND_LANG[d.getMonth()]}`;
+    const naam = (recipes.find((r) => r.id === recipeId) || {}).name || "Het gerecht";
+    showToast(`${naam} staat op ${wanneer}.`);
+  };
   const setDayRecipe = (day, recipeId, leftoverItemId = null) => {
     const vorige = dayEntry(day) || {};
     const anderGerecht = vorige.recipeId !== recipeId;
@@ -6614,6 +6686,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingredi\xEBntenlijst na en vraag
           nummertBakjes: !!preferences.containerNumbering,
           bakjesVoor,
           onNummerenAan: () => updatePreferences({ containerNumbering: true, containerHintSeen: true }),
+          onPlanOpDag: (r) => setPlanRecept(r),
           leftoverItem: leftoverContext ? inventory.find((i) => i.id === leftoverContext) : null,
           onEatLeftover: (porties, bakjes) => {
             eatLeftover(leftoverContext, porties, openRecipe, bakjes);
@@ -6808,6 +6881,18 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingredi\xEBntenlijst na en vraag
         onUpdateCookDislikes: updateCookDislikes,
         onTogglePremium: togglePremiumFeature,
         onClose: () => setSettingsOpen(false)
+      }
+    ),
+    planRecept && /* @__PURE__ */ jsx(
+      DagKiezerModal,
+      {
+        recept: planRecept,
+        weekmenu,
+        recipes,
+        periods,
+        startPeriode: periodIndex,
+        onKies: (dagSleutel) => planGerechtOpDag(planRecept.id, dagSleutel),
+        onClose: () => setPlanRecept(null)
       }
     ),
     printCardOpen && /* @__PURE__ */ jsx(FridgeMagnetView, { household, onClose: () => setPrintCardOpen(false) }),
@@ -7510,6 +7595,122 @@ function NutritionLabel({ recipe, isMine, onRecalculate, busy }) {
     /* @__PURE__ */ jsx("div", { style: { fontSize: 11, color: C.inkSoft, marginTop: 8, lineHeight: 1.4 }, children: "Gebaseerd op gegevens van NEVO-online versie 2025/9.0, RIVM, Bilthoven." })
   ] });
 }
+function DagKiezerModal({ recept, weekmenu, recipes, periods, startPeriode = 0, onKies, onClose }) {
+  const [periodeIndex, setPeriodeIndex] = useState(Math.min(startPeriode, Math.max(0, periods.length - 1)));
+  const [gekozen, setGekozen] = useState(null);
+  const vandaagKey = dateKey(/* @__PURE__ */ new Date());
+  const periode = periods[periodeIndex] || periods[0];
+  const dagen = (periode ? periode.dagen : []).map((d) => {
+    const key = dateKey(d);
+    const entry = leesDag(weekmenu, key);
+    const bezetRecept = entry && entry.recipeId ? recipes.find((r) => r.id === entry.recipeId) : null;
+    return {
+      key,
+      date: d,
+      kort: DAG_KORT[d.getDay()],
+      dagnummer: d.getDate(),
+      isVandaag: key === vandaagKey,
+      isVerleden: key < vandaagKey,
+      vrijeAvond: !!(entry && entry.offNight),
+      gekooktAl: !!(entry && entry.cookedAt),
+      bezetNaam: bezetRecept ? bezetRecept.name : entry && entry.recipeId ? "Een gerecht" : null
+    };
+  });
+  const gekozenDag = dagen.find((d) => d.key === gekozen) || null;
+  const vervangt = gekozenDag && gekozenDag.bezetNaam;
+  const volleDatum = (d) => `${DAG_LANG[d.date.getDay()]} ${d.dagnummer} ${MAAND_LANG[d.date.getMonth()]}`;
+  return /* @__PURE__ */ jsxs(Modal, { title: "Wanneer eten we dit?", onClose, children: [
+    /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.inkSoft, margin: "0 0 14px" }, children: recept ? recept.name : "" }),
+    /* @__PURE__ */ jsx("div", { style: { display: "flex", gap: 6, marginBottom: 13 }, children: periods.map((p, i) => {
+      const aan = i === periodeIndex;
+      return /* @__PURE__ */ jsxs(
+        "button",
+        {
+          onClick: () => {
+            setPeriodeIndex(i);
+            setGekozen(null);
+          },
+          style: {
+            flex: 1,
+            padding: "7px 2px",
+            borderRadius: 10,
+            cursor: "pointer",
+            minHeight: 44,
+            border: `1.5px solid ${aan ? C.blue : C.borderTint}`,
+            background: aan ? C.blue : C.cardBg,
+            color: aan ? "#fff" : C.inkSoft,
+            fontFamily: FONT_BODY,
+            fontSize: 10.5,
+            lineHeight: 1.3
+          },
+          children: [
+            /* @__PURE__ */ jsx("div", { style: { fontWeight: aan ? 700 : 500 }, children: i === 0 ? "Deze week" : i === 1 ? "Volgende" : `Week ${i + 1}` }),
+            /* @__PURE__ */ jsx("div", { style: { fontFamily: FONT_MONO, fontSize: 9, opacity: 0.85 }, children: kortDatum(p.start) })
+          ]
+        },
+        p.startKey
+      );
+    }) }),
+    /* @__PURE__ */ jsx("div", { style: { border: `1.5px solid ${C.borderTint}`, borderRadius: 14, overflow: "hidden", background: C.cardBg }, children: dagen.map((d, idx) => {
+      const aan = d.key === gekozen;
+      const uit = d.isVerleden && !d.isVandaag;
+      return /* @__PURE__ */ jsxs(
+        "button",
+        {
+          disabled: uit,
+          onClick: () => setGekozen(aan ? null : d.key),
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 11,
+            width: "100%",
+            minHeight: 52,
+            padding: "10px 12px",
+            cursor: uit ? "default" : "pointer",
+            textAlign: "left",
+            background: aan ? C.successBg : "none",
+            border: "none",
+            borderBottom: idx < dagen.length - 1 ? `1px solid ${C.ceramic}` : "none",
+            opacity: uit ? 0.45 : 1,
+            fontFamily: FONT_BODY
+          },
+          children: [
+            /* @__PURE__ */ jsxs("span", { style: { width: 34, flexShrink: 0 }, children: [
+              /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 13, fontWeight: 600, color: C.ink }, children: d.kort }),
+              /* @__PURE__ */ jsx("span", { style: { display: "block", fontFamily: FONT_MONO, fontSize: 9.5, color: C.inkSoft }, children: d.dagnummer })
+            ] }),
+            /* @__PURE__ */ jsx("span", { style: { flex: 1, fontSize: 12.5, color: d.bezetNaam ? C.ink : C.sage }, children: d.vrijeAvond ? /* @__PURE__ */ jsx("span", { style: { color: C.inkSoft }, children: "Vrije avond" }) : d.bezetNaam ? /* @__PURE__ */ jsxs(Fragment, { children: [
+              d.bezetNaam,
+              d.gekooktAl && /* @__PURE__ */ jsx("span", { style: { color: C.inkSoft }, children: " \xB7 gekookt" })
+            ] }) : "Nog vrij" }),
+            /* @__PURE__ */ jsx("span", { style: {
+              width: 19,
+              height: 19,
+              borderRadius: "50%",
+              flexShrink: 0,
+              border: `1.5px solid ${aan ? C.blue : C.ceramicDark}`,
+              background: aan ? C.blue : "transparent",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }, children: aan && /* @__PURE__ */ jsx(Check, { size: 11, color: "#fff", strokeWidth: 3.5 }) })
+          ]
+        },
+        d.key
+      );
+    }) }),
+    vervangt && /* @__PURE__ */ jsxs("p", { style: { fontSize: 12, color: C.mustardDeep, margin: "10px 0 0", lineHeight: 1.45 }, children: [
+      "Op die dag staat nu ",
+      /* @__PURE__ */ jsx("strong", { children: gekozenDag.bezetNaam }),
+      ". Die wordt vervangen.",
+      gekozenDag.gekooktAl && " Let op: die avond is al afgeboekt \u2014 je voorraad blijft zoals hij is."
+    ] }),
+    /* @__PURE__ */ jsx("div", { style: { marginTop: 14 }, children: /* @__PURE__ */ jsxs(PrimaryButton, { full: true, disabled: !gekozenDag, onClick: () => onKies(gekozenDag.key), children: [
+      /* @__PURE__ */ jsx(CalendarDays, { size: 15 }),
+      gekozenDag ? `Inplannen op ${volleDatum(gekozenDag)}` : "Kies eerst een dag"
+    ] }) })
+  ] });
+}
 function KliekjeVraag({ gekooktOp, toonBakjesTip, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onBewaar, onNiets, compact = false }) {
   const [porties, setPorties] = useState(0);
   const [bewaarplek, setBewaarplek] = useState("koelkast");
@@ -7578,7 +7779,7 @@ function KliekjeVraag({ gekooktOp, toonBakjesTip, nummertBakjes = false, bakjesV
     ] })
   ] });
 }
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook, onKliekjeVraag, autoStartKoken = false, onAutoStartGedaan }) {
+function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onPlanOpDag = null, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook, onKliekjeVraag, autoStartKoken = false, onAutoStartGedaan }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [usedAmounts, setUsedAmounts] = useState({});
   const [eatPortions, setEatPortions] = useState(1);
@@ -8111,6 +8312,10 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       }, children: [
         /* @__PURE__ */ jsx(Check, { size: 16, color: C.sage, style: { flexShrink: 0 } }),
         /* @__PURE__ */ jsx("span", { style: { fontSize: 13, color: C.ink }, children: "Je hebt dit vandaag al gekookt. De voorraad is bijgewerkt." })
+      ] }),
+      onPlanOpDag && /* @__PURE__ */ jsxs(GhostButton, { full: true, onClick: () => onPlanOpDag(recipe), children: [
+        /* @__PURE__ */ jsx(CalendarDays, { size: 15 }),
+        " Inplannen in het weekmenu"
       ] }),
       /* @__PURE__ */ jsxs(GhostButton, { full: true, onClick: () => setConfirmCook("prep"), children: [
         /* @__PURE__ */ jsx(ShoppingCart, { size: 15 }),

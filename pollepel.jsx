@@ -258,7 +258,7 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v80 · 11 oktober 2026";
+const APP_VERSIE = "v81 · 11 oktober 2026";
 
 // Versie van de toestemmingstekst. Verandert de tekst wezenlijk, dan gaat dit
 // omhoog en moet er opnieuw gevraagd worden — oude toestemming dekt een nieuwe
@@ -3117,6 +3117,73 @@ function controleerGegevens({ inventory = [], weekmenu = {}, recipes = [], shopp
     });
   });
 
+  // 4b. Een maximum dat niet kan kloppen bij deze eenheid.
+  //
+  // In de echte gegevens stonden tien producten met een maximum van 1 gram:
+  // bulgur (740 g in huis), snoeptomaten (500 g), risottorijst, halloumi.
+  // Zolang je ze in huis hebt merk je niets, maar zodra er eentje opraakt
+  // vraagt de boodschappenlijst om één gram. Dat komt doordat de eenheid na
+  // het aanmaken is gewijzigd zonder dat het maximum meeging.
+  // Vijf en niet tien: een potje specerijen van 8 gram bestaat echt, en een
+  // controle die iets aanwijst dat klopt leert mensen om de hele lijst te
+  // negeren. Alleen 1 tot 4 gram is werkelijk onmogelijk.
+  const MINIMAAL_ZINVOL = { g: 5, ml: 5 };
+  inventory.forEach((i) => {
+    const eenheid = String(i.unit || "").toLowerCase();
+    const grens = MINIMAAL_ZINVOL[eenheid];
+    const max = Number(i.max || 0);
+    if (!grens || max <= 0 || max >= grens) return;
+    // Een voorstel dat ergens op slaat: wat er nu in huis is, anders de grens.
+    const voorstel = Math.max(10, Math.round(Number(i.current || 0)) || 10);
+    bevindingen.push({
+      soort: "maateenheid", ernst: "midden", itemId: i.id,
+      tekst: `${i.name}: het maximum staat op ${max} ${eenheid}.`,
+      gevolg: `Zodra dit op raakt vraagt de boodschappenlijst om ${max} ${eenheid}. Waarschijnlijk is de eenheid ooit gewijzigd zonder het maximum.`,
+      herstel: { max: voorstel },
+    });
+  });
+
+  // 4c. Twee producten met dezelfde naam.
+  //
+  // Dan telt de app maar één van de twee mee en lijkt je voorraad lager dan
+  // hij is. In de echte gegevens stonden puntpaprika's als 6 stuks én 5 stuks:
+  // elf stuks in huis, zes zichtbaar voor de recepten.
+  const opNaam = new Map();
+  inventory.forEach((i) => {
+    // Kliekjes niet meetellen: twee bakjes van hetzelfde gerecht zijn
+    // werkelijk twee aparte voorraden, geen dubbele invoer.
+    if (i.sourceRecipeId) return;
+    const sleutel = String(i.name || "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (!sleutel) return;
+    if (!opNaam.has(sleutel)) opNaam.set(sleutel, []);
+    opNaam.get(sleutel).push(i);
+  });
+  opNaam.forEach((groep) => {
+    if (groep.length < 2) return;
+    bevindingen.push({
+      soort: "dubbel", ernst: "midden", itemId: groep[0].id,
+      tekst: `${groep[0].name} staat ${groep.length} keer in je voorraad: ${groep.map((g) => `${g.current} ${g.unit}`).join(" en ")}.`,
+      gevolg: "Recepten kijken maar naar één van de twee, dus je lijkt minder in huis te hebben dan werkelijk zo is. Voeg ze samen of geef er een duidelijker naam aan.",
+    });
+  });
+
+  // 4d. Een hoeveelheid die bij deze eenheid niet kan kloppen.
+  //
+  // "Aardappelen: 1 g" was het meest gemiste ingrediënt van het hele kookboek
+  // — dertien recepten vroegen erom en kregen niets. Niemand heeft één gram
+  // van iets; dat is een getal dat bij een andere eenheid hoorde.
+  inventory.forEach((i) => {
+    const eenheid = String(i.unit || "").toLowerCase();
+    const huidig = Number(i.current || 0);
+    if (!MINIMAAL_ZINVOL[eenheid]) return;
+    if (huidig <= 0 || huidig >= 5) return;
+    bevindingen.push({
+      soort: "hoeveelheid", ernst: "midden", itemId: i.id,
+      tekst: `${i.name}: er staat ${huidig} ${eenheid} in je voorraad.`,
+      gevolg: "Dat is zo weinig dat het waarschijnlijk een vergissing is — een getal dat bij stuks hoorde, bijvoorbeeld. Recepten die dit nodig hebben vallen er allemaal op om.",
+    });
+  });
+
   // 5. Twee bakjes met hetzelfde nummer. Kan gebeuren als twee huisgenoten
   // op precies hetzelfde moment invriezen.
   const nummerGebruik = new Map();
@@ -5940,6 +6007,36 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   // het vorige gerecht er niet meer bij. Zonder dit zou een nieuw gerecht
   // meteen als afgeboekt gelden — en dan verdwijnt het van je boodschappenlijst
   // terwijl je het nog moet maken.
+  // Welk recept staat er op het punt ingepland te worden? Null = geen kiezer open.
+  const [planRecept, setPlanRecept] = useState(null);
+
+  // Vanaf het recept een dag kiezen. Gebruikt dezelfde regels als plannen vanaf
+  // de kalender, zodat een avond zich niet anders gedraagt afhankelijk van waar
+  // je vandaan kwam.
+  const planGerechtOpDag = (recipeId, dagSleutel) => {
+    const vorige = leesDag(weekmenu, dagSleutel) || {};
+    const anderGerecht = vorige.recipeId !== recipeId;
+    const next = {
+      ...weekmenu,
+      [dagSleutel]: {
+        ...vorige, recipeId, offNight: false,
+        // Een ander gerecht op dezelfde avond betekent dat de kooksporen van
+        // het vorige gerecht er niet meer bij horen.
+        leftoverItemId: anderGerecht ? null : (vorige.leftoverItemId || null),
+        cookedAt: anderGerecht ? null : (vorige.cookedAt || null),
+        producedLeftoverId: anderGerecht ? null : (vorige.producedLeftoverId || null),
+        cookSkipped: anderGerecht ? false : !!vorige.cookSkipped,
+      },
+    };
+    persist("weekmenu", next, setWeekmenu);
+    setPlanRecept(null);
+
+    const d = new Date(dagSleutel + "T12:00:00");
+    const wanneer = isNaN(d) ? dagSleutel : `${DAG_LANG[d.getDay()]} ${d.getDate()} ${MAAND_LANG[d.getMonth()]}`;
+    const naam = (recipes.find((r) => r.id === recipeId) || {}).name || "Het gerecht";
+    showToast(`${naam} staat op ${wanneer}.`);
+  };
+
   const setDayRecipe = (day, recipeId, leftoverItemId = null) => {
     const vorige = dayEntry(day) || {};
     const anderGerecht = vorige.recipeId !== recipeId;
@@ -6831,6 +6928,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             nummertBakjes={!!preferences.containerNumbering}
             bakjesVoor={bakjesVoor}
             onNummerenAan={() => updatePreferences({ containerNumbering: true, containerHintSeen: true })}
+            onPlanOpDag={(r) => setPlanRecept(r)}
             leftoverItem={leftoverContext ? inventory.find((i) => i.id === leftoverContext) : null}
             onEatLeftover={(porties, bakjes) => { eatLeftover(leftoverContext, porties, openRecipe, bakjes); openRecipeVanuit(null); }}
             onRecalculateNutrition={() => recalculateNutrition(openRecipe.id)}
@@ -6983,6 +7081,20 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           onUpdateCookDislikes={updateCookDislikes}
           onTogglePremium={togglePremiumFeature}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
+      {planRecept && (
+        <DagKiezerModal
+          recept={planRecept}
+          weekmenu={weekmenu}
+          recipes={recipes}
+          periods={periods}
+          // Openen op de week die in het weekmenu ook open stond: dat is bijna
+          // altijd de week waar je mee bezig bent.
+          startPeriode={periodIndex}
+          onKies={(dagSleutel) => planGerechtOpDag(planRecept.id, dagSleutel)}
+          onClose={() => setPlanRecept(null)}
         />
       )}
 
@@ -7727,6 +7839,135 @@ function NutritionLabel({ recipe, isMine, onRecalculate, busy }) {
 // Dat is juist het moment waarop je het nog níét weet: het eten staat op
 // tafel. Nu kan dezelfde vraag ook later gesteld worden — vanuit de
 // Vanavond-strook en vanuit het weekmenu — met precies dezelfde knoppen.
+// Een gerecht op een dag zetten, vanaf het recept in plaats van vanaf de
+// kalender. Dat is de richting waarin je denkt als je door het kookboek
+// bladert: "dit lijkt me lekker, wanneer eten we het?"
+//
+// Vier weken vooruit kan al in de gegevens — een dag wordt bewaard als datum,
+// niet als "week 2, dinsdag". Alleen de interface was tot nu toe aan één week
+// gebonden. Daarom weektabs: dezelfde vier als in het weekmenu, zodat je niets
+// nieuws hoeft te leren.
+//
+// Er wordt bewust niets voorgeselecteerd. Een voorgevulde dag is een dag die je
+// per ongeluk bevestigt; het kiezen van de avond is nou juist de beslissing.
+function DagKiezerModal({ recept, weekmenu, recipes, periods, startPeriode = 0, onKies, onClose }) {
+  const [periodeIndex, setPeriodeIndex] = useState(Math.min(startPeriode, Math.max(0, periods.length - 1)));
+  const [gekozen, setGekozen] = useState(null);
+
+  const vandaagKey = dateKey(new Date());
+  const periode = periods[periodeIndex] || periods[0];
+
+  const dagen = (periode ? periode.dagen : []).map((d) => {
+    const key = dateKey(d);
+    const entry = leesDag(weekmenu, key);
+    const bezetRecept = entry && entry.recipeId ? recipes.find((r) => r.id === entry.recipeId) : null;
+    return {
+      key, date: d,
+      kort: DAG_KORT[d.getDay()],
+      dagnummer: d.getDate(),
+      isVandaag: key === vandaagKey,
+      isVerleden: key < vandaagKey,
+      vrijeAvond: !!(entry && entry.offNight),
+      gekooktAl: !!(entry && entry.cookedAt),
+      bezetNaam: bezetRecept ? bezetRecept.name : (entry && entry.recipeId ? "Een gerecht" : null),
+    };
+  });
+
+  const gekozenDag = dagen.find((d) => d.key === gekozen) || null;
+  const vervangt = gekozenDag && gekozenDag.bezetNaam;
+
+  const volleDatum = (d) =>
+    `${DAG_LANG[d.date.getDay()]} ${d.dagnummer} ${MAAND_LANG[d.date.getMonth()]}`;
+
+  return (
+    <Modal title="Wanneer eten we dit?" onClose={onClose}>
+      <p style={{ fontSize: 13, color: C.inkSoft, margin: "0 0 14px" }}>{recept ? recept.name : ""}</p>
+
+      {/* Weektabs, net als in het weekmenu */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 13 }}>
+        {periods.map((p, i) => {
+          const aan = i === periodeIndex;
+          return (
+            <button
+              key={p.startKey}
+              onClick={() => { setPeriodeIndex(i); setGekozen(null); }}
+              style={{
+                flex: 1, padding: "7px 2px", borderRadius: 10, cursor: "pointer", minHeight: 44,
+                border: `1.5px solid ${aan ? C.blue : C.borderTint}`,
+                background: aan ? C.blue : C.cardBg, color: aan ? "#fff" : C.inkSoft,
+                fontFamily: FONT_BODY, fontSize: 10.5, lineHeight: 1.3,
+              }}
+            >
+              <div style={{ fontWeight: aan ? 700 : 500 }}>
+                {i === 0 ? "Deze week" : i === 1 ? "Volgende" : `Week ${i + 1}`}
+              </div>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 9, opacity: 0.85 }}>
+                {kortDatum(p.start)}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ border: `1.5px solid ${C.borderTint}`, borderRadius: 14, overflow: "hidden", background: C.cardBg }}>
+        {dagen.map((d, idx) => {
+          const aan = d.key === gekozen;
+          // Een dag die voorbij is kun je niet meer inplannen. Hem weglaten
+          // zou de week korter maken en dat leest verwarrend, dus hij staat
+          // er wel, maar uitgegrijsd.
+          const uit = d.isVerleden && !d.isVandaag;
+          return (
+            <button
+              key={d.key}
+              disabled={uit}
+              onClick={() => setGekozen(aan ? null : d.key)}
+              style={{
+                display: "flex", alignItems: "center", gap: 11, width: "100%", minHeight: 52,
+                padding: "10px 12px", cursor: uit ? "default" : "pointer", textAlign: "left",
+                background: aan ? C.successBg : "none",
+                border: "none", borderBottom: idx < dagen.length - 1 ? `1px solid ${C.ceramic}` : "none",
+                opacity: uit ? 0.45 : 1, fontFamily: FONT_BODY,
+              }}
+            >
+              <span style={{ width: 34, flexShrink: 0 }}>
+                <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.ink }}>{d.kort}</span>
+                <span style={{ display: "block", fontFamily: FONT_MONO, fontSize: 9.5, color: C.inkSoft }}>{d.dagnummer}</span>
+              </span>
+              <span style={{ flex: 1, fontSize: 12.5, color: d.bezetNaam ? C.ink : C.sage }}>
+                {d.vrijeAvond ? <span style={{ color: C.inkSoft }}>Vrije avond</span>
+                  : d.bezetNaam ? <>{d.bezetNaam}{d.gekooktAl && <span style={{ color: C.inkSoft }}> · gekookt</span>}</>
+                  : "Nog vrij"}
+              </span>
+              <span style={{
+                width: 19, height: 19, borderRadius: "50%", flexShrink: 0,
+                border: `1.5px solid ${aan ? C.blue : C.ceramicDark}`, background: aan ? C.blue : "transparent",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                {aan && <Check size={11} color="#fff" strokeWidth={3.5} />}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Wat er gebeurt als de dag al bezet is, vóór je bevestigt en niet erna. */}
+      {vervangt && (
+        <p style={{ fontSize: 12, color: C.mustardDeep, margin: "10px 0 0", lineHeight: 1.45 }}>
+          Op die dag staat nu <strong>{gekozenDag.bezetNaam}</strong>. Die wordt vervangen.
+          {gekozenDag.gekooktAl && " Let op: die avond is al afgeboekt — je voorraad blijft zoals hij is."}
+        </p>
+      )}
+
+      <div style={{ marginTop: 14 }}>
+        <PrimaryButton full disabled={!gekozenDag} onClick={() => onKies(gekozenDag.key)}>
+          <CalendarDays size={15} />
+          {gekozenDag ? `Inplannen op ${volleDatum(gekozenDag)}` : "Kies eerst een dag"}
+        </PrimaryButton>
+      </div>
+    </Modal>
+  );
+}
+
 function KliekjeVraag({ gekooktOp, toonBakjesTip, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onBewaar, onNiets, compact = false }) {
   const [porties, setPorties] = useState(0);
   const [bewaarplek, setBewaarplek] = useState("koelkast");
@@ -7842,7 +8083,7 @@ function KliekjeVraag({ gekooktOp, toonBakjesTip, nummertBakjes = false, bakjesV
   );
 }
 
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook, onKliekjeVraag, autoStartKoken = false, onAutoStartGedaan }) {
+function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onPlanOpDag = null, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook, onKliekjeVraag, autoStartKoken = false, onAutoStartGedaan }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [usedAmounts, setUsedAmounts] = useState({}); // werkelijk gebruikte hoeveelheden bij tekort
   const [eatPortions, setEatPortions] = useState(1);
@@ -8393,6 +8634,11 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
                     Je hebt dit vandaag al gekookt. De voorraad is bijgewerkt.
                   </span>
                 </div>
+              )}
+              {onPlanOpDag && (
+                <GhostButton full onClick={() => onPlanOpDag(recipe)}>
+                  <CalendarDays size={15} /> Inplannen in het weekmenu
+                </GhostButton>
               )}
               <GhostButton full onClick={() => setConfirmCook("prep")}>
                 <ShoppingCart size={15} /> Ik ga dit koken — check mijn voorraad
