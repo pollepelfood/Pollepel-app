@@ -33,3 +33,36 @@
   for = "/sw.js"
   [headers.values]
     Cache-Control = "no-cache, must-revalidate"
+
+# ---- Vangnet voor hoofdletters in bestandsnamen ----
+#
+# Bij het uploaden vanaf een iPhone krijgen afbeeldingen soms een extensie in
+# hoofdletters: icon-192.PNG in plaats van icon-192.png. Linux — en dus
+# Netlify — ziet dat als een ander bestand, en dan geeft het icoon een 404.
+# Dat is in dit project al drie keer gebeurd: eerst met Netlify/Functions,
+# toen met Icons, nu met de iconen zelf.
+#
+# Deze regels vangen dat af. Ze zijn NIET geforceerd, en dat is precies de
+# bedoeling: Netlify gebruikt een omleiding alleen wanneer het gevraagde
+# bestand niet bestaat. Staan de bestanden ooit wél met kleine letters in de
+# map, dan wint het echte bestand en doen deze regels niets. Zo werkt het in
+# beide gevallen.
+[[redirects]]
+  from = "/icon-96.png"
+  to = "/icon-96.PNG"
+  status = 200
+
+[[redirects]]
+  from = "/icon-180.png"
+  to = "/icon-180.PNG"
+  status = 200
+
+[[redirects]]
+  from = "/icon-192.png"
+  to = "/icon-192.PNG"
+  status = 200
+
+[[redirects]]
+  from = "/icon-512.png"
+  to = "/icon-512.PNG"
+  status = 200
