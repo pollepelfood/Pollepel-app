@@ -322,7 +322,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v83 \xB7 11 oktober 2026";
+const APP_VERSIE = "v84 \xB7 11 oktober 2026";
 const TOESTEMMING_VERSIE = 1;
 const TYPE = {
   scherm: { fontFamily: "'Fraunces', serif", fontSize: 31, lineHeight: 1.06, letterSpacing: "-0.02em", fontWeight: 600 },
@@ -2736,7 +2736,7 @@ function GhostButton({ children, onClick, danger, full, disabled }) {
 function VoorraadSuggesties({ tekst, inventory, onKies, titel = "Uit je voorraad \u2014 tikken neemt de naam en eenheid over" }) {
   const lijst = voorraadSuggesties(tekst, inventory);
   if (!lijst.length) return null;
-  return /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, marginBottom: 8, overflow: "hidden" }, children: [
+  return /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, marginBottom: 8, overflow: "hidden" }, children: [
     /* @__PURE__ */ jsx("div", { style: { fontSize: 11, color: C.inkSoft, padding: "6px 10px 2px" }, children: titel }),
     lijst.map((item) => /* @__PURE__ */ jsxs(
       "button",
@@ -3087,7 +3087,7 @@ function AgendaModal({ token, onClose, onDownload }) {
         width: "100%",
         textAlign: "left",
         background: C.cardBg,
-        border: `1.5px solid ${C.borderTint}`,
+        border: `1px solid ${C.ceramicDark}`,
         borderRadius: 12,
         padding: "12px 13px",
         marginBottom: 8,
@@ -3713,7 +3713,7 @@ function ExtraToevoegenModal({ datum, recipes, onKies, onClose }) {
               width: "100%",
               textAlign: "left",
               background: C.cardBg,
-              border: `1.5px solid ${C.borderTint}`,
+              border: `1px solid ${C.ceramicDark}`,
               borderRadius: 12,
               padding: "9px 11px",
               marginBottom: 6,
@@ -3964,7 +3964,7 @@ function KookMelding({ sessies, currentUserName, onOpen }) {
           width: "100%",
           textAlign: "left",
           background: C.noteBg,
-          border: `1.5px solid ${C.mustard}`,
+          border: "none",
           borderRadius: 12,
           padding: "11px 13px",
           cursor: s.recipeId ? "pointer" : "default",
@@ -6561,7 +6561,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingredi\xEBntenlijst na en vraag
             textAlign: "left",
             cursor: "pointer",
             background: C.cardBg,
-            border: `1.5px solid ${C.borderTint}`,
+            border: `1px solid ${C.ceramicDark}`,
             borderRadius: 12,
             padding: "11px 13px",
             marginBottom: 8,
@@ -7077,7 +7077,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingredi\xEBntenlijst na en vraag
         listAfvinkVraag.items.length === 1 ? "staat" : "staan",
         " ook nog op je boodschappenlijst. Je hebt ze net in je voorraad gezet \u2014 mogen ze van de lijst af?"
       ] }),
-      /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, padding: "6px 0", marginBottom: 14, maxHeight: 200, overflowY: "auto" }, children: listAfvinkVraag.items.map((s) => /* @__PURE__ */ jsxs("div", { style: { padding: "5px 12px", fontSize: 13, color: C.ink }, children: [
+      /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, padding: "6px 0", marginBottom: 14, maxHeight: 200, overflowY: "auto" }, children: listAfvinkVraag.items.map((s) => /* @__PURE__ */ jsxs("div", { style: { padding: "5px 12px", fontSize: 13, color: C.ink }, children: [
         s.name,
         " ",
         /* @__PURE__ */ jsxs("span", { style: { color: C.inkSoft, fontFamily: FONT_MONO, fontSize: 11 }, children: [
@@ -7258,7 +7258,7 @@ function SeasonalAndSurpriseBar({ recipes, inventory, onOpen, showToast }) {
         ]
       }
     ),
-    seasonal.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.successBg, border: `1.5px solid ${C.sage}`, borderRadius: 12, padding: 12 }, children: [
+    seasonal.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.successBg, border: "none", borderRadius: 12, padding: 12 }, children: [
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }, children: [
         /* @__PURE__ */ jsx("span", { style: { fontSize: 14 }, children: "\u{1F331}" }),
         /* @__PURE__ */ jsxs("span", { style: { fontSize: 13, fontWeight: 700, color: C.sage }, children: [
@@ -7569,7 +7569,7 @@ function CookHistoryList({ cookLog, onOpen }) {
       /* @__PURE__ */ jsx("p", { children: 'Nog geen kookgeschiedenis. Zodra je "Ik heb dit gekookt" gebruikt, verschijnt het hier.' })
     ] });
   }
-  return /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}` }, children: cookLog.map((entry, idx) => /* @__PURE__ */ jsxs(
+  return /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}` }, children: cookLog.map((entry, idx) => /* @__PURE__ */ jsxs(
     "div",
     {
       onClick: () => onOpen(entry.recipeId),
@@ -7621,7 +7621,7 @@ function SousChefModal({ recipe, onAsk, onClose }) {
       borderRadius: 12,
       background: msg.role === "user" ? C.blue : C.cardBg,
       color: msg.role === "user" ? "#fff" : C.ink,
-      border: msg.role === "user" ? "none" : `1.5px solid ${C.borderTint}`,
+      border: msg.role === "user" ? "none" : `1px solid ${C.ceramicDark}`,
       fontSize: 13,
       lineHeight: 1.4
     }, children: [
@@ -7653,7 +7653,7 @@ function NutritionLabel({ recipe, isMine, onRecalculate, busy }) {
   const [showDetails, setShowDetails] = useState(false);
   const n = recipe.nutrition;
   if (!n) {
-    return /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: 14, marginBottom: 16 }, children: [
+    return /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: 14, marginBottom: 16 }, children: [
       /* @__PURE__ */ jsx("div", { style: { fontSize: 13, color: C.inkSoft, marginBottom: isMine ? 8 : 0 }, children: "Voedingswaarden nog niet berekend." }),
       isMine && /* @__PURE__ */ jsxs(GhostButton, { onClick: onRecalculate, disabled: busy, full: true, children: [
         busy && /* @__PURE__ */ jsx(PollepelLoader, { size: 16, inline: true, delay: 0 }),
@@ -7764,7 +7764,7 @@ function DagKiezerModal({ recept, weekmenu, recipes, periods, startPeriode = 0, 
         p.startKey
       );
     }) }),
-    /* @__PURE__ */ jsx("div", { style: { border: `1.5px solid ${C.borderTint}`, borderRadius: 12, overflow: "hidden", background: C.cardBg }, children: dagen.map((d, idx) => {
+    /* @__PURE__ */ jsx("div", { style: { border: `1px solid ${C.ceramicDark}`, borderRadius: 12, overflow: "hidden", background: C.cardBg }, children: dagen.map((d, idx) => {
       const aan = d.key === gekozen;
       const uit = d.isVerleden && !d.isVandaag;
       return /* @__PURE__ */ jsxs(
@@ -7835,9 +7835,9 @@ function KliekjeVraag({ gekooktOp, toonBakjesTip, nummertBakjes = false, bakjesV
   return /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: 12 }, children: [
     /* @__PURE__ */ jsx("p", { style: { fontSize: 13, margin: "0 0 10px", color: C.ink }, children: "Is er iets van dit gerecht overgebleven?" }),
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginBottom: 10 }, children: [
-      /* @__PURE__ */ jsx("button", { "aria-label": "Minder porties", onClick: () => setPorties((p) => Math.max(0, p - 1)), style: { width: 44, height: 44, borderRadius: 10, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }, children: /* @__PURE__ */ jsx(Minus, { size: 14 }) }),
+      /* @__PURE__ */ jsx("button", { "aria-label": "Minder porties", onClick: () => setPorties((p) => Math.max(0, p - 1)), style: { width: 44, height: 44, borderRadius: 10, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer" }, children: /* @__PURE__ */ jsx(Minus, { size: 14 }) }),
       /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_MONO, fontSize: 15, minWidth: 90, textAlign: "center" }, children: porties === 0 ? "Niets over" : `${porties} portie${porties > 1 ? "s" : ""}` }),
-      /* @__PURE__ */ jsx("button", { "aria-label": "Meer porties", onClick: () => setPorties((p) => p + 1), style: { width: 44, height: 44, borderRadius: 10, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }, children: /* @__PURE__ */ jsx(Plus, { size: 14 }) })
+      /* @__PURE__ */ jsx("button", { "aria-label": "Meer porties", onClick: () => setPorties((p) => p + 1), style: { width: 44, height: 44, borderRadius: 10, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer" }, children: /* @__PURE__ */ jsx(Plus, { size: 14 }) })
     ] }),
     porties > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsx("div", { style: { fontSize: 12, color: C.inkSoft, marginBottom: 6 }, children: "Waar bewaar je het?" }),
@@ -7873,7 +7873,7 @@ function KliekjeVraag({ gekooktOp, toonBakjesTip, nummertBakjes = false, bakjesV
       if (!nummers.length) {
         return /* @__PURE__ */ jsx("p", { style: { fontSize: 12, color: C.brick, margin: "0 0 10px", lineHeight: 1.45, background: C.warnBg, borderRadius: 10, padding: "8px 10px" }, children: "Alle genummerde bakjes zijn in gebruik. Dit wordt bewaard zonder nummer." });
       }
-      return /* @__PURE__ */ jsxs("div", { style: { margin: "0 0 10px", background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: "9px 11px" }, children: [
+      return /* @__PURE__ */ jsxs("div", { style: { margin: "0 0 10px", background: C.noteBg, border: "none", borderRadius: 12, padding: "9px 11px" }, children: [
         /* @__PURE__ */ jsxs("div", { style: { fontSize: 13, color: C.ink, fontWeight: 600 }, children: [
           "Pak bakje ",
           bakjesTekst(nummers)
@@ -8086,7 +8086,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
           {
             onClick: () => setSousChefOpen(true),
             title: "Vraag de AI-souschef",
-            style: { display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", minHeight: 34, borderRadius: 20, cursor: "pointer", border: `1.5px solid ${C.borderTint}`, background: C.cardBg, color: C.inkSoft },
+            style: { display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", minHeight: 34, borderRadius: 20, cursor: "pointer", border: `1px solid ${C.ceramicDark}`, background: C.cardBg, color: C.inkSoft },
             children: [
               /* @__PURE__ */ jsx("span", { style: { fontSize: 13 }, children: "\u{1F468}\u200D\u{1F373}" }),
               /* @__PURE__ */ jsx("span", { style: { fontSize: 12, fontWeight: 600 }, children: "Souschef" })
@@ -8118,7 +8118,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         )
       ] })
     ] }),
-    !isMine && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: "8px 10px", marginBottom: 10, fontSize: 12, color: C.inkSoft, display: "flex", alignItems: "center", gap: 6 }, children: [
+    !isMine && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: "8px 10px", marginBottom: 10, fontSize: 12, color: C.inkSoft, display: "flex", alignItems: "center", gap: 6 }, children: [
       /* @__PURE__ */ jsx(Users, { size: 13, color: C.blue }),
       " Gedeeld door een ander huishouden \u2014 bekijk, of dupliceer naar je eigen kookboek om aan te passen."
     ] }),
@@ -8212,15 +8212,15 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         }
       )
     ] }),
-    /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: "8px 12px", marginBottom: 14 }, children: [
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: "8px 12px", marginBottom: 14 }, children: [
       /* @__PURE__ */ jsxs("span", { style: { fontSize: 13, color: C.ink, display: "flex", alignItems: "center", gap: 6 }, children: [
         /* @__PURE__ */ jsx(Users, { size: 15, color: C.inkSoft }),
         " Aantal personen"
       ] }),
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
-        /* @__PURE__ */ jsx("button", { onClick: () => setServings((s) => Math.max(1, s - 1)), style: { width: 30, height: 30, borderRadius: 10, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx(Minus, { size: 14 }) }),
+        /* @__PURE__ */ jsx("button", { onClick: () => setServings((s) => Math.max(1, s - 1)), style: { width: 30, height: 30, borderRadius: 10, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx(Minus, { size: 14 }) }),
         /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_MONO, fontSize: 15, minWidth: 18, textAlign: "center" }, children: servings }),
-        /* @__PURE__ */ jsx("button", { onClick: () => setServings((s) => s + 1), style: { width: 30, height: 30, borderRadius: 10, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx(Plus, { size: 14 }) })
+        /* @__PURE__ */ jsx("button", { onClick: () => setServings((s) => s + 1), style: { width: 30, height: 30, borderRadius: 10, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx(Plus, { size: 14 }) })
       ] })
     ] }),
     dislikeWarnings && dislikeWarnings.length > 0 && /* @__PURE__ */ jsx("div", { style: { background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 12, padding: 12, marginBottom: 14 }, children: dislikeWarnings.map((w, idx) => /* @__PURE__ */ jsxs("div", { style: { fontSize: 13, color: C.brick, marginBottom: idx < dislikeWarnings.length - 1 ? 4 : 0 }, children: [
@@ -8233,7 +8233,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       " dit niet"
     ] }, idx)) }),
     /* @__PURE__ */ jsx("h3", { style: { fontFamily: FONT_DISPLAY, fontSize: 15, margin: "0 0 8px" }, children: "Ingredi\xEBnten" }),
-    /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, marginBottom: 16 }, children: scaledIngredients.map((ing, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", padding: "9px 12px", borderBottom: idx < scaledIngredients.length - 1 ? `1px solid ${C.ceramic}` : "none", fontSize: 14 }, children: [
+    /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 16 }, children: scaledIngredients.map((ing, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", padding: "9px 12px", borderBottom: idx < scaledIngredients.length - 1 ? `1px solid ${C.ceramic}` : "none", fontSize: 14 }, children: [
       /* @__PURE__ */ jsx("span", { children: ing.name }),
       /* @__PURE__ */ jsxs("span", { style: { fontFamily: FONT_MONO, color: C.inkSoft }, children: [
         ing.scaledAmount,
@@ -8297,7 +8297,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         /* @__PURE__ */ jsx("div", { style: { fontSize: 13, color: C.ink, whiteSpace: "pre-wrap" }, children: recipe.notes })
       ] })
     ] }),
-    isMine && leftoverItem && confirmCook === false && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: 13 }, children: [
+    isMine && leftoverItem && confirmCook === false && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: "none", borderRadius: 12, padding: 13 }, children: [
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }, children: [
         /* @__PURE__ */ jsx("span", { style: { fontSize: 22 }, children: "\u{1F371}" }),
         /* @__PURE__ */ jsxs("span", { children: [
@@ -8319,7 +8319,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
           {
             "aria-label": "Minder porties",
             onClick: () => setEatPortions((p) => Math.max(1, p - 1)),
-            style: { width: 44, height: 44, borderRadius: 10, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" },
+            style: { width: 44, height: 44, borderRadius: 10, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer" },
             children: /* @__PURE__ */ jsx(Minus, { size: 14 })
           }
         ),
@@ -8333,7 +8333,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
           {
             "aria-label": "Meer porties",
             onClick: () => setEatPortions((p) => Math.min(Number(leftoverItem.current) || 1, p + 1)),
-            style: { width: 44, height: 44, borderRadius: 10, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" },
+            style: { width: 44, height: 44, borderRadius: 10, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer" },
             children: /* @__PURE__ */ jsx(Plus, { size: 14 })
           }
         )
@@ -8690,7 +8690,7 @@ function RecipeForm({ initial, inventoryNames, inventoryItems = [], onImport, on
           width: "100%",
           textAlign: "left",
           background: C.noteBg,
-          border: `1.5px solid ${C.mustard}`,
+          border: "none",
           borderRadius: 12,
           padding: "11px 13px",
           marginBottom: 16,
@@ -8734,7 +8734,7 @@ function RecipeForm({ initial, inventoryNames, inventoryItems = [], onImport, on
         /* @__PURE__ */ jsx("select", { style: { ...inputStyle, width: 90 }, value: ing.unit, onChange: (e) => updateIng(idx, { unit: e.target.value }), children: UNITS.map((u) => /* @__PURE__ */ jsx("option", { value: u, children: u }, u)) }),
         /* @__PURE__ */ jsx("button", { onClick: () => setIngredients(ingredients.filter((_, i) => i !== idx)), style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(X, { size: 16, color: C.inkSoft }) })
       ] }),
-      suggestFor === idx && suggestionsFor(ing.name).length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, marginBottom: 8, overflow: "hidden" }, children: [
+      suggestFor === idx && suggestionsFor(ing.name).length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, marginBottom: 8, overflow: "hidden" }, children: [
         /* @__PURE__ */ jsx("div", { style: { fontSize: 11, color: C.inkSoft, padding: "6px 10px 2px" }, children: "Uit je voorraad \u2014 tikken vult ook de eenheid in" }),
         suggestionsFor(ing.name).map((item) => /* @__PURE__ */ jsxs(
           "button",
@@ -8847,7 +8847,11 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
     return getExpirySuggestions(inventory, recipes).map((s) => ({ ...s, recipes: s.recipes.filter((r) => !plannedRecipeIds.includes(r.id)) })).filter((s) => s.recipes.length > 0);
   }, [inventory, recipes, hasEmptyDay, plannedRecipeIds]);
   return /* @__PURE__ */ jsxs("div", { children: [
-    /* @__PURE__ */ jsx("div", { style: { display: "flex", gap: 6, marginBottom: 8 }, children: periods.map((p, i) => {
+    /* @__PURE__ */ jsxs("div", { style: { marginBottom: 14 }, children: [
+      /* @__PURE__ */ jsx("div", { style: { ...TYPE.scherm, color: C.ink }, children: "Weekmenu" }),
+      /* @__PURE__ */ jsx("div", { style: { ...TYPE.label, color: C.inkSoft, marginTop: 6 }, children: periodeLabel(periods[periodIndex].start, periods[periodIndex].eind) })
+    ] }),
+    /* @__PURE__ */ jsx("div", { style: { display: "flex", gap: 6, marginBottom: 14 }, children: periods.map((p, i) => {
       const gepland = p.dagen.filter((d) => dayEntry(dateKey(d))?.recipeId).length;
       const actief = i === periodIndex;
       return /* @__PURE__ */ jsxs(
@@ -8855,25 +8859,27 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
         {
           onClick: () => onPeriodChange(i),
           style: {
+            // Mosterd is nu de kleur van één hoofdactie per scherm, niet van
+            // een tabblad dat je vier keer naast elkaar ziet.
             flex: 1,
-            padding: "7px 2px",
-            borderRadius: 12,
+            padding: "8px 2px",
+            borderRadius: 10,
             cursor: "pointer",
-            background: actief ? C.mustard : C.cardBg,
-            border: `1.5px solid ${actief ? C.mustard : C.borderTint}`,
+            minHeight: 44,
+            background: actief ? C.blueBtn : "transparent",
+            border: `1px solid ${actief ? C.blueBtn : C.ceramicDark}`,
             fontFamily: FONT_BODY,
             textAlign: "center"
           },
           children: [
-            /* @__PURE__ */ jsx("div", { style: { fontSize: 13, fontWeight: actief ? 700 : 500, color: actief ? "#2A1F06" : C.ink }, children: kortDatum(p.start) }),
-            /* @__PURE__ */ jsx("div", { style: { fontSize: 11, color: actief ? "#4A3608" : C.inkSoft }, children: gepland ? `${gepland} gepland` : "leeg" })
+            /* @__PURE__ */ jsx("div", { style: { fontSize: 12.5, fontWeight: actief ? 700 : 500, color: actief ? C.blueBtnInk : C.ink }, children: kortDatum(p.start) }),
+            /* @__PURE__ */ jsx("div", { style: { fontFamily: FONT_MONO, fontSize: 9.5, color: actief ? C.blueBtnInk : C.inkSoft, opacity: actief ? 0.85 : 1 }, children: gepland ? `${gepland} gepland` : "leeg" })
           ]
         },
         p.startKey
       );
     }) }),
-    /* @__PURE__ */ jsx("p", { style: { fontSize: 12, color: C.inkSoft, margin: "0 0 12px" }, children: periodeLabel(periods[periodIndex].start, periods[periodIndex].eind) }),
-    expiringWithRecipes.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: 12, marginBottom: 14 }, children: [
+    expiringWithRecipes.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: "none", borderRadius: 12, padding: 12, marginBottom: 14 }, children: [
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }, children: [
         /* @__PURE__ */ jsx(CalendarClock, { size: 15, color: C.mustardDeep }),
         /* @__PURE__ */ jsx("span", { style: { fontSize: 13, fontWeight: 700, color: C.mustardDeep }, children: "Ruim dit op v\xF3\xF3rdat het te laat is" })
@@ -8900,7 +8906,7 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
         )) })
       ] }, item.id))
     ] }),
-    /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, marginBottom: 16 }, children: periodDays.map((day, idx) => {
+    /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 16 }, children: periodDays.map((day, idx) => {
       const entry = dayEntry(day.key);
       const recipe = entry?.recipeId ? findRecipe(entry.recipeId) : null;
       return /* @__PURE__ */ jsxs(
@@ -9180,7 +9186,7 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
         ]
       }
     ),
-    toolsOpen && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: 12, marginTop: 4 }, children: [
+    toolsOpen && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: 12, marginTop: 4 }, children: [
       /* @__PURE__ */ jsx("div", { style: { marginBottom: 8 }, children: /* @__PURE__ */ jsxs(PrimaryButton, { full: true, onClick: onAIGenerate, children: [
         /* @__PURE__ */ jsx(Wand2, { size: 16 }),
         " Laat de AI een week bedenken"
@@ -9475,7 +9481,7 @@ ${link}`;
         ] }),
         /* @__PURE__ */ jsxs("details", { style: { marginTop: 10, marginBottom: 16 }, children: [
           /* @__PURE__ */ jsx("summary", { style: { fontSize: 11.5, color: C.inkSoft, cursor: "pointer" }, children: "Liever de code doorgeven?" }),
-          /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: "10px 12px", marginTop: 8 }, children: [
+          /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: "10px 12px", marginTop: 8 }, children: [
             /* @__PURE__ */ jsx("span", { style: { fontFamily: FONT_MONO, fontSize: 16, letterSpacing: 1, flex: 1 }, children: household.invite_code }),
             /* @__PURE__ */ jsx("button", { "aria-label": "Code kopi\xEBren", onClick: copyCode, style: { background: C.ceramic, border: "none", borderRadius: 10, padding: 8, cursor: "pointer", display: "flex" }, children: /* @__PURE__ */ jsx(Copy, { size: 15, color: C.blueDeep }) })
           ] })
@@ -9484,7 +9490,7 @@ ${link}`;
     })(),
     members && members.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }, children: "Wie kan inloggen" }),
-      /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, marginBottom: 16 }, children: members.map((m, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderBottom: idx < members.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
+      /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 16 }, children: members.map((m, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderBottom: idx < members.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
         /* @__PURE__ */ jsx("div", { style: { width: 26, height: 26, borderRadius: "50%", background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: C.blueDeep, flexShrink: 0 }, children: (m.displayName || m.email || "?").charAt(0).toUpperCase() }),
         /* @__PURE__ */ jsx("span", { style: { fontSize: 13, color: C.ink, flex: 1 }, children: m.displayName || m.email }),
         m.role === "owner" && /* @__PURE__ */ jsx(Pill, { children: "eigenaar" })
@@ -9492,13 +9498,13 @@ ${link}`;
     ] }),
     cooks && cooks.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }, children: "Dieetwensen & allergie\xEBn" }),
-      /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, marginBottom: 16, padding: "4px 12px" }, children: cooks.map((cookName) => /* @__PURE__ */ jsx(CookDietRow, { name: cookName, preferences, onUpdate: onUpdateCookDiets }, cookName)) }),
+      /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 16, padding: "4px 12px" }, children: cooks.map((cookName) => /* @__PURE__ */ jsx(CookDietRow, { name: cookName, preferences, onUpdate: onUpdateCookDiets }, cookName)) }),
       /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }, children: "Afkeuren per huisgenoot" }),
       /* @__PURE__ */ jsx("p", { style: { fontSize: 11, color: C.inkSoft, marginTop: -4, marginBottom: 8 }, children: 'Geen dieet, gewoon een voorkeur \u2014 bijv. "paddenstoelen". Je krijgt een seintje op een recept, geen harde blokkade.' }),
-      /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, marginBottom: 16, padding: "4px 12px" }, children: cooks.map((cookName) => /* @__PURE__ */ jsx(CookDislikeRow, { name: cookName, preferences, onUpdate: onUpdateCookDislikes }, cookName)) })
+      /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 16, padding: "4px 12px" }, children: cooks.map((cookName) => /* @__PURE__ */ jsx(CookDislikeRow, { name: cookName, preferences, onUpdate: onUpdateCookDislikes }, cookName)) })
     ] }),
     /* @__PURE__ */ jsx("div", { style: { fontSize: 11.5, fontWeight: 700, color: C.inkSoft, letterSpacing: "0.04em", textTransform: "uppercase", margin: "22px 0 8px" }, children: "Hoe de app werkt" }),
-    /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, marginBottom: 6, overflow: "hidden" }, children: [
+    /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 6, overflow: "hidden" }, children: [
       /* @__PURE__ */ jsx("div", { style: { padding: "12px", borderBottom: `1px solid ${C.ceramic}` }, children: /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }, children: [
         /* @__PURE__ */ jsxs("span", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: C.ink }, children: [
           /* @__PURE__ */ jsx(Moon, { size: 15, color: C.blueDeep }),
@@ -9580,13 +9586,13 @@ ${link}`;
       ] })
     ] }),
     /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }, children: "Volgorde boodschappenlijst" }),
-    /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, marginBottom: 16 }, children: (preferences?.categoryOrder && preferences.categoryOrder.length === CATEGORIES.length ? preferences.categoryOrder : CATEGORIES).map((cat, idx, arr) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: idx < arr.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
+    /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 16 }, children: (preferences?.categoryOrder && preferences.categoryOrder.length === CATEGORIES.length ? preferences.categoryOrder : CATEGORIES).map((cat, idx, arr) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: idx < arr.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
       /* @__PURE__ */ jsx("span", { style: { fontSize: 13, color: C.ink, flex: 1 }, children: cat }),
       /* @__PURE__ */ jsx("button", { onClick: () => onMoveCategoryOrder(cat, -1), disabled: idx === 0, style: { background: "none", border: "none", cursor: idx === 0 ? "default" : "pointer", opacity: idx === 0 ? 0.3 : 1, padding: 4 }, children: /* @__PURE__ */ jsx(ChevronUp, { size: 15, color: C.inkSoft }) }),
       /* @__PURE__ */ jsx("button", { onClick: () => onMoveCategoryOrder(cat, 1), disabled: idx === arr.length - 1, style: { background: "none", border: "none", cursor: idx === arr.length - 1 ? "default" : "pointer", opacity: idx === arr.length - 1 ? 0.3 : 1, padding: 4 }, children: /* @__PURE__ */ jsx(ChevronDown, { size: 15, color: C.inkSoft }) })
     ] }, cat)) }),
     /* @__PURE__ */ jsx("div", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }, children: "Altijd gratis" }),
-    /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, marginBottom: 6, overflow: "hidden" }, children: GRATIS_FEATURES.map((feat, idx) => /* @__PURE__ */ jsxs("div", { style: { padding: "11px 12px", borderBottom: idx < GRATIS_FEATURES.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
+    /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 6, overflow: "hidden" }, children: GRATIS_FEATURES.map((feat, idx) => /* @__PURE__ */ jsxs("div", { style: { padding: "11px 12px", borderBottom: idx < GRATIS_FEATURES.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: C.ink, fontWeight: 600 }, children: [
         /* @__PURE__ */ jsx("span", { children: feat.icon }),
         " ",
@@ -9600,7 +9606,7 @@ ${link}`;
       /* @__PURE__ */ jsx("span", { style: { fontSize: 12, fontWeight: 600, color: C.inkSoft }, children: "Met Premium" }),
       heeftPremium ? /* @__PURE__ */ jsx(Pill, { tone: "ok", children: "actief" }) : /* @__PURE__ */ jsx(Pill, { tone: "auto", children: "proefstand" })
     ] }),
-    /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, marginBottom: 6, overflow: "hidden" }, children: PREMIUM_FEATURES.map((feat, idx) => {
+    /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 6, overflow: "hidden" }, children: PREMIUM_FEATURES.map((feat, idx) => {
       const on = preferences?.premium ? preferences.premium[feat.key] !== false : true;
       return /* @__PURE__ */ jsxs("div", { style: { padding: "11px 12px", borderBottom: idx < PREMIUM_FEATURES.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
         /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
@@ -9626,7 +9632,7 @@ ${link}`;
       heeftPremium ? " Jullie abonnement loopt \u2014 bedankt daarvoor." : " Zolang er nog geen abonnement is, kun je ze in deze proefstand gewoon gebruiken."
     ] }),
     /* @__PURE__ */ jsx("div", { style: { fontSize: 11.5, fontWeight: 700, color: C.inkSoft, letterSpacing: "0.04em", textTransform: "uppercase", margin: "22px 0 8px" }, children: "Hulpmiddelen" }),
-    /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, marginBottom: 6, overflow: "hidden" }, children: [
+    /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 6, overflow: "hidden" }, children: [
       /* @__PURE__ */ jsxs(
         "button",
         {
@@ -9707,7 +9713,7 @@ ${link}`;
       )
     ] }),
     /* @__PURE__ */ jsx("div", { style: { fontSize: 11.5, fontWeight: 700, color: C.inkSoft, letterSpacing: "0.04em", textTransform: "uppercase", margin: "22px 0 8px" }, children: "Meehelpen" }),
-    /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, marginBottom: 6, overflow: "hidden" }, children: /* @__PURE__ */ jsxs(
+    /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 6, overflow: "hidden" }, children: /* @__PURE__ */ jsxs(
       "button",
       {
         onClick: () => setDelenOpen(true),
@@ -9761,7 +9767,7 @@ ${link}`;
           },
           children: "Account verwijderen"
         }
-      ) : /* @__PURE__ */ jsxs("div", { style: { background: C.warnBg, border: `1.5px solid ${C.brick}`, borderRadius: 12, padding: 13, marginTop: 8 }, children: [
+      ) : /* @__PURE__ */ jsxs("div", { style: { background: C.warnBg, border: "none", borderRadius: 12, padding: 13, marginTop: 8 }, children: [
         /* @__PURE__ */ jsx("div", { style: { fontSize: 13.5, fontWeight: 600, color: C.brick, marginBottom: 6 }, children: "Weet je het zeker?" }),
         /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.ink, margin: "0 0 10px", lineHeight: 1.5 }, children: "Je account wordt verwijderd. Ben je de laatste in dit huishouden, dan verdwijnen ook alle recepten, je voorraad, het weekmenu en de boodschappenlijst \u2014 voorgoed. Zijn er nog huisgenoten, dan blijft hun kookboek gewoon bestaan." }),
         /* @__PURE__ */ jsxs("p", { style: { fontSize: 12, color: C.inkSoft, margin: "0 0 8px" }, children: [
@@ -9990,7 +9996,7 @@ function DataDelenModal({ household, dataConsent, onSetDataConsent, onSetHouseho
       ] }),
       /* @__PURE__ */ jsx("h3", { style: kop, children: "Wat er van jullie is vastgelegd" }),
       rijen === null ? /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.inkSoft, margin: 0 }, children: "Bezig met ophalen\\u2026" }) : rijen.length === 0 ? /* @__PURE__ */ jsx("p", { style: { fontSize: 12.5, color: C.inkSoft, margin: 0, lineHeight: 1.5 }, children: laadFout || "Nog niets. Zodra je iets kookt of afvinkt, verschijnt het hier \u2014 dan zie je precies wat er meegaat." }) : /* @__PURE__ */ jsxs(Fragment, { children: [
-        /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, overflow: "hidden" }, children: rijen.map((r, idx) => /* @__PURE__ */ jsxs("div", { style: { padding: "9px 12px", borderBottom: idx < rijen.length - 1 ? `1px solid ${C.ceramic}` : "none", display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }, children: [
+        /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, overflow: "hidden" }, children: rijen.map((r, idx) => /* @__PURE__ */ jsxs("div", { style: { padding: "9px 12px", borderBottom: idx < rijen.length - 1 ? `1px solid ${C.ceramic}` : "none", display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }, children: [
           /* @__PURE__ */ jsxs("span", { style: { fontSize: 12.5, color: C.ink }, children: [
             WOORD[r.event] || r.event,
             r.product ? /* @__PURE__ */ jsxs("span", { style: { color: C.inkSoft }, children: [
@@ -10090,7 +10096,7 @@ function ShelfPhotoModal({ scanning, error, results, onScan, onToggleInclude, on
       ] }),
       /* @__PURE__ */ jsx("p", { style: { fontSize: 11, color: C.inkSoft, marginTop: -4 }, children: `Lukt "Direct camera" niet (sommige browsers blokkeren dit)? Maak de foto dan eerst met je gewone camera-app, en kies 'm daarna via "Foto kiezen".` })
     ] }),
-    preview && /* @__PURE__ */ jsx("img", { src: preview, alt: "Kast", style: { width: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 12, border: `1.5px solid ${C.borderTint}`, background: C.ceramic, marginBottom: 12 } }),
+    preview && /* @__PURE__ */ jsx("img", { src: preview, alt: "Kast", style: { width: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 12, border: `1px solid ${C.ceramicDark}`, background: C.ceramic, marginBottom: 12 } }),
     scanning && /* @__PURE__ */ jsx(PollepelLoader, { tekst: "Producten herkennen\u2026", size: 40 }),
     error && !scanning && /* @__PURE__ */ jsx("div", { style: { background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 12, padding: "8px 10px", fontSize: 13, color: C.brick, marginBottom: 10 }, children: error }),
     !scanning && results.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
@@ -10100,7 +10106,7 @@ function ShelfPhotoModal({ scanning, error, results, onScan, onToggleInclude, on
         results.length !== 1 ? "en" : "",
         " herkend \u2014 vink uit wat niet klopt:"
       ] }),
-      /* @__PURE__ */ jsx("div", { style: { maxHeight: 320, overflowY: "auto", background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, marginBottom: 14 }, children: results.map((r, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderBottom: idx < results.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
+      /* @__PURE__ */ jsx("div", { style: { maxHeight: 320, overflowY: "auto", background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 14 }, children: results.map((r, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderBottom: idx < results.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
         /* @__PURE__ */ jsx(
           "button",
           {
@@ -10193,7 +10199,7 @@ function ListPhotoModal({
       ] }),
       /* @__PURE__ */ jsx("p", { style: { fontSize: 11, color: C.inkSoft, marginTop: -4 }, children: `Lukt "Direct camera" niet? Maak de foto eerst met je gewone camera-app en kies 'm daarna via "Foto kiezen". Zorg dat alle regels scherp in beeld staan.` })
     ] }),
-    preview && fase === "kiezen" && /* @__PURE__ */ jsx("img", { src: preview, alt: "Lijstje", style: { width: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 12, border: `1.5px solid ${C.borderTint}`, background: C.ceramic, marginBottom: 12 } }),
+    preview && fase === "kiezen" && /* @__PURE__ */ jsx("img", { src: preview, alt: "Lijstje", style: { width: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 12, border: `1px solid ${C.ceramicDark}`, background: C.ceramic, marginBottom: 12 } }),
     scanning && /* @__PURE__ */ jsx(PollepelLoader, { tekst: "Lijstje lezen\u2026", size: 40 }),
     error && !scanning && /* @__PURE__ */ jsx("div", { style: { background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 12, padding: "8px 10px", fontSize: 13, color: C.brick, marginBottom: 10 }, children: error }),
     !scanning && fase === "vragen" && huidige && /* @__PURE__ */ jsx(
@@ -10219,7 +10225,7 @@ function ListPhotoModal({
         results.length !== 1 ? "en" : "",
         " gelezen \u2014 nog even nalopen:"
       ] }),
-      /* @__PURE__ */ jsx("div", { style: { maxHeight: 320, overflowY: "auto", background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, marginBottom: 14 }, children: results.map((r, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderBottom: idx < results.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
+      /* @__PURE__ */ jsx("div", { style: { maxHeight: 320, overflowY: "auto", background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 14 }, children: results.map((r, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderBottom: idx < results.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
         /* @__PURE__ */ jsx(
           "button",
           {
@@ -10281,7 +10287,7 @@ function ListPhotoVraag({ regel, nummer, totaal, onBeslis, onWijzig, onVolgende,
       ] }),
       /* @__PURE__ */ jsx("button", { onClick: onNaarLijst, style: { background: "none", border: "none", color: C.inkSoft, fontSize: 11, cursor: "pointer", textDecoration: "underline", fontFamily: FONT_BODY }, children: "Rest overslaan" })
     ] }),
-    /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, padding: 14, marginBottom: 12 }, children: [
+    /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, padding: 14, marginBottom: 12 }, children: [
       /* @__PURE__ */ jsx("div", { style: { fontSize: 18, fontWeight: 600, color: C.ink, marginBottom: 2 }, children: regel.name }),
       /* @__PURE__ */ jsx("div", { style: { fontSize: 11, color: C.inkSoft, fontFamily: FONT_MONO, marginBottom: 12 }, children: regel.category }),
       moetKiezen && /* @__PURE__ */ jsxs("div", { style: { marginBottom: 14 }, children: [
@@ -10290,7 +10296,7 @@ function ListPhotoVraag({ regel, nummer, totaal, onBeslis, onWijzig, onVolgende,
           "button",
           {
             onClick: () => onBeslis(regel.tempId, k.id),
-            style: { display: "block", width: "100%", textAlign: "left", background: C.ceramic, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: "9px 11px", marginBottom: 6, cursor: "pointer", fontFamily: FONT_BODY },
+            style: { display: "block", width: "100%", textAlign: "left", background: C.ceramic, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: "9px 11px", marginBottom: 6, cursor: "pointer", fontFamily: FONT_BODY },
             children: [
               /* @__PURE__ */ jsxs("div", { style: { fontSize: 14, color: C.ink }, children: [
                 "Ja, dit is ",
@@ -10622,7 +10628,7 @@ function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose
           width: "100%",
           textAlign: "left",
           background: C.noteBg,
-          border: `1.5px solid ${C.mustard}`,
+          border: "none",
           borderRadius: 12,
           padding: "12px 13px",
           marginBottom: 12,
@@ -10638,8 +10644,8 @@ function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose
         ]
       }
     ),
-    rouletteBezig && /* @__PURE__ */ jsx("div", { style: { background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: "18px 13px", marginBottom: 12 }, children: /* @__PURE__ */ jsx(PollepelLoader, { tekst: "Even roeren\u2026", size: 40, delay: 0 }) }),
-    gerold && !rouletteBezig && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: "13px", marginBottom: 12 }, children: [
+    rouletteBezig && /* @__PURE__ */ jsx("div", { style: { background: C.noteBg, border: "none", borderRadius: 12, padding: "18px 13px", marginBottom: 12 }, children: /* @__PURE__ */ jsx(PollepelLoader, { tekst: "Even roeren\u2026", size: 40, delay: 0 }) }),
+    gerold && !rouletteBezig && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: "none", borderRadius: 12, padding: "13px", marginBottom: 12 }, children: [
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 11, marginBottom: 11 }, children: [
         /* @__PURE__ */ jsx("span", { style: { fontSize: 28, flexShrink: 0 }, children: gerold.r.emoji || "\u{1F37D}\uFE0F" }),
         /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
@@ -10683,7 +10689,7 @@ function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose
         "button",
         {
           onClick: () => onPick(recipe.id, item.id),
-          style: { display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: "8px 10px", marginBottom: 8, cursor: "pointer" },
+          style: { display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: C.noteBg, border: "none", borderRadius: 12, padding: "8px 10px", marginBottom: 8, cursor: "pointer" },
           children: [
             /* @__PURE__ */ jsx("div", { style: { width: 32, height: 32, borderRadius: 10, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }, children: recipe.emoji || "\u{1F37D}\uFE0F" }),
             /* @__PURE__ */ jsxs("div", { style: { flex: 1 }, children: [
@@ -10713,7 +10719,7 @@ function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose
         "button",
         {
           onClick: () => onPick(r.id),
-          style: { display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: "8px 10px", marginBottom: 8, cursor: "pointer" },
+          style: { display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: "8px 10px", marginBottom: 8, cursor: "pointer" },
           children: [
             /* @__PURE__ */ jsx("div", { style: { width: 32, height: 32, borderRadius: 10, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }, children: r.emoji || "\u{1F37D}\uFE0F" }),
             /* @__PURE__ */ jsxs("div", { children: [
@@ -10803,15 +10809,24 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
     () => isPremiumOn("predictiveDepletion") ? getDepletionForecast(inventory, consumptionLog) : [],
     [inventory, consumptionLog, isPremiumOn]
   );
+  const tekort = inventory.filter((i) => Number(i.current || 0) < Number(i.min || 0)).length;
   return /* @__PURE__ */ jsxs("div", { children: [
+    /* @__PURE__ */ jsxs("div", { style: { marginBottom: 14 }, children: [
+      /* @__PURE__ */ jsx("div", { style: { ...TYPE.scherm, color: C.ink }, children: "Voorraad" }),
+      /* @__PURE__ */ jsxs("div", { style: { ...TYPE.label, color: tekort ? C.brick : C.inkSoft, marginTop: 6 }, children: [
+        inventory.length,
+        " producten",
+        tekort > 0 && ` \xB7 ${tekort} onder het minimum`
+      ] })
+    ] }),
     /* @__PURE__ */ jsxs("div", { style: { position: "relative", marginBottom: 12 }, children: [
-      /* @__PURE__ */ jsx(Search, { size: 15, color: C.inkSoft, style: { position: "absolute", left: 10, top: 13 } }),
+      /* @__PURE__ */ jsx(Search, { size: 15, color: C.inkSoft, style: { position: "absolute", left: 11, top: 14 } }),
       /* @__PURE__ */ jsx(
         "input",
         {
           autoComplete: "off",
-          style: { ...inputStyle, paddingLeft: 30, paddingRight: zoek ? 36 : 11 },
-          placeholder: `Zoek in ${inventory.length} producten\u2026`,
+          style: { ...inputStyle, paddingLeft: 32, paddingRight: zoek ? 36 : 12 },
+          placeholder: "Zoek een product of bakjenummer\u2026",
           value: zoek,
           onChange: (e) => setZoek(e.target.value)
         }
@@ -10889,7 +10904,7 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
           width: "100%",
           textAlign: "left",
           background: C.warnBg,
-          border: `1.5px solid ${C.brick}`,
+          border: "none",
           borderRadius: 12,
           padding: "11px 13px",
           marginBottom: 12,
@@ -10905,7 +10920,7 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
         ]
       }
     ),
-    !zoek && depletionForecast.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.successBg, border: `1.5px solid ${C.sage}`, borderRadius: 12, padding: 12, marginBottom: 16 }, children: [
+    !zoek && depletionForecast.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.successBg, border: "none", borderRadius: 12, padding: 12, marginBottom: 16 }, children: [
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }, children: [
         /* @__PURE__ */ jsx("span", { style: { fontSize: 14 }, children: "\u{1F4C9}" }),
         /* @__PURE__ */ jsx("span", { style: { fontSize: 13, fontWeight: 700, color: C.sage }, children: "Voorspelde uitputting" }),
@@ -10922,7 +10937,7 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
         " op."
       ] }, f.item.id))
     ] }),
-    !zoek && expirySuggestions.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: 12, marginBottom: 16 }, children: [
+    !zoek && expirySuggestions.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, border: "none", borderRadius: 12, padding: 12, marginBottom: 16 }, children: [
       /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }, children: [
         /* @__PURE__ */ jsx(CalendarClock, { size: 15, color: C.mustardDeep }),
         /* @__PURE__ */ jsx("span", { style: { fontSize: 13, fontWeight: 700, color: C.mustardDeep }, children: "Bijna over de datum" })
@@ -10980,7 +10995,7 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
       if (!items || !items.length) return null;
       return /* @__PURE__ */ jsxs("div", { style: { marginBottom: 16 }, children: [
         /* @__PURE__ */ jsx("div", { style: { fontFamily: FONT_MONO, fontSize: 11, letterSpacing: 0.5, color: C.blueSoft, marginBottom: 6, textTransform: "uppercase" }, children: cat }),
-        /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}` }, children: items.map((item, idx) => {
+        /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}` }, children: items.map((item, idx) => {
           const low = item.current < item.min;
           const expDays = item.expiryDate ? daysUntil(item.expiryDate) : null;
           return /* @__PURE__ */ jsxs("div", { onClick: () => onEdit(item), style: { padding: "10px 12px", borderBottom: idx < items.length - 1 ? `1px solid ${C.ceramic}` : "none", cursor: "pointer" }, children: [
@@ -11143,7 +11158,7 @@ function InventoryForm({ initial, consumptionLog = [], inventory = [], nummertBa
         }
       ),
       searching && /* @__PURE__ */ jsx("div", { style: { position: "absolute", right: 10, top: 9 }, children: /* @__PURE__ */ jsx(PollepelLoader, { size: 16, inline: true, delay: 0 }) }),
-      showSuggestions && suggestions.length > 0 && /* @__PURE__ */ jsx("div", { style: { position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, zIndex: 5, maxHeight: 220, overflowY: "auto", boxShadow: "0 6px 16px rgba(0,0,0,0.12)" }, children: suggestions.map((p, idx) => /* @__PURE__ */ jsxs(
+      showSuggestions && suggestions.length > 0 && /* @__PURE__ */ jsx("div", { style: { position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, zIndex: 5, maxHeight: 220, overflowY: "auto", boxShadow: "0 6px 16px rgba(0,0,0,0.12)" }, children: suggestions.map((p, idx) => /* @__PURE__ */ jsxs(
         "button",
         {
           onClick: () => pickSuggestion(p),
@@ -11191,7 +11206,7 @@ function InventoryForm({ initial, consumptionLog = [], inventory = [], nummertBa
           width: "100%",
           textAlign: "left",
           background: C.noteBg,
-          border: `1.5px solid ${C.mustard}`,
+          border: "none",
           borderRadius: 12,
           padding: "11px 13px",
           marginBottom: 12,
@@ -11415,7 +11430,11 @@ ${body}
   };
   if (list.length === 0) {
     return /* @__PURE__ */ jsxs("div", { children: [
-      /* @__PURE__ */ jsxs("div", { style: { textAlign: "center", padding: "40px 10px", color: C.inkSoft }, children: [
+      /* @__PURE__ */ jsxs("div", { style: { marginBottom: 14 }, children: [
+        /* @__PURE__ */ jsx("div", { style: { ...TYPE.scherm, color: C.ink }, children: "Boodschappen" }),
+        /* @__PURE__ */ jsx("div", { style: { ...TYPE.label, color: C.inkSoft, marginTop: 6 }, children: "Niets te halen" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { textAlign: "center", padding: "30px 10px", color: C.inkSoft }, children: [
         /* @__PURE__ */ jsx(ShoppingCart, { size: 28, color: C.ceramicDark, style: { marginBottom: 8 } }),
         /* @__PURE__ */ jsx("p", { style: { fontSize: 13 }, children: "Boodschappenlijst is leeg. Kook een gerecht of voeg zelf iets toe \u2014 die verschijnen hier automatisch als voorraad onder het minimum komt." })
       ] }),
@@ -11425,10 +11444,17 @@ ${body}
       ] })
     ] });
   }
+  const nogTeHalen = list.filter((i) => !i.checked).length;
   return /* @__PURE__ */ jsxs("div", { children: [
-    /* @__PURE__ */ jsxs("div", { style: { marginBottom: 14, display: "flex", gap: 8 }, children: [
-      /* @__PURE__ */ jsx("button", { "aria-label": "Delen", onClick: shareList, title: "Lijst delen / kopi\xEBren", style: { width: 44, height: 44, background: C.cardBg, border: `1.5px solid ${C.blue}`, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }, children: /* @__PURE__ */ jsx(Share2, { size: 17, color: C.blue }) }),
-      /* @__PURE__ */ jsx("button", { "aria-label": "Downloaden", onClick: downloadList, title: "Downloaden als afvinklijst", style: { width: 44, height: 44, background: C.cardBg, border: `1.5px solid ${C.blue}`, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }, children: /* @__PURE__ */ jsx(Download, { size: 17, color: C.blue }) })
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 14 }, children: [
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("div", { style: { ...TYPE.scherm, color: C.ink }, children: "Boodschappen" }),
+        /* @__PURE__ */ jsx("div", { style: { ...TYPE.label, color: C.inkSoft, marginTop: 6 }, children: nogTeHalen === 0 ? `Alles afgevinkt \xB7 ${list.length} ${list.length === 1 ? "product" : "producten"}` : `Nog ${nogTeHalen} van ${list.length}` })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 7, flexShrink: 0, paddingTop: 4 }, children: [
+        /* @__PURE__ */ jsx("button", { "aria-label": "Delen", onClick: shareList, title: "Lijst delen / kopi\xEBren", style: { width: 38, height: 38, background: C.ceramic, border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx(Share2, { size: 16, color: C.inkSoft }) }),
+        /* @__PURE__ */ jsx("button", { "aria-label": "Downloaden", onClick: downloadList, title: "Downloaden als afvinklijst", style: { width: 38, height: 38, background: C.ceramic, border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx(Download, { size: 16, color: C.inkSoft }) })
+      ] })
     ] }),
     shareMsg && /* @__PURE__ */ jsx("p", { style: { fontSize: 12, color: C.inkSoft, marginTop: -8, marginBottom: 10 }, children: shareMsg }),
     orderedCatsForDisplay.map((cat) => {
@@ -11472,7 +11498,7 @@ ${body}
       }
       return /* @__PURE__ */ jsxs("div", { style: { marginBottom: 14 }, children: [
         /* @__PURE__ */ jsx("div", { style: { fontFamily: FONT_MONO, fontSize: 11, letterSpacing: 0.5, color: C.blueSoft, marginBottom: 6, textTransform: "uppercase" }, children: cat }),
-        /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1.5px solid ${C.borderTint}` }, children: items.map((item, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: idx < items.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
+        /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}` }, children: items.map((item, idx) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: idx < items.length - 1 ? `1px solid ${C.ceramic}` : "none" }, children: [
           /* @__PURE__ */ jsx("button", { onClick: () => onToggle(item.id), style: {
             width: 20,
             height: 20,
@@ -11713,7 +11739,7 @@ function ImportModal({ importing, error, onCancel, onImportText, onImportUrl, on
       /* @__PURE__ */ jsx("input", { autoComplete: "off", ref: cameraInputRef, type: "file", accept: "image/*", capture: "environment", onChange: handlePhotoSelected, style: { display: "none" } }),
       /* @__PURE__ */ jsx("input", { autoComplete: "off", ref: galleryInputRef, type: "file", accept: "image/*", onChange: handlePhotoSelected, style: { display: "none" } }),
       photoPreview ? /* @__PURE__ */ jsxs("div", { style: { marginBottom: 10 }, children: [
-        /* @__PURE__ */ jsx("img", { src: photoPreview, alt: "Recept", style: { width: "100%", maxHeight: 220, objectFit: "contain", borderRadius: 12, border: `1.5px solid ${C.borderTint}`, background: C.ceramic } }),
+        /* @__PURE__ */ jsx("img", { src: photoPreview, alt: "Recept", style: { width: "100%", maxHeight: 220, objectFit: "contain", borderRadius: 12, border: `1px solid ${C.ceramicDark}`, background: C.ceramic } }),
         /* @__PURE__ */ jsx("div", { style: { marginTop: 6 }, children: /* @__PURE__ */ jsxs(GhostButton, { onClick: () => {
           setPhotoFile(null);
           setPhotoPreview("");
@@ -11808,7 +11834,7 @@ function AIWeekmenuModal({ generating, progress, error, weekdayStyles, onSetWeek
           ]
         }
       ),
-      dagenOpen && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: 10, marginTop: 4 }, children: [
+      dagenOpen && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: 10, marginTop: 4 }, children: [
         [1, 2, 3, 4, 5, 6, 0].map((wd) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }, children: [
           /* @__PURE__ */ jsx("span", { style: { width: 62, fontSize: 12, color: C.ink, flexShrink: 0 }, children: DAG_LANG[wd].charAt(0).toUpperCase() + DAG_LANG[wd].slice(1) }),
           /* @__PURE__ */ jsx(
@@ -11908,7 +11934,7 @@ function AIWeekmenuModal({ generating, progress, error, weekdayStyles, onSetWeek
         }
       )
     ] }),
-    generating && /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: 12, marginBottom: 12 }, children: [
+    generating && /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: 12, marginBottom: 12 }, children: [
       /* @__PURE__ */ jsx(PollepelLoader, { size: 20, inline: true, delay: 0 }),
       /* @__PURE__ */ jsx("span", { style: { fontSize: 13, color: C.ink }, children: progress || "Bezig\u2026" })
     ] }),
@@ -12084,13 +12110,13 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
     setPhase(detectorRef.current ? "scanning" : "intro");
   };
   const stepper = (value, setValue, unitLabel) => /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, justifyContent: "center", margin: "10px 0" }, children: [
-    /* @__PURE__ */ jsx("button", { onClick: () => setValue(Math.max(0, round2(value - 1))), style: { width: 38, height: 38, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }, children: /* @__PURE__ */ jsx(Minus, { size: 16 }) }),
+    /* @__PURE__ */ jsx("button", { onClick: () => setValue(Math.max(0, round2(value - 1))), style: { width: 38, height: 38, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer" }, children: /* @__PURE__ */ jsx(Minus, { size: 16 }) }),
     /* @__PURE__ */ jsxs("div", { style: { minWidth: 70, textAlign: "center", fontFamily: FONT_MONO, fontSize: 16 }, children: [
       value,
       " ",
       unitLabel
     ] }),
-    /* @__PURE__ */ jsx("button", { onClick: () => setValue(round2(value + 1)), style: { width: 38, height: 38, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }, children: /* @__PURE__ */ jsx(Plus, { size: 16 }) })
+    /* @__PURE__ */ jsx("button", { onClick: () => setValue(round2(value + 1)), style: { width: 38, height: 38, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer" }, children: /* @__PURE__ */ jsx(Plus, { size: 16 }) })
   ] });
   return /* @__PURE__ */ jsxs(Modal, { title: "Barcode scannen", onClose, children: [
     /* @__PURE__ */ jsx("canvas", { ref: canvasRef, style: { display: "none" } }),
@@ -12107,7 +12133,7 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
         /* @__PURE__ */ jsx(ScanLine, { size: 14, style: { verticalAlign: -2, marginRight: 4 } }),
         "Houd de streepjescode in het kader. Bekende producten worden meteen bijgeboekt \u2014 scan er gerust meerdere achter elkaar."
       ] }),
-      session.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: 10, marginBottom: 10 }, children: [
+      session.length > 0 && /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: 10, marginBottom: 10 }, children: [
         /* @__PURE__ */ jsx("div", { style: { fontSize: 12, color: C.inkSoft, marginBottom: 4 }, children: "Deze sessie bijgeboekt:" }),
         session.map((s, i) => /* @__PURE__ */ jsxs("div", { style: { fontSize: 13, padding: "2px 0" }, children: [
           /* @__PURE__ */ jsx(CheckCircle2, { size: 12, color: C.sage, style: { verticalAlign: -1, marginRight: 5 } }),
@@ -12145,7 +12171,7 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
     ] }),
     phase === "found" && matchedItem && /* @__PURE__ */ jsxs("div", { children: [
       /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.ink, marginTop: 0 }, children: "Herkend als bestaand voorraaditem:" }),
-      /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: 12, marginBottom: 8 }, children: [
+      /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: 12, marginBottom: 8 }, children: [
         /* @__PURE__ */ jsx("div", { style: { fontWeight: 600, fontSize: 15 }, children: matchedItem.name }),
         /* @__PURE__ */ jsxs("div", { style: { fontFamily: FONT_MONO, fontSize: 12, color: C.inkSoft }, children: [
           "Huidige voorraad: ",
@@ -12348,7 +12374,7 @@ function ManualAddForm({ newName, setNewName, newAmount, setNewAmount, newUnit, 
     if (onCategoryTouched) onCategoryTouched();
     setToonSuggesties(false);
   };
-  return /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: 10, marginTop: 8 }, children: [
+  return /* @__PURE__ */ jsxs("div", { style: { background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: 10, marginTop: 8 }, children: [
     /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 6, marginBottom: 6 }, children: [
       /* @__PURE__ */ jsx(
         "input",

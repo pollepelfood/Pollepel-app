@@ -193,44 +193,78 @@ const COMMON_GROCERY_ITEMS = [
 /*  Merk-identiteit                                                  */
 /* ---------------------------------------------------------------- */
 
+// Keukenlicht. Het uitgangspunt: warm papier is de ondergrond, niet wit karton
+// erop. Diepte komt uit ruimte en een haarlijn, niet uit schaduw en contrast.
+//
+// Delfts blauw blijft, maar wordt de enige accentkleur — navigatie, links,
+// de actieve keuze. Mosterd is er nog voor één hoofdactie per scherm, steenrood
+// en salie alleen voor wat ze betekenen. Eerder deed elke kleur drie dingen
+// tegelijk en leerde je er dus niets meer van.
 const LIGHT_PALETTE = {
   blue: "#1F3F66",
   blueDeep: "#152C48",
   blueSoft: "#4A6C8F",
-  ceramic: "#EAE7DC",
-  ceramicDark: "#DAD5C6",
-  paper: "#F6F4EE",
+  // ceramic is de rand van het scherm en de balken; paper is waar je op leest.
+  ceramic: "#EFE6D5",
+  ceramicDark: "#E4DAC8",
+  paper: "#F7F1E6",
   mustard: "#D9A441",
-  mustardDeep: "#B4832C",
-  brick: "#B5533C",
-  sage: "#54744F",
-  ink: "#1C1D1B",
-  inkSoft: "#5B5C57",
-  cardBg: "#ffffff",
-  borderTint: "rgba(31,63,102,0.16)",
-  warnBg: "#F1DCC9",
-  successBg: "#EEF3EC",
-  noteBg: "#FBF3E3",
+  // mustardDeep is tekstkleur op het notitievlak, geen vlakkleur: daar moet
+  // hij donker genoeg voor zijn (was 2,9:1).
+  mustardDeep: "#8A6018",
+  // Doorgerekend tegen de vlakken waar ze op staan. Steenrood op #F4E2CE haalde
+  // met de oude waarde maar 3,9:1 en salie precies 4,5 — te krap om op te
+  // bouwen.
+  brick: "#A84833",
+  sage: "#56674D",
+  // Warm bijna-zwart in plaats van neutraal grijszwart: op warm papier leest
+  // neutrale inkt koud en een beetje gedrukt.
+  ink: "#2B2419",
+  // Eerst op #8A7F6C gezet omdat dat in de ontwerpschetsen mooi stond. Daar
+  // staat het ook op 20 pixels; in de app draagt inkSoft alle bijzinnen van
+  // 11 en 12 pixels, en dan is 3,5:1 simpelweg te licht om te lezen.
+  inkSoft: "#746A59",
+  // Geen karton meer. Nog net lichter dan het papier, zodat een kaart zich
+  // aftekent zonder eruit te springen.
+  cardBg: "#FDFAF3",
+  // De haarlijn was blauw getint, wat op warm papier paars aandoet.
+  borderTint: "rgba(43,36,25,0.13)",
+  warnBg: "#F4E2CE",
+  successBg: "#E8EDE2",
+  noteBg: "#F6EBD6",
+  // Een gevulde blauwe knop is iets anders dan blauwe tekst. In het donkere
+  // thema moet blauwe tékst licht zijn om leesbaar te blijven, maar een knop
+  // met die lichte blauwe vulling en witte letters haalt het contrast niet.
+  // Daarom twee aparte tokens: de vulling en de inkt erop.
+  blueBtn: "#1F3F66",
+  blueBtnInk: "#FFFFFF",
 };
 
+// Het donkere thema was koel blauwgrijs, en dat vocht met een warme
+// keramiekidentiteit: 's avonds was het een andere app. Nu is het dezelfde
+// kleurtemperatuur, alleen omgekeerd — warm donker in plaats van warm licht.
 const DARK_PALETTE = {
-  blue: "#4A7BAE",
-  blueDeep: "#0E1A2B",
-  blueSoft: "#8FA9C4",
-  ceramic: "#181B22",
-  ceramicDark: "#33373F",
-  paper: "#20242C",
+  blue: "#5E8DBE",
+  blueDeep: "#13202E",
+  blueSoft: "#9DB4C9",
+  ceramic: "#1A1713",
+  ceramicDark: "#332E26",
+  paper: "#211F1B",
   mustard: "#E3B155",
   mustardDeep: "#F0C878",
-  brick: "#D97862",
-  sage: "#8AB08F",
-  ink: "#F0EEE6",
-  inkSoft: "#A8A69C",
-  cardBg: "#242832",
-  borderTint: "rgba(143,169,196,0.22)",
-  warnBg: "#3D2B22",
-  successBg: "#1F2B22",
+  // Nipt opgehoogd: op het donkere waarschuwvlak haalde #D97862 4,49:1 en dat
+  // is een haar onder de grens.
+  brick: "#DD8370",
+  sage: "#8FAE8A",
+  ink: "#F2EBDD",
+  inkSoft: "#A79B86",
+  cardBg: "#2A2620",
+  borderTint: "rgba(242,235,221,0.14)",
+  warnBg: "#3A291E",
+  successBg: "#23291F",
   noteBg: "#332A18",
+  blueBtn: "#2E4F74",
+  blueBtnInk: "#F2EBDD",
 };
 
 // let (niet const): de app wisselt het thema door de eigenschappen van dit object te
@@ -258,24 +292,55 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v82 · 11 oktober 2026";
+const APP_VERSIE = "v84 · 11 oktober 2026";
 
 // Versie van de toestemmingstekst. Verandert de tekst wezenlijk, dan gaat dit
 // omhoog en moet er opnieuw gevraagd worden — oude toestemming dekt een nieuwe
 // belofte niet.
 const TOESTEMMING_VERSIE = 1;
 
+// Typografische schaal. Fraunces stond overal op 15 pixels, en een
+// displayletter op 15 pixels is gewoon een rare schreefloze — zijn hele waarde
+// zit tussen de 20 en 34. Deze schaal legt vast waar hij groot mag zijn en waar
+// de broodletter het overneemt, zodat etappe 2 en 3 niet weer per component
+// gaan gokken.
+//
+// scherm  = de titel van een scherm (Fraunces, groot)
+// stuk    = de naam van een gerecht of een blok (Fraunces, middel)
+// kop     = een kopje boven een lijst (Fraunces, klein)
+// label   = mono, hoofdletters, gesperd: datums, eenheden, rubrieken
+// tekst   = broodtekst
+// klein   = bijzin, uitleg onder iets
+const TYPE = {
+  scherm: { fontFamily: "'Fraunces', serif", fontSize: 31, lineHeight: 1.06, letterSpacing: "-0.02em", fontWeight: 600 },
+  stuk:   { fontFamily: "'Fraunces', serif", fontSize: 20, lineHeight: 1.18, letterSpacing: "-0.015em", fontWeight: 600 },
+  kop:    { fontFamily: "'Fraunces', serif", fontSize: 16, lineHeight: 1.25, fontWeight: 600 },
+  label:  { fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, letterSpacing: "0.13em", textTransform: "uppercase" },
+  tekst:  { fontSize: 13.5, lineHeight: 1.5 },
+  klein:  { fontSize: 11.5, lineHeight: 1.45 },
+};
+
 const FONT_DISPLAY = "'Fraunces', serif";
 const FONT_BODY = "'Work Sans', sans-serif";
 const FONT_MONO = "'IBM Plex Mono', monospace";
 
-const TILE_GRADIENTS = [
-  ["#1F3F66", "#4A6C8F"],
-  ["#B5533C", "#D9A441"],
-  ["#5E7F63", "#8AAE8E"],
-  ["#B4832C", "#D9A441"],
-  ["#152C48", "#4A6C8F"],
-];
+
+// Rustige tonen in plaats van felle kleurverlopen.
+//
+// Het waren vijf verlopen, toegewezen op de letters van de receptnaam. Daardoor
+// kregen viscurry en hutspot hetzelfde groen: de kleur betekende dus niets,
+// behalve dat vier felle vlakken naast elkaar om aandacht vochten. Deze tonen
+// zijn zacht genoeg om als ondergrond voor een emoji te dienen zonder zelf het
+// gesprek over te nemen, en er is een donkere reeks zodat ze 's avonds niet
+// als lampjes oplichten.
+const TEGEL_TONEN = ["#DCE4E8", "#EADFCB", "#E8D7CE", "#EFE3C9", "#DEE4D8", "#E6DCE4"];
+const TEGEL_TONEN_DONKER = ["#2A323A", "#363026", "#382C27", "#3A3225", "#2C342C", "#332C34"];
+
+function tegelToon(naam) {
+  const reeks = C.paper === DARK_PALETTE.paper ? TEGEL_TONEN_DONKER : TEGEL_TONEN;
+  const i = Math.abs([...String(naam || "")].reduce((a, c) => a + c.charCodeAt(0), 0)) % reeks.length;
+  return reeks[i];
+}
 
 /* ---------------------------------------------------------------- */
 /*  Voorbeelddata                                                    */
@@ -2182,12 +2247,11 @@ async function saveKey(key, value) {
 /* ---------------------------------------------------------------- */
 
 function TileThumb({ recipe, size = "normal" }) {
-  const idx = Math.abs([...recipe.name].reduce((a, c) => a + c.charCodeAt(0), 0)) % TILE_GRADIENTS.length;
-  const [c1, c2] = TILE_GRADIENTS[idx];
-  const h = size === "large" ? 180 : 96;
+  const h = size === "large" ? 180 : size === "rij" ? 44 : 96;
+  const rond = size === "rij" ? "50%" : 12;
   if (recipe.photoUrl) {
     return (
-      <div style={{ height: h, borderRadius: 16, overflow: "hidden", position: "relative" }}>
+      <div style={{ height: h, width: size === "rij" ? h : "auto", borderRadius: rond, overflow: "hidden", position: "relative", flexShrink: 0 }}>
         <img src={recipe.photoUrl} alt={recipe.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
       </div>
     );
@@ -2196,25 +2260,24 @@ function TileThumb({ recipe, size = "normal" }) {
     <div
       style={{
         height: h,
-        borderRadius: 16,
-        background: `linear-gradient(135deg, ${c1}, ${c2})`,
+        width: size === "rij" ? h : "auto",
+        flexShrink: 0,
+        borderRadius: rond,
+        background: tegelToon(recipe.name),
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontSize: size === "large" ? 56 : 34,
-        position: "relative",
+        fontSize: size === "large" ? 56 : size === "rij" ? 21 : 34,
       }}
     >
-      {recipe.emoji || "🍽️"}
-      <div style={{ position: "absolute", top: 6, left: 6, width: 8, height: 8, borderRadius: 2, background: "rgba(255,255,255,0.55)" }} />
-      <div style={{ position: "absolute", bottom: 6, right: 6, width: 8, height: 8, borderRadius: 2, background: "rgba(255,255,255,0.35)" }} />
+      {recipe.emoji || "\u{1F37D}\uFE0F"}
     </div>
   );
 }
 
 function Pill({ children, tone = "default" }) {
   const tones = {
-    default: { bg: C.ceramicDark, fg: C.inkSoft },
+    default: { bg: C.ceramic, fg: C.inkSoft },
     warn: { bg: C.warnBg, fg: C.brick },
     ok: { bg: C.successBg, fg: C.sage },
     auto: { bg: C.noteBg, fg: C.mustardDeep },
@@ -2240,11 +2303,42 @@ function Pill({ children, tone = "default" }) {
   );
 }
 
+// Welke inkt is leesbaar op deze vulling?
+//
+// Eerst stond hier per knopkleur een vaste tekstkleur, en dat ging elke keer
+// mis zodra een kleur per thema verschilde: salie is in het lichte thema
+// donkergroen (wit erop is prima) en in het donkere thema lichtgroen (wit
+// erop haalt 2:1). Hetzelfde gold voor steenrood en blauw.
+//
+// In plaats van voor elke kleur een tweede token te verzinnen, rekenen we het
+// uit. Deze regel klopt ook voor kleuren die er later bij komen.
+function leesbareInkt(achtergrond) {
+  const h = String(achtergrond || "").replace("#", "");
+  if (h.length !== 6) return "#fff";
+  const kanaal = (i) => {
+    const v = parseInt(h.slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  const helderheid = 0.2126 * kanaal(0) + 0.7152 * kanaal(2) + 0.0722 * kanaal(4);
+  // Geen vaste drempel maar gewoon uitrekenen welke van de twee beter leest.
+  // Met een drempel van 0,38 kregen steenrood en salie in het donkere thema
+  // nog steeds witte letters op 2,4:1 — een grens die je zelf kiest is een
+  // grens die je verkeerd kunt kiezen.
+  const tegen = (l) => {
+    const hoog = Math.max(helderheid, l), laag = Math.min(helderheid, l);
+    return (hoog + 0.05) / (laag + 0.05);
+  };
+  const DONKER = 0.0133; // helderheid van #241C0B
+  const LICHT = 1;       // helderheid van wit
+  return tegen(DONKER) >= tegen(LICHT) ? "#241C0B" : "#FFFFFF";
+}
+
 function PrimaryButton({ children, onClick, tone = "blue", disabled, full, compact }) {
-  const bg = tone === "blue" ? C.blue : tone === "mustard" ? C.mustard : tone === "brick" ? C.brick : C.sage;
-  // Wit op mosterdgeel haalt maar 2,25:1 — ruim onder de leesbaarheidsnorm.
-  // Donkere tekst op datzelfde geel haalt 7,5:1.
-  const tekstkleur = tone === "mustard" ? "#2A1F06" : "#fff";
+  // Blauw gebruikt een eigen knoptoken en niet C.blue: in het donkere thema
+  // moet blauwe tékst licht zijn om leesbaar te blijven, terwijl een knop met
+  // die lichte vulling juist donker moet zijn.
+  const bg = tone === "blue" ? C.blueBtn : tone === "mustard" ? C.mustard : tone === "brick" ? C.brick : C.sage;
+  const tekstkleur = leesbareInkt(bg);
   return (
     <button
       onClick={onClick}
@@ -2253,7 +2347,7 @@ function PrimaryButton({ children, onClick, tone = "blue", disabled, full, compa
         background: disabled ? "#B9B6AC" : bg,
         color: disabled ? "#fff" : tekstkleur,
         border: "none",
-        borderRadius: 14,
+        borderRadius: 12,
         padding: compact ? "9px 14px" : "10px 16px",
         // Aanraakvlak van minimaal 44 px: dit is de belangrijkste actie op elk
         // scherm en was met 37 px kleiner dan een stapper die je zelden gebruikt.
@@ -2280,10 +2374,13 @@ function GhostButton({ children, onClick, danger, full, disabled }) {
       onClick={onClick}
       disabled={disabled}
       style={{
+        // Een omlijnde knop in de volle accentkleur trekt evenveel aandacht
+        // als de hoofdknop ernaast. Een dunne warme rand met gekleurde tekst
+        // leest als "ook mogelijk" in plaats van "doe dit".
         background: "transparent",
         color: danger ? C.brick : C.blue,
-        border: `1.5px solid ${danger ? C.brick : C.blue}`,
-        borderRadius: 14,
+        border: `1px solid ${danger ? C.brick : C.ceramicDark}`,
+        borderRadius: 12,
         padding: "9px 14px",
         minHeight: 44,
         fontFamily: FONT_BODY,
@@ -2309,7 +2406,7 @@ function VoorraadSuggesties({ tekst, inventory, onKies, titel = "Uit je voorraad
   const lijst = voorraadSuggesties(tekst, inventory);
   if (!lijst.length) return null;
   return (
-    <div style={{ background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, marginBottom: 8, overflow: "hidden" }}>
+    <div style={{ background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, marginBottom: 8, overflow: "hidden" }}>
       <div style={{ fontSize: 11, color: C.inkSoft, padding: "6px 10px 2px" }}>{titel}</div>
       {lijst.map((item) => (
         <button
@@ -2335,7 +2432,9 @@ function VoorraadSuggesties({ tekst, inventory, onKies, titel = "Uit je voorraad
 function Field({ label, children }) {
   return (
     <label style={{ display: "block", marginBottom: 12 }}>
-      <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: C.inkSoft, marginBottom: 4, fontFamily: FONT_BODY }}>
+      {/* Mono in kapitalen voor labels. Daarmee is in één oogopslag duidelijk
+          wat een aanduiding is en wat inhoud — de broodletter deed allebei. */}
+      <span style={{ ...TYPE.label, display: "block", color: C.inkSoft, marginBottom: 6 }}>
         {label}
       </span>
       {children}
@@ -2349,11 +2448,15 @@ function Field({ label, children }) {
 const inputStyle = {
   width: "100%",
   boxSizing: "border-box",
-  borderRadius: 12,
-  padding: "9px 11px",
+  borderRadius: 10,
+  // Ruimer: een invoerveld dat je met een duim raakt mag niet krapper zijn
+  // dan de knop eronder.
+  padding: "11px 12px",
   fontFamily: FONT_BODY,
+  // 16 blijft staan: onder de 16 zoomt Safari op iOS het hele scherm in zodra
+  // je in een veld tikt.
   fontSize: 16,
-  get border() { return `1.5px solid ${C.borderTint}`; },
+  get border() { return `1px solid ${C.ceramicDark}`; },
   get background() { return C.cardBg; },
   get color() { return C.ink; },
 };
@@ -2362,7 +2465,8 @@ function Modal({ title, onClose, children, wide }) {
   return (
     <div
       style={{
-        position: "fixed", inset: 0, background: "rgba(21,44,72,0.45)",
+        // Het waas was blauwgetint; op warm papier geeft dat een paarse zweem.
+        position: "fixed", inset: 0, background: "rgba(43,36,25,0.42)",
         display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 50,
       }}
       onClick={onClose}
@@ -2371,15 +2475,23 @@ function Modal({ title, onClose, children, wide }) {
         onClick={(e) => e.stopPropagation()}
         style={{
           background: C.paper, width: "100%", maxWidth: wide ? 640 : 480,
-          maxHeight: "88vh", overflowY: "auto", borderRadius: "28px 28px 0 0",
-          borderTop: `4px solid ${C.blue}`,
-          padding: 20, boxShadow: "0 -8px 30px rgba(0,0,0,0.25)",
+          maxHeight: "88vh", overflowY: "auto", borderRadius: "24px 24px 0 0",
+          // De blauwe streep bovenaan is weg. Die moest het blad van de
+          // achtergrond scheiden, maar dat doet de ronding en de schaduw al —
+          // en een gekleurde balk op elk venster is vier keer per scherm
+          // dezelfde klemtoon.
+          padding: "16px 20px 20px", boxShadow: "0 -10px 34px rgba(43,36,25,0.22)",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 700, color: C.ink, margin: 0 }}>{title}</h2>
-          <button aria-label="Sluiten" onClick={onClose} style={{ background: C.ceramic, border: "none", borderRadius: 12, padding: 7, cursor: "pointer" }}>
-            <X size={18} color={C.ink} />
+        {/* Greepje: zegt zonder woorden dat dit blad van onderen komt en weg kan. */}
+        <div style={{ width: 34, height: 4, borderRadius: 2, background: C.ceramicDark, margin: "0 auto 14px" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 15 }}>
+          <h2 style={{ ...TYPE.stuk, color: C.ink, margin: 0 }}>{title}</h2>
+          <button aria-label="Sluiten" onClick={onClose} style={{
+            background: C.ceramic, border: "none", borderRadius: "50%", width: 32, height: 32,
+            display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0,
+          }}>
+            <X size={17} color={C.inkSoft} />
           </button>
         </div>
         {children}
@@ -2458,7 +2570,7 @@ class ErrorBoundary extends React.Component {
             <button
               onClick={() => this.setState({ error: null })}
               style={{
-                background: C.blue, color: "#fff", border: "none", borderRadius: 12,
+                background: C.blueBtn, color: C.blueBtnInk, border: "none", borderRadius: 12,
                 padding: "10px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT_BODY,
               }}
             >
@@ -2626,7 +2738,7 @@ function AgendaModal({ token, onClose, onDownload }) {
       onClick={actie}
       style={{
         display: "flex", alignItems: "flex-start", gap: 11, width: "100%", textAlign: "left",
-        background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14,
+        background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12,
         padding: "12px 13px", marginBottom: 8, cursor: "pointer", fontFamily: FONT_BODY,
       }}
     >
@@ -3284,7 +3396,7 @@ function ExtraToevoegenModal({ datum, recipes, onKies, onClose }) {
                 onClick={() => { setGekozenRecept(r); setPersonen(String(r.servings || 4)); }}
                 style={{
                   display: "flex", alignItems: "center", gap: 9, width: "100%", textAlign: "left",
-                  background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12,
+                  background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12,
                   padding: "9px 11px", marginBottom: 6, cursor: "pointer", fontFamily: FONT_BODY,
                 }}
               >
@@ -3301,7 +3413,7 @@ function ExtraToevoegenModal({ datum, recipes, onKies, onClose }) {
         <>
           <div style={{
             display: "flex", alignItems: "center", gap: 10, background: C.noteBg,
-            border: `1.5px solid ${C.mustard}`, borderRadius: 14, padding: "11px 13px", marginBottom: 12,
+            border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: "11px 13px", marginBottom: 12,
           }}>
             <span style={{ fontSize: 22 }}>{gekozenRecept.emoji || "🍽️"}</span>
             <span style={{ flex: 1, minWidth: 0 }}>
@@ -3417,7 +3529,7 @@ function ControleModal({ bevindingen, onHerstel, onClose }) {
           {bevindingen.map((b, i) => (
             <div key={i} style={{
               background: C.cardBg, border: `1.5px solid ${b.ernst === "hoog" ? C.brick : C.borderTint}`,
-              borderRadius: 14, padding: "11px 13px", marginBottom: 8,
+              borderRadius: 12, padding: "11px 13px", marginBottom: 8,
             }}>
               <div style={{ fontSize: 10.5, color: kleur[b.ernst], fontWeight: 600, letterSpacing: "0.03em", marginBottom: 3 }}>
                 {label[b.ernst]}
@@ -3447,8 +3559,8 @@ function ControleModal({ bevindingen, onHerstel, onClose }) {
 function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, inventory = [], onOpen, onVerrasMe, onNaarWeekmenu, onKliekjeVraag }) {
   const basis = {
     display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left",
-    borderRadius: 16, padding: "12px 14px", marginBottom: 12, cursor: "pointer",
-    fontFamily: FONT_BODY, border: `1.5px solid ${C.borderTint}`, background: C.cardBg,
+    borderRadius: 12, padding: "12px 14px", marginBottom: 12, cursor: "pointer",
+    fontFamily: FONT_BODY, border: `1px solid ${C.ceramicDark}`, background: C.cardBg,
   };
 
   // Niemand kookt vanavond
@@ -3494,26 +3606,37 @@ function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, invento
     const bewaard = entry && entry.producedLeftoverId && entry.producedLeftoverId !== "geen"
       ? (inventory || []).find((i) => i.id === entry.producedLeftoverId)
       : null;
+    // Vanavond is waar je de app voor opent, dus daar begint het scherm —
+    // groot en zonder kader eromheen. Het was een regel van 15 pixels tussen
+    // twee andere kaders, kleiner dan de naam van de app erboven.
     return (
-      <div style={{ marginBottom: 12 }}>
-        <button onClick={() => onOpen(recipe.id)} style={{ ...basis, borderColor: C.sage, marginBottom: kliekjeNogVragen ? 6 : 0 }}>
-          <span style={{ fontSize: 26, flexShrink: 0 }}>{recipe.emoji || "🍽️"}</span>
-          <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: "block", fontSize: 11, color: C.inkSoft, textTransform: "uppercase", letterSpacing: "0.04em" }}>Vanavond</span>
-            <span style={{ display: "block", fontSize: 15, color: C.ink, fontWeight: 600, lineHeight: 1.25 }}>{recipe.name}</span>
-            <span style={{ display: "block", fontSize: 12, color: C.sage, marginTop: 2 }}>
-              <Check size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
-              {bewaard
-                ? `Gekookt · ${bewaard.current} ${Number(bewaard.current) === 1 ? "portie" : "porties"} bewaard`
-                : "Gekookt — eet smakelijk"}
-            </span>
-          </span>
-          <ChevronRight size={18} color={C.inkSoft} style={{ flexShrink: 0 }} />
+      <div style={{ marginBottom: 20, paddingBottom: 18, borderBottom: `1px solid ${C.ceramicDark}` }}>
+        <div style={{ ...TYPE.label, color: C.inkSoft, marginBottom: 7 }}>Vanavond</div>
+        <button
+          onClick={() => onOpen(recipe.id)}
+          style={{ background: "none", border: "none", padding: 0, width: "100%", textAlign: "left", cursor: "pointer", fontFamily: FONT_BODY }}
+        >
+          <span style={{ ...TYPE.scherm, display: "block", color: C.ink }}>{recipe.name}</span>
         </button>
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 11 }}>
+          <span style={{
+            display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, color: C.sage,
+            background: C.successBg, borderRadius: 20, padding: "4px 11px",
+          }}>
+            <Check size={12} />
+            {bewaard
+              ? `Gekookt · ${bewaard.current} ${Number(bewaard.current) === 1 ? "portie" : "porties"} bewaard`
+              : "Gekookt — eet smakelijk"}
+          </span>
+          {cookNaam && <span style={{ fontSize: 11.5, color: C.inkSoft }}>{cookNaam} kookte</span>}
+        </div>
         {kliekjeNogVragen && (
-          <GhostButton full onClick={onKliekjeVraag}>
-            🍱 Is er iets over? Bewaren voor later
-          </GhostButton>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 13, paddingTop: 12, borderTop: `1px solid ${C.ceramicDark}` }}>
+            <span style={{ fontSize: 13, color: C.ink }}>Is er iets over?</span>
+            <button onClick={onKliekjeVraag} style={{ background: "none", border: "none", padding: "6px 0", cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: C.blue }}>
+              Bewaren →
+            </button>
+          </div>
         )}
       </div>
     );
@@ -3552,7 +3675,7 @@ function KookMelding({ sessies, currentUserName, onOpen }) {
             onClick={() => s.recipeId && onOpen && onOpen(s.recipeId)}
             style={{
               display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left",
-              background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 16,
+              background: C.noteBg, border: "none", borderRadius: 12,
               padding: "11px 13px", cursor: s.recipeId ? "pointer" : "default",
               marginBottom: 8, fontFamily: FONT_BODY,
             }}
@@ -3630,7 +3753,7 @@ function WelcomeTour({ onFinish }) {
           ].map(([kop, uitleg], i) => (
             <div key={i} style={{ display: "flex", gap: 11, marginBottom: 12 }}>
               <div style={{
-                width: 24, height: 24, borderRadius: "50%", background: C.blue, color: "#fff", flexShrink: 0,
+                width: 24, height: 24, borderRadius: "50%", background: C.blueBtn, color: C.blueBtnInk, flexShrink: 0,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontFamily: FONT_MONO, fontSize: 12,
               }}>{i + 1}</div>
@@ -3647,7 +3770,7 @@ function WelcomeTour({ onFinish }) {
       title: "Twee dingen die het verschil maken",
       body: (
         <>
-          <div style={{ background: C.paper, borderRadius: 14, padding: "12px 14px", marginBottom: 10 }}>
+          <div style={{ background: C.paper, borderRadius: 12, padding: "12px 14px", marginBottom: 10 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: C.ink, marginBottom: 4 }}>
               Zet een minimum per product
             </div>
@@ -3655,7 +3778,7 @@ function WelcomeTour({ onFinish }) {
               Dit is de belangrijkste instelling in de app. Zak je eronder, dan komt het vanzelf op je boodschappenlijst. Zonder minimum blijft de lijst leeg.
             </div>
           </div>
-          <div style={{ background: C.paper, borderRadius: 14, padding: "12px 14px", marginBottom: 14 }}>
+          <div style={{ background: C.paper, borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: C.ink, marginBottom: 4 }}>
               Tik na het eten op “Ik heb dit gekookt”
             </div>
@@ -6765,7 +6888,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
               onClick={() => { const i = x.index; setShoppingPeriodChoice(null); generateWeekShoppingList(i); }}
               style={{
                 display: "block", width: "100%", textAlign: "left", cursor: "pointer",
-                background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14,
+                background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12,
                 padding: "11px 13px", marginBottom: 8, fontFamily: FONT_BODY,
               }}
             >
@@ -6786,7 +6909,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           style={{
             position: "fixed", left: 12, right: 12, bottom: 12, zIndex: 180,
             maxWidth: 460, margin: "0 auto", background: C.brick, color: "#fff",
-            borderRadius: 14, padding: "11px 13px", display: "flex", alignItems: "center", gap: 10,
+            borderRadius: 12, padding: "11px 13px", display: "flex", alignItems: "center", gap: 10,
             boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
           }}
         >
@@ -6797,7 +6920,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           <button
             onClick={() => { const fn = saveError.opnieuw; setSaveError(null); fn(); }}
             style={{
-              background: "#fff", color: C.brick, border: "none", borderRadius: 10,
+              background: C.cardBg, color: C.brick, border: "none", borderRadius: 10,
               padding: "7px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer",
               fontFamily: FONT_BODY, flexShrink: 0,
             }}
@@ -6814,44 +6937,44 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
         </div>
       )}
 
-      {/* Header */}
-      <div style={{
-        background: C.blue, padding: "16px 18px 20px", color: "#fff", position: "relative", overflow: "hidden",
-        borderRadius: "0 0 28px 28px",
-        backgroundImage: "radial-gradient(rgba(255,255,255,0.06) 1.4px, transparent 1.4px)",
-        backgroundSize: "16px 16px",
-      }}>
-        <div style={{ position: "absolute", top: -20, right: -20, width: 100, height: 100, borderRadius: "50%", background: "rgba(255,255,255,0.06)" }} />
-        <div style={{ position: "absolute", bottom: -30, left: 40, width: 70, height: 70, borderRadius: "50%", background: "rgba(255,255,255,0.05)" }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
-          <LogoMark size={22} />
-          <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 20, flexShrink: 0, whiteSpace: "nowrap" }}>
-            Pollepel
-          </span>
-          {saving && <span style={{ marginLeft: 6, flexShrink: 0 }}><PollepelLoader size={15} inline delay={0} /></span>}
-          <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexShrink: 0 }}>
-            <button
-              onClick={() => setSettingsOpen(true)}
-              title="Instellingen"
-              style={{ background: "rgba(255,255,255,0.14)", border: "none", borderRadius: 10, padding: 6, cursor: "pointer", display: "flex" }}
-            >
-              <Settings size={15} color="#fff" />
-            </button>
-          </div>
-        </div>
+      {/* Kopregel.
+          Dit was een blauw blok van 86 punten hoog met de app-naam in de
+          grootste letter op het scherm, een stippenpatroon, twee spookcirkels
+          en een decoratieve tegelrand eronder. Dat kostte een kwart van wat je
+          ziet om je te vertellen welke app je zojuist geopend hebt.
 
-        {household?.name ? (
-          <div style={{
-            fontSize: 13, fontWeight: 600, color: C.mustard, marginTop: 5, position: "relative",
-            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%",
+          Nu: een smalle regel. Het merk is er nog — het teken, de naam, het
+          huishouden — maar het neemt geen ruimte meer af van waar het scherm
+          over gaat. */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8,
+        padding: "14px 16px 10px", background: C.paper,
+      }}>
+        <LogoMark size={21} />
+        <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 600, fontSize: 14.5, color: C.ink, letterSpacing: "-0.01em", flexShrink: 0 }}>
+          Pollepel
+        </span>
+        {saving && <span style={{ marginLeft: 2, flexShrink: 0 }}><PollepelLoader size={14} inline delay={0} /></span>}
+        <span style={{ flex: 1 }} />
+        {household?.name && (
+          <span style={{
+            fontSize: 11.5, color: C.inkSoft, whiteSpace: "nowrap", overflow: "hidden",
+            textOverflow: "ellipsis", maxWidth: 150,
           }}>
             {household.name}
-          </div>
-        ) : (
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)", marginTop: 5, position: "relative" }}>
-            Jullie digitale kookboek · voorraad &amp; boodschappen automatisch bijgewerkt
-          </div>
+          </span>
         )}
+        <button
+          onClick={() => setSettingsOpen(true)}
+          title="Instellingen"
+          aria-label="Instellingen"
+          style={{
+            background: C.ceramic, border: "none", borderRadius: "50%", width: 32, height: 32,
+            display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0,
+          }}
+        >
+          <Settings size={15} color={C.inkSoft} />
+        </button>
       </div>
 
       {isOffline && (
@@ -6860,22 +6983,10 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
         </div>
       )}
 
-      {/* Tegeltjes-rand */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 7, padding: "9px 0 3px" }}>
-        {Array.from({ length: 11 }).map((_, i) => (
-          <div key={i} style={{
-            width: 5, height: 5, borderRadius: 2,
-            background: i % 3 === 0 ? C.mustard : C.blue,
-            opacity: i % 3 === 0 ? 0.55 : 0.28,
-            transform: "rotate(45deg)",
-          }} />
-        ))}
-      </div>
-
       {/* Toast */}
       {toast && (
         <div style={{
-          margin: "8px 14px 0", background: C.cardBg, border: `1.5px solid ${C.sage}`, borderRadius: 14,
+          margin: "8px 14px 0", background: C.cardBg, border: `1.5px solid ${C.sage}`, borderRadius: 12,
           padding: "10px 12px", display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, color: C.ink,
         }}>
           <CheckCircle2 size={18} color={C.sage} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -7050,12 +7161,13 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
       {/* Bottom tab bar */}
       <div style={{
         position: "fixed", bottom: 0, left: 0, right: 0, margin: "0 auto", width: "100%", maxWidth: 480,
-        background: C.cardBg, borderTop: `1.5px solid ${C.borderTint}`, display: "flex",
+        background: C.paper, borderTop: `1px solid ${C.ceramicDark}`, display: "flex",
         // Onderaan ruimte voor de streep van het thuisscherm op nieuwere iPhones,
         // anders valt die over de tabbladen heen.
         padding: "8px 4px calc(8px + env(safe-area-inset-bottom, 0px))",
-        borderRadius: "22px 22px 0 0",
-        boxShadow: "0 -4px 14px rgba(0,0,0,0.08)",
+        // Vlak en recht. De ronding plus schaduw maakte er een zwevende kaart
+        // van; in Keukenlicht is de balk gewoon de onderkant van het papier.
+        borderRadius: 0,
         zIndex: 40,
       }}>
         <TabButton icon={<ChefHat size={18} />} label="Kookboek" active={tab === "kookboek"} onClick={() => { setTab("kookboek"); openRecipeVanuit(null); }} />
@@ -7214,7 +7326,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           <p style={{ fontSize: 13, color: C.inkSoft, marginTop: 0 }}>
             Deze {listAfvinkVraag.items.length} {listAfvinkVraag.items.length === 1 ? "staat" : "staan"} ook nog op je boodschappenlijst. Je hebt ze net in je voorraad gezet — mogen ze van de lijst af?
           </p>
-          <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, padding: "6px 0", marginBottom: 14, maxHeight: 200, overflowY: "auto" }}>
+          <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, padding: "6px 0", marginBottom: 14, maxHeight: 200, overflowY: "auto" }}>
             {listAfvinkVraag.items.map((s) => (
               <div key={s.id} style={{ padding: "5px 12px", fontSize: 13, color: C.ink }}>
                 {s.name} <span style={{ color: C.inkSoft, fontFamily: FONT_MONO, fontSize: 11 }}>{s.amount} {s.unit}</span>
@@ -7297,7 +7409,7 @@ function TabButton({ icon, label, active, onClick, badge, badgeTone = "warn" }) 
       onClick={onClick}
       style={{
         flex: 1, background: "transparent", border: "none", cursor: "pointer",
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
         padding: "4px 2px", position: "relative", color: active ? C.blue : C.inkSoft,
       }}
     >
@@ -7372,14 +7484,14 @@ function SeasonalAndSurpriseBar({ recipes, inventory, onOpen, showToast }) {
         style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
           background: `linear-gradient(135deg, ${C.mustard}, ${C.mustardDeep})`, color: "#fff", border: "none",
-          borderRadius: 14, padding: "11px", fontWeight: 700, fontSize: 14, cursor: "pointer", marginBottom: 10,
+          borderRadius: 12, padding: "11px", fontWeight: 700, fontSize: 14, cursor: "pointer", marginBottom: 10,
         }}
       >
         <Shuffle size={16} /> Verras me! (kijkt naar je voorraad)
       </button>
 
       {seasonal.length > 0 && (
-        <div style={{ background: C.successBg, border: `1.5px solid ${C.sage}`, borderRadius: 16, padding: 12 }}>
+        <div style={{ background: C.successBg, border: "none", borderRadius: 12, padding: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
             <span style={{ fontSize: 14 }}>🌱</span>
             <span style={{ fontSize: 13, fontWeight: 700, color: C.sage }}>Nu in seizoen ({monthName})</span>
@@ -7433,9 +7545,9 @@ function KookboekView({ recipes, allRecipes, cookLog, query, setQuery, favOnly, 
         flexShrink: 0, borderRadius: 20, padding: "9px 14px", minHeight: 38,
         fontSize: 13, fontWeight: actief ? 700 : 500, cursor: "pointer",
         fontFamily: FONT_BODY, whiteSpace: "nowrap",
-        background: actief ? C.blue : C.cardBg,
-        color: actief ? "#fff" : (gedimd ? C.inkSoft : C.ink),
-        border: `1.5px solid ${actief ? C.blue : C.borderTint}`,
+        background: actief ? C.blueBtn : "transparent",
+        color: actief ? C.blueBtnInk : (gedimd ? C.inkSoft : C.ink),
+        border: `1px solid ${actief ? C.blueBtn : C.ceramicDark}`,
         opacity: gedimd && !actief ? 0.6 : 1,
       }}
     >
@@ -7445,6 +7557,16 @@ function KookboekView({ recipes, allRecipes, cookLog, query, setQuery, favOnly, 
 
   return (
     <div>
+      {/* Een kop boven de lijst. Zonder dit loopt het Vanavond-blok zonder
+          scheiding over in honderd recepten, en weet je niet meer waar je
+          zoekveld bij hoort. */}
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 11 }}>
+        <span style={{ ...TYPE.kop, color: C.ink }}>Kookboek</span>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.inkSoft }}>
+          {tellingen.alles} {tellingen.alles === 1 ? "gerecht" : "gerechten"}
+        </span>
+      </div>
+
       {/* Zoeken scrolt weg; de ingangen blijven staan, want daar wissel je vaker. */}
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         <div style={{ flex: 1, position: "relative" }}>
@@ -7483,12 +7605,12 @@ function KookboekView({ recipes, allRecipes, cookLog, query, setQuery, favOnly, 
             aria-label="Meer filters"
             style={{
               flexShrink: 0, borderRadius: 20, padding: "9px 12px", minHeight: 38, cursor: "pointer",
-              background: (dietOnly || maxCookTime) ? C.sage : C.cardBg,
-              border: `1.5px solid ${(dietOnly || maxCookTime) ? C.sage : C.borderTint}`,
+              background: (dietOnly || maxCookTime) ? C.sage : "transparent",
+              border: `1px solid ${(dietOnly || maxCookTime) ? C.sage : C.ceramicDark}`,
               display: "flex", alignItems: "center",
             }}
           >
-            <SlidersHorizontal size={15} color={(dietOnly || maxCookTime) ? "#fff" : C.ink} />
+            <SlidersHorizontal size={15} color={(dietOnly || maxCookTime) ? leesbareInkt(C.sage) : C.inkSoft} />
           </button>
         </div>
       </div>
@@ -7518,7 +7640,7 @@ function KookboekView({ recipes, allRecipes, cookLog, query, setQuery, favOnly, 
               <button
                 onClick={() => setDietOnly((v) => !v)}
                 style={{
-                  width: "100%", textAlign: "left", padding: "11px 13px", borderRadius: 14, cursor: "pointer",
+                  width: "100%", textAlign: "left", padding: "11px 13px", borderRadius: 12, cursor: "pointer",
                   fontFamily: FONT_BODY, fontSize: 13, marginBottom: 16,
                   background: dietOnly ? C.sage : C.cardBg,
                   color: dietOnly ? "#fff" : C.ink,
@@ -7541,71 +7663,67 @@ function KookboekView({ recipes, allRecipes, cookLog, query, setQuery, favOnly, 
       {view === "kan" && bookMode === "mine" && (() => {
         const compleet = recipes.filter((r) => recipeReadiness(r, inventory).complete);
         return compleet.length === 0 && recipes.length > 0 ? (
-          <div style={{ background: C.noteBg, border: `1px solid ${C.mustard}`, borderRadius: 14, padding: "10px 12px", marginBottom: 12, fontSize: 12.5, color: C.ink, lineHeight: 1.5 }}>
+          <div style={{ background: C.noteBg, border: `1px solid ${C.mustard}`, borderRadius: 12, padding: "10px 12px", marginBottom: 12, fontSize: 12.5, color: C.ink, lineHeight: 1.5 }}>
             Op dit moment is niets helemaal compleet. Deze komen het dichtst in de buurt.
           </div>
         ) : null;
       })()}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      {/* Een register, geen raster.
+          Vier gekleurde vlakken naast elkaar vechten om aandacht en er passen
+          maar vier halve recepten op een scherm. Als lijst zie je er zes hele,
+          staat de naam in de serif waar hij hoort, en is de kleur een kleine
+          schijf die het gerecht aanduidt in plaats van het scherm vult. */}
+      <div style={{ borderTop: `1px solid ${C.ceramicDark}` }}>
         {recipes.map((r, idx) => {
           const readiness = recipeReadiness(r, inventory);
-          // Grens tussen compleet en bijna compleet: alleen in de ingang "kan",
-          // waar de lijst op ontbrekende ingrediënten gesorteerd staat.
           const vorige = idx > 0 ? recipes[idx - 1] : null;
           const toonScheiding = view === "kan" && bookMode === "mine" && idx > 0
             && !readiness.complete && vorige && recipeReadiness(vorige, inventory).complete;
+          const staat = readiness.relevant === 0 ? null
+            : readiness.complete ? { tekst: "alles in huis", kleur: C.sage }
+            : readiness.missing.length === 0 ? { tekst: "voorraad onzeker", kleur: C.inkSoft }
+            : readiness.missing.length === 1 ? { tekst: `nog ${readiness.missing[0].toLowerCase()}`, kleur: C.brick }
+            : { tekst: `nog ${readiness.missing.length} nodig`, kleur: C.brick };
           return (
             <React.Fragment key={r.id}>
             {toonScheiding && (
-              <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 9, margin: "6px 0 2px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "12px 2px 8px" }}>
                 <span style={{ height: 1, background: C.ceramicDark, flex: 1 }} />
-                <span style={{ fontSize: 12, color: C.inkSoft }}>Bijna compleet</span>
+                <span style={{ ...TYPE.label, color: C.inkSoft }}>Bijna compleet</span>
                 <span style={{ height: 1, background: C.ceramicDark, flex: 1 }} />
               </div>
             )}
             <div
               onClick={() => onOpen(r.id)}
-              style={{ background: C.cardBg, borderRadius: 16, padding: 8, cursor: "pointer", border: `1.5px solid ${C.borderTint}`, position: "relative" }}
+              style={{
+                display: "flex", alignItems: "center", gap: 12, padding: "11px 2px",
+                borderBottom: `1px solid ${C.ceramicDark}`, cursor: "pointer", minHeight: 62,
+              }}
             >
-              <div style={{ position: "absolute", top: 5, left: 5, width: 6, height: 6, borderRadius: 2, background: C.blue, opacity: 0.18, transform: "rotate(45deg)" }} />
-              <div style={{ position: "absolute", bottom: 5, right: 5, width: 6, height: 6, borderRadius: 2, background: C.blue, opacity: 0.18, transform: "rotate(45deg)" }} />
-              <TileThumb recipe={r} />
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: 8 }}>
-                <span style={{
-                  fontFamily: FONT_DISPLAY, fontWeight: 600, fontSize: 14, color: C.ink, lineHeight: 1.25,
-                  // Afkappen na twee regels: een lange naam maakte de tegel
-                  // hoger dan zijn buurman en trok het raster scheef.
-                  display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
-                  overflow: "hidden", wordBreak: "break-word",
-                }}>{r.name}</span>
-                {bookMode === "mine" && (
-                  <button onClick={(e) => { e.stopPropagation(); onToggleFav(r.id); }} style={{ background: "none", border: "none", cursor: "pointer", flexShrink: 0, padding: 0, marginLeft: 4 }}>
-                    <Star size={16} fill={r.favorite ? C.mustard : "none"} color={r.favorite ? C.mustard : C.ceramicDark} />
-                  </button>
-                )}
+              <TileThumb recipe={r} size="rij" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ ...TYPE.kop, fontSize: 15.5, color: C.ink, lineHeight: 1.22, wordBreak: "break-word" }}>
+                  {r.name}
+                </div>
+                <div style={{ fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>
+                  {r.cookTime} min
+                  {staat && <> &middot; <span style={{ color: staat.kleur }}>{staat.tekst}</span></>}
+                  {r.community && bookMode === "mine" && <> &middot; gedeeld</>}
+                </div>
               </div>
-              {/* Eén regel in plaats van drie blokken. Mist er precies één ding,
-                  dan noemen we het bij naam — dan kun je meteen beslissen. */}
-              <div style={{ marginTop: 4, fontSize: 12, color: readiness.complete ? C.sage : C.inkSoft, lineHeight: 1.35 }}>
-                {r.cookTime}m
-                {readiness.relevant > 0 && (
-                  readiness.complete
-                    ? " · compleet"
-                    : readiness.missing.length === 0
-                      ? " · voorraad onzeker"
-                      : readiness.missing.length === 1
-                        ? ` · nog ${readiness.missing[0].toLowerCase()}`
-                        : ` · nog ${readiness.missing.length} nodig`
-                )}
-              </div>
-              {r.community && bookMode === "mine" && (
-                <div style={{ marginTop: 5 }}><Pill tone="auto"><Users size={10} /> Gedeeld</Pill></div>
-              )}
-              {bookMode === "community" && (
+              {bookMode === "mine" ? (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onToggleFav(r.id); }}
+                  aria-label={r.favorite ? "Haal uit favorieten" : "Zet bij favorieten"}
+                  style={{ background: "none", border: "none", cursor: "pointer", flexShrink: 0, padding: 6, margin: -6 }}
+                >
+                  <Star size={17} fill={r.favorite ? C.mustard : "none"} color={r.favorite ? C.mustard : C.ceramicDark} />
+                </button>
+              ) : (
                 <button
                   onClick={(e) => { e.stopPropagation(); onDuplicate(r.id); }}
-                  style={{ marginTop: 8, width: "100%", padding: "6px 8px", borderRadius: 10, border: "none", background: C.mustard, color: "#2A1F06", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}
+                  style={{ flexShrink: 0, padding: "7px 11px", borderRadius: 20, border: "none", background: C.mustard, color: leesbareInkt(C.mustard), fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
                 >
                   <Plus size={12} /> Voeg toe
                 </button>
@@ -7649,8 +7767,8 @@ function KookboekView({ recipes, allRecipes, cookLog, query, setQuery, favOnly, 
           style={{
             position: "fixed", right: 16, zIndex: 60,
             bottom: "calc(84px + env(safe-area-inset-bottom, 0px))",
-            width: 56, height: 56, borderRadius: 28, border: "none",
-            background: C.blue, color: "#fff", cursor: "pointer",
+            width: 56, height: 56, borderRadius: 24, border: "none",
+            background: C.blueBtn, color: C.blueBtnInk, cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
             boxShadow: "0 4px 14px rgba(21,44,72,0.28)",
           }}
@@ -7682,14 +7800,14 @@ function CookHistoryList({ cookLog, onOpen }) {
   }
 
   return (
-    <div style={{ background: C.cardBg, borderRadius: 16, border: `1.5px solid ${C.borderTint}` }}>
+    <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}` }}>
       {cookLog.map((entry, idx) => (
         <div
           key={entry.id}
           onClick={() => onOpen(entry.recipeId)}
           style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: idx < cookLog.length - 1 ? `1px solid ${C.ceramic}` : "none", cursor: "pointer" }}
         >
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{entry.emoji || "🍽️"}</div>
+          <div style={{ width: 32, height: 32, borderRadius: 10, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{entry.emoji || "🍽️"}</div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, color: C.ink }}>
               {entry.leftover ? "🍱 " : ""}{entry.recipeName}
@@ -7740,10 +7858,10 @@ function SousChefModal({ recipe, onAsk, onClose }) {
           {thread.map((msg, idx) => (
             <div key={idx} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", marginBottom: 8 }}>
               <div style={{
-                maxWidth: "85%", padding: "9px 12px", borderRadius: 14,
+                maxWidth: "85%", padding: "9px 12px", borderRadius: 12,
                 background: msg.role === "user" ? C.blue : C.cardBg,
                 color: msg.role === "user" ? "#fff" : C.ink,
-                border: msg.role === "user" ? "none" : `1.5px solid ${C.borderTint}`,
+                border: msg.role === "user" ? "none" : `1px solid ${C.ceramicDark}`,
                 fontSize: 13, lineHeight: 1.4,
               }}>
                 {msg.role === "chef" && <span style={{ marginRight: 5 }}>👨‍🍳</span>}
@@ -7790,7 +7908,7 @@ function NutritionLabel({ recipe, isMine, onRecalculate, busy }) {
 
   if (!n) {
     return (
-      <div style={{ background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 16, padding: 14, marginBottom: 16 }}>
+      <div style={{ background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
         <div style={{ fontSize: 13, color: C.inkSoft, marginBottom: isMine ? 8 : 0 }}>Voedingswaarden nog niet berekend.</div>
         {isMine && (
           <GhostButton onClick={onRecalculate} disabled={busy} full>
@@ -7815,7 +7933,7 @@ function NutritionLabel({ recipe, isMine, onRecalculate, busy }) {
   ];
 
   return (
-    <div style={{ background: C.cardBg, border: `1.5px solid ${stale ? C.brick : C.borderTint}`, borderRadius: 16, padding: 14, marginBottom: 16 }}>
+    <div style={{ background: C.cardBg, border: `1.5px solid ${stale ? C.brick : C.borderTint}`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
         <h3 style={{ fontFamily: FONT_DISPLAY, fontSize: 14, margin: 0 }}>Voedingswaarden per portie</h3>
         {isMine && (
@@ -7937,7 +8055,7 @@ function DagKiezerModal({ recept, weekmenu, recipes, periods, startPeriode = 0, 
               style={{
                 flex: 1, padding: "7px 2px", borderRadius: 10, cursor: "pointer", minHeight: 44,
                 border: `1.5px solid ${aan ? C.blue : C.borderTint}`,
-                background: aan ? C.blue : C.cardBg, color: aan ? "#fff" : C.inkSoft,
+                background: aan ? C.blueBtn : C.cardBg, color: aan ? C.blueBtnInk : C.inkSoft,
                 fontFamily: FONT_BODY, fontSize: 10.5, lineHeight: 1.3,
               }}
             >
@@ -7952,7 +8070,7 @@ function DagKiezerModal({ recept, weekmenu, recipes, periods, startPeriode = 0, 
         })}
       </div>
 
-      <div style={{ border: `1.5px solid ${C.borderTint}`, borderRadius: 14, overflow: "hidden", background: C.cardBg }}>
+      <div style={{ border: `1px solid ${C.ceramicDark}`, borderRadius: 12, overflow: "hidden", background: C.cardBg }}>
         {dagen.map((d, idx) => {
           const aan = d.key === gekozen;
           // Een dag die voorbij is kun je niet meer inplannen. Hem weglaten
@@ -7983,7 +8101,7 @@ function DagKiezerModal({ recept, weekmenu, recipes, periods, startPeriode = 0, 
               </span>
               <span style={{
                 width: 19, height: 19, borderRadius: "50%", flexShrink: 0,
-                border: `1.5px solid ${aan ? C.blue : C.ceramicDark}`, background: aan ? C.blue : "transparent",
+                border: `1.5px solid ${aan ? C.blueBtn : C.ceramicDark}`, background: aan ? C.blueBtn : "transparent",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
                 {aan && <Check size={11} color="#fff" strokeWidth={3.5} />}
@@ -8025,14 +8143,14 @@ function KliekjeVraag({ gekooktOp, toonBakjesTip, nummertBakjes = false, bakjesV
   })();
 
   return (
-    <div style={{ background: C.cardBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14, padding: 12 }}>
+    <div style={{ background: C.cardBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: 12 }}>
       <p style={{ fontSize: 13, margin: "0 0 10px", color: C.ink }}>Is er iets van dit gerecht overgebleven?</p>
       <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginBottom: 10 }}>
-        <button aria-label="Minder porties" onClick={() => setPorties((p) => Math.max(0, p - 1))} style={{ width: 44, height: 44, borderRadius: 8, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }}><Minus size={14} /></button>
+        <button aria-label="Minder porties" onClick={() => setPorties((p) => Math.max(0, p - 1))} style={{ width: 44, height: 44, borderRadius: 10, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer" }}><Minus size={14} /></button>
         <span style={{ fontFamily: FONT_MONO, fontSize: 15, minWidth: 90, textAlign: "center" }}>
           {porties === 0 ? "Niets over" : `${porties} portie${porties > 1 ? "s" : ""}`}
         </span>
-        <button aria-label="Meer porties" onClick={() => setPorties((p) => p + 1)} style={{ width: 44, height: 44, borderRadius: 8, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }}><Plus size={14} /></button>
+        <button aria-label="Meer porties" onClick={() => setPorties((p) => p + 1)} style={{ width: 44, height: 44, borderRadius: 10, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer" }}><Plus size={14} /></button>
       </div>
 
       {porties > 0 && (
@@ -8050,7 +8168,7 @@ function KliekjeVraag({ gekooktOp, toonBakjesTip, nummertBakjes = false, bakjesV
                 key={waarde}
                 onClick={() => setBewaarplek(waarde)}
                 style={{
-                  flex: 1, padding: "10px 8px", borderRadius: 14, cursor: "pointer",
+                  flex: 1, padding: "10px 8px", borderRadius: 12, cursor: "pointer",
                   fontFamily: FONT_BODY, textAlign: "center", minHeight: 44,
                   background: bewaarplek === waarde ? C.blue : C.cardBg,
                   color: bewaarplek === waarde ? "#fff" : C.ink,
@@ -8078,7 +8196,7 @@ function KliekjeVraag({ gekooktOp, toonBakjesTip, nummertBakjes = false, bakjesV
           );
         }
         return (
-          <div style={{ margin: "0 0 10px", background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: "9px 11px" }}>
+          <div style={{ margin: "0 0 10px", background: C.noteBg, border: "none", borderRadius: 12, padding: "9px 11px" }}>
             <div style={{ fontSize: 13, color: C.ink, fontWeight: 600 }}>
               Pak bakje {bakjesTekst(nummers)}
             </div>
@@ -8339,7 +8457,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
             <button
               onClick={() => setSousChefOpen(true)}
               title="Vraag de AI-souschef"
-              style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", minHeight: 34, borderRadius: 20, cursor: "pointer", border: `1.5px solid ${C.borderTint}`, background: C.cardBg, color: C.inkSoft }}
+              style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", minHeight: 34, borderRadius: 20, cursor: "pointer", border: `1px solid ${C.ceramicDark}`, background: C.cardBg, color: C.inkSoft }}
             >
               <span style={{ fontSize: 13 }}>👨‍🍳</span>
               <span style={{ fontSize: 12, fontWeight: 600 }}>Souschef</span>
@@ -8363,7 +8481,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       </div>
 
       {!isMine && (
-        <div style={{ background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: "8px 10px", marginBottom: 10, fontSize: 12, color: C.inkSoft, display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: "8px 10px", marginBottom: 10, fontSize: 12, color: C.inkSoft, display: "flex", alignItems: "center", gap: 6 }}>
           <Users size={13} color={C.blue} /> Gedeeld door een ander huishouden — bekijk, of dupliceer naar je eigen kookboek om aan te passen.
         </div>
       )}
@@ -8396,7 +8514,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       </div>
 
       {readiness.missing.length > 0 && (
-        <div style={{ background: C.warnBg, border: `1px solid ${C.mustardDeep}`, borderRadius: 14, padding: "10px 12px", marginBottom: 14 }}>
+        <div style={{ background: C.warnBg, border: `1px solid ${C.mustardDeep}`, borderRadius: 12, padding: "10px 12px", marginBottom: 14 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: C.ink, marginBottom: 4 }}>
             Hiervoor heb je nog nodig:
           </div>
@@ -8442,17 +8560,17 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: "8px 12px", marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: "8px 12px", marginBottom: 14 }}>
         <span style={{ fontSize: 13, color: C.ink, display: "flex", alignItems: "center", gap: 6 }}><Users size={15} color={C.inkSoft} /> Aantal personen</span>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button onClick={() => setServings((s) => Math.max(1, s - 1))} style={{ width: 30, height: 30, borderRadius: 8, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Minus size={14} /></button>
+          <button onClick={() => setServings((s) => Math.max(1, s - 1))} style={{ width: 30, height: 30, borderRadius: 10, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Minus size={14} /></button>
           <span style={{ fontFamily: FONT_MONO, fontSize: 15, minWidth: 18, textAlign: "center" }}>{servings}</span>
-          <button onClick={() => setServings((s) => s + 1)} style={{ width: 30, height: 30, borderRadius: 8, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Plus size={14} /></button>
+          <button onClick={() => setServings((s) => s + 1)} style={{ width: 30, height: 30, borderRadius: 10, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Plus size={14} /></button>
         </div>
       </div>
 
       {dislikeWarnings && dislikeWarnings.length > 0 && (
-        <div style={{ background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 14, padding: 12, marginBottom: 14 }}>
+        <div style={{ background: C.warnBg, border: `1px solid ${C.brick}`, borderRadius: 12, padding: 12, marginBottom: 14 }}>
           {dislikeWarnings.map((w, idx) => (
             <div key={idx} style={{ fontSize: 13, color: C.brick, marginBottom: idx < dislikeWarnings.length - 1 ? 4 : 0 }}>
               ⚠️ Bevat <strong>{w.ingredient}</strong> — {w.people.join(" en ")} {w.people.length > 1 ? "lusten" : "lust"} dit niet
@@ -8462,7 +8580,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       )}
 
       <h3 style={{ fontFamily: FONT_DISPLAY, fontSize: 15, margin: "0 0 8px" }}>Ingrediënten</h3>
-      <div style={{ background: C.cardBg, borderRadius: 16, border: `1.5px solid ${C.borderTint}`, marginBottom: 16 }}>
+      <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 16 }}>
         {scaledIngredients.map((ing, idx) => (
           <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "9px 12px", borderBottom: idx < scaledIngredients.length - 1 ? `1px solid ${C.ceramic}` : "none", fontSize: 14 }}>
             <span>{ing.name}</span>
@@ -8486,7 +8604,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
             return (
               <div key={t.id} style={{
                 background: done ? C.brick : C.blueDeep, color: "#fff",
-                borderRadius: 14, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between",
+                borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between",
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                   <TimerIcon size={16} style={{ flexShrink: 0 }} />
@@ -8496,7 +8614,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
                   <span style={{ fontFamily: FONT_MONO, fontSize: 17, fontWeight: 700 }}>
                     {done ? "Klaar!" : formatTimer(remaining)}
                   </span>
-                  <button onClick={() => cancelTimer(t.id)} style={{ background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 8, padding: 4, cursor: "pointer", display: "flex" }}>
+                  <button onClick={() => cancelTimer(t.id)} style={{ background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 10, padding: 4, cursor: "pointer", display: "flex" }}>
                     <X size={14} color="#fff" />
                   </button>
                 </div>
@@ -8517,7 +8635,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
                 <button
                   onClick={() => startTimer(minutes, `Stap ${idx + 1}: ${minutes} min`)}
                   title={`Start timer van ${minutes} minuten`}
-                  style={{ flexShrink: 0, background: C.ceramic, border: "none", borderRadius: 8, padding: "3px 8px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, height: 22 }}
+                  style={{ flexShrink: 0, background: C.ceramic, border: "none", borderRadius: 10, padding: "3px 8px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, height: 22 }}
                 >
                   <TimerIcon size={12} color={C.blueDeep} />
                   <span style={{ fontSize: 11, color: C.blueDeep, fontFamily: FONT_MONO }}>{minutes}m</span>
@@ -8529,7 +8647,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       </ol>
 
       {recipe.notes && (
-        <div style={{ background: C.noteBg, border: `1px solid ${C.mustard}`, borderRadius: 14, padding: 12, marginBottom: 16, display: "flex", gap: 8 }}>
+        <div style={{ background: C.noteBg, border: `1px solid ${C.mustard}`, borderRadius: 12, padding: 12, marginBottom: 16, display: "flex", gap: 8 }}>
           <StickyNote size={16} color={C.mustardDeep} style={{ flexShrink: 0, marginTop: 1 }} />
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: C.mustardDeep, marginBottom: 2 }}>Jouw notitie</div>
@@ -8541,7 +8659,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       {/* Op een kliekje-avond kook je niet, je warmt op. De ingrediënten zijn al
           opgemaakt toen je het maakte; alleen het restje gaat van de voorraad af. */}
       {isMine && leftoverItem && confirmCook === false && (
-        <div style={{ background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 16, padding: 13 }}>
+        <div style={{ background: C.noteBg, border: "none", borderRadius: 12, padding: 13 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
             <span style={{ fontSize: 22 }}>🍱</span>
             <span>
@@ -8560,7 +8678,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
             <button
               aria-label="Minder porties"
               onClick={() => setEatPortions((p) => Math.max(1, p - 1))}
-              style={{ width: 44, height: 44, borderRadius: 8, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }}
+              style={{ width: 44, height: 44, borderRadius: 10, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer" }}
             ><Minus size={14} /></button>
             <span style={{ fontFamily: FONT_MONO, fontSize: 15, minWidth: 92, textAlign: "center" }}>
               {eatPortions} {eatPortions === 1 ? "portie" : "porties"}
@@ -8568,7 +8686,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
             <button
               aria-label="Meer porties"
               onClick={() => setEatPortions((p) => Math.min(Number(leftoverItem.current) || 1, p + 1))}
-              style={{ width: 44, height: 44, borderRadius: 8, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }}
+              style={{ width: 44, height: 44, borderRadius: 10, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer" }}
             ><Plus size={14} /></button>
           </div>
           {/* Je pakt het bakje dat vooraan staat, niet het bakje dat de app
@@ -8593,9 +8711,9 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
                         style={{
                           minWidth: 48, minHeight: 44, borderRadius: 12, cursor: "pointer",
                           fontFamily: FONT_MONO, fontSize: 16, fontWeight: 600,
-                          background: aan ? C.blue : C.cardBg,
-                          color: aan ? "#fff" : C.ink,
-                          border: `1.5px solid ${aan ? C.blue : C.borderTint}`,
+                          background: aan ? C.blueBtn : C.cardBg,
+                          color: aan ? C.blueBtnInk : C.ink,
+                          border: `1.5px solid ${aan ? C.blueBtn : C.borderTint}`,
                         }}
                       >{n}</button>
                     );
@@ -8632,7 +8750,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
             <>
               <div style={{
                 display: "flex", alignItems: "center", gap: 10, background: C.successBg,
-                border: `1.5px solid ${C.sage}`, borderRadius: 14, padding: "11px 12px",
+                border: `1.5px solid ${C.sage}`, borderRadius: 12, padding: "11px 12px",
               }}>
                 <Check size={18} color={C.sage} style={{ flexShrink: 0 }} />
                 <span style={{ flex: 1, minWidth: 0 }}>
@@ -8670,7 +8788,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
               {vandaagGekookt && (
                 <div style={{
                   display: "flex", alignItems: "center", gap: 8, background: C.cardBg,
-                  border: `1.5px solid ${C.sage}`, borderRadius: 14, padding: "10px 12px",
+                  border: `1.5px solid ${C.sage}`, borderRadius: 12, padding: "10px 12px",
                 }}>
                   <Check size={16} color={C.sage} style={{ flexShrink: 0 }} />
                   <span style={{ fontSize: 13, color: C.ink }}>
@@ -8695,7 +8813,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       )}
 
       {isMine && confirmCook === "nogmaals" && (
-        <div style={{ background: C.cardBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14, padding: 12 }}>
+        <div style={{ background: C.cardBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: 12 }}>
           <div style={{ fontSize: 14, color: C.ink, fontWeight: 600, marginBottom: 4 }}>Zeker weten?</div>
           <p style={{ fontSize: 13, color: C.inkSoft, margin: "0 0 12px", lineHeight: 1.45 }}>
             Deze avond is al afgeboekt op {gekooktOmschrijving(dagAlGekooktOp)}. Nog een keer afboeken haalt de ingrediënten
@@ -8722,7 +8840,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       )}
 
       {isMine && confirmCook === "prep" && (
-        <div style={{ background: C.cardBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14, padding: 12 }}>
+        <div style={{ background: C.cardBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: 12 }}>
           {recipe.cookTime > 0 && (
             <p style={{ fontSize: 12, color: C.inkSoft, margin: "0 0 8px" }}>
               <Clock size={12} style={{ verticalAlign: -1, marginRight: 4 }} />
@@ -8766,7 +8884,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
       )}
 
       {isMine && confirmCook === "shortfall" && (
-        <div style={{ background: C.cardBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14, padding: 12 }}>
+        <div style={{ background: C.cardBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: 12 }}>
           <p style={{ fontSize: 13, margin: "0 0 4px", color: C.ink }}>
             Volgens je voorraad had je van een paar dingen te weinig.
           </p>
@@ -8804,7 +8922,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         </div>
       )}
       {isMine && confirmCook === true && (
-        <div style={{ background: C.cardBg, border: `1.5px solid ${C.sage}`, borderRadius: 14, padding: 12 }}>
+        <div style={{ background: C.cardBg, border: `1.5px solid ${C.sage}`, borderRadius: 12, padding: 12 }}>
           <p style={{ fontSize: 13, margin: "0 0 10px", color: C.ink }}>
             Dit haalt de gebruikte ingrediënten van je voorraad af (voor {servings} {servings === 1 ? "persoon" : "personen"}). Zakt iets daardoor onder je ingestelde minimum, dan zetten we dat apart op de boodschappenlijst. Doorgaan?
           </p>
@@ -8930,7 +9048,7 @@ function RecipeForm({ initial, inventoryNames, inventoryItems = [], onImport, on
           onClick={onImport}
           style={{
             display: "flex", alignItems: "center", gap: 9, width: "100%", textAlign: "left",
-            background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14,
+            background: C.noteBg, border: "none", borderRadius: 12,
             padding: "11px 13px", marginBottom: 16, cursor: "pointer", fontFamily: FONT_BODY,
           }}
         >
@@ -8981,7 +9099,7 @@ function RecipeForm({ initial, inventoryNames, inventoryItems = [], onImport, on
         </div>
 
         {suggestFor === idx && suggestionsFor(ing.name).length > 0 && (
-          <div style={{ background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, marginBottom: 8, overflow: "hidden" }}>
+          <div style={{ background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, marginBottom: 8, overflow: "hidden" }}>
             <div style={{ fontSize: 11, color: C.inkSoft, padding: "6px 10px 2px" }}>Uit je voorraad — tikken vult ook de eenheid in</div>
             {suggestionsFor(ing.name).map((item) => (
               <button
@@ -9042,7 +9160,7 @@ function RecipeForm({ initial, inventoryNames, inventoryItems = [], onImport, on
             key={tag}
             onClick={() => setDiets((d) => d.includes(tag) ? d.filter((t) => t !== tag) : [...d, tag])}
             style={{
-              padding: "6px 11px", borderRadius: 16, fontSize: 12, cursor: "pointer",
+              padding: "6px 11px", borderRadius: 12, fontSize: 12, cursor: "pointer",
               border: `1.5px solid ${diets.includes(tag) ? C.sage : C.borderTint}`,
               background: diets.includes(tag) ? C.sage : C.cardBg, color: diets.includes(tag) ? "#fff" : C.inkSoft,
             }}
@@ -9089,8 +9207,17 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
 
   return (
     <div>
+      {/* Een schermtitel. Tot nu toe begon dit scherm met vier gekleurde
+          tabbladen en wist je pas uit de context waar je was. */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ ...TYPE.scherm, color: C.ink }}>Weekmenu</div>
+        <div style={{ ...TYPE.label, color: C.inkSoft, marginTop: 6 }}>
+          {periodeLabel(periods[periodIndex].start, periods[periodIndex].eind)}
+        </div>
+      </div>
+
       {/* Tabbladen per periode. De week begint op de boodschappendag uit Instellingen. */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
         {periods.map((p, i) => {
           const gepland = p.dagen.filter((d) => dayEntry(dateKey(d))?.recipeId).length;
           const actief = i === periodIndex;
@@ -9099,16 +9226,18 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
               key={p.startKey}
               onClick={() => onPeriodChange(i)}
               style={{
-                flex: 1, padding: "7px 2px", borderRadius: 12, cursor: "pointer",
-                background: actief ? C.mustard : C.cardBg,
-                border: `1.5px solid ${actief ? C.mustard : C.borderTint}`,
+                // Mosterd is nu de kleur van één hoofdactie per scherm, niet van
+                // een tabblad dat je vier keer naast elkaar ziet.
+                flex: 1, padding: "8px 2px", borderRadius: 10, cursor: "pointer", minHeight: 44,
+                background: actief ? C.blueBtn : "transparent",
+                border: `1px solid ${actief ? C.blueBtn : C.ceramicDark}`,
                 fontFamily: FONT_BODY, textAlign: "center",
               }}
             >
-              <div style={{ fontSize: 13, fontWeight: actief ? 700 : 500, color: actief ? "#2A1F06" : C.ink }}>
+              <div style={{ fontSize: 12.5, fontWeight: actief ? 700 : 500, color: actief ? C.blueBtnInk : C.ink }}>
                 {kortDatum(p.start)}
               </div>
-              <div style={{ fontSize: 11, color: actief ? "#4A3608" : C.inkSoft }}>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 9.5, color: actief ? C.blueBtnInk : C.inkSoft, opacity: actief ? 0.85 : 1 }}>
                 {gepland ? `${gepland} gepland` : "leeg"}
               </div>
             </button>
@@ -9116,12 +9245,8 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
         })}
       </div>
 
-      <p style={{ fontSize: 12, color: C.inkSoft, margin: "0 0 12px" }}>
-        {periodeLabel(periods[periodIndex].start, periods[periodIndex].eind)}
-      </p>
-
       {expiringWithRecipes.length > 0 && (
-        <div style={{ background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 16, padding: 12, marginBottom: 14 }}>
+        <div style={{ background: C.noteBg, border: "none", borderRadius: 12, padding: 12, marginBottom: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
             <CalendarClock size={15} color={C.mustardDeep} />
             <span style={{ fontSize: 13, fontWeight: 700, color: C.mustardDeep }}>Ruim dit op vóórdat het te laat is</span>
@@ -9148,7 +9273,7 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
         </div>
       )}
 
-      <div style={{ background: C.cardBg, borderRadius: 16, border: `1.5px solid ${C.borderTint}`, marginBottom: 16 }}>
+      <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 16 }}>
         {periodDays.map((day, idx) => {
           const entry = dayEntry(day.key);
           const recipe = entry?.recipeId ? findRecipe(entry.recipeId) : null;
@@ -9171,7 +9296,7 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
                 </div>
                 {entry?.offNight ? (
                   <>
-                    <div style={{ width: 30, height: 30, borderRadius: 8, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>🍕</div>
+                    <div style={{ width: 30, height: 30, borderRadius: 10, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>🍕</div>
                     <div style={{ flex: 1, fontSize: 14, color: C.inkSoft, fontStyle: "italic" }}>Geen kookavond</div>
                     <button onClick={() => onClearDay(day.key)} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={15} color={C.inkSoft} /></button>
                   </>
@@ -9180,7 +9305,7 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
                     <div
                       onClick={() => onOpenRecipe(recipe.id, entry?.doublePortion, entry?.leftoverItemId, day.key)}
                       title="Open dit recept"
-                      style={{ width: 30, height: 30, borderRadius: 8, background: entry?.cookedAt ? C.successBg : C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0, cursor: "pointer", opacity: entry?.cookedAt ? 0.7 : 1 }}
+                      style={{ width: 30, height: 30, borderRadius: 10, background: entry?.cookedAt ? C.successBg : C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0, cursor: "pointer", opacity: entry?.cookedAt ? 0.7 : 1 }}
                     >
                       {recipe.emoji || "🍽️"}
                     </div>
@@ -9400,7 +9525,7 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
       </button>
 
       {toolsOpen && (
-        <div style={{ background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 16, padding: 12, marginTop: 4 }}>
+        <div style={{ background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: 12, marginTop: 4 }}>
           <div style={{ marginBottom: 8 }}>
             <PrimaryButton full onClick={onAIGenerate}>
               <Wand2 size={16} /> Laat de AI een week bedenken
@@ -9603,7 +9728,7 @@ function CookDietRow({ name, preferences, onUpdate }) {
               key={tag}
               onClick={() => toggleTag(tag)}
               style={{
-                padding: "8px 12px", minHeight: 34, borderRadius: 16, fontSize: 11, cursor: "pointer",
+                padding: "8px 12px", minHeight: 34, borderRadius: 12, fontSize: 11, cursor: "pointer",
                 border: `1.5px solid ${active.includes(tag) ? C.sage : C.borderTint}`,
                 background: active.includes(tag) ? C.sage : C.cardBg, color: active.includes(tag) ? "#fff" : C.inkSoft,
               }}
@@ -9644,7 +9769,7 @@ function CookDislikeRow({ name, preferences, onUpdate }) {
           {active.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
               {active.map((item) => (
-                <span key={item} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 16, fontSize: 11, background: C.warnBg, color: C.brick }}>
+                <span key={item} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 12, fontSize: 11, background: C.warnBg, color: C.brick }}>
                   {item}
                   <button onClick={() => removeItem(item)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex" }}><X size={11} color={C.brick} /></button>
                 </span>
@@ -9653,7 +9778,7 @@ function CookDislikeRow({ name, preferences, onUpdate }) {
           )}
           <div style={{ display: "flex", gap: 6 }}>
             <input style={{ ...inputStyle, flex: 1, fontSize: 13, padding: "7px 10px" }} placeholder="Bijv. paddenstoelen" value={newItem} onChange={(e) => setNewItem(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addItem()} />
-            <button aria-label="Toevoegen" onClick={addItem} disabled={!newItem.trim()} style={{ background: C.blue, border: "none", borderRadius: 10, padding: "0 12px", cursor: newItem.trim() ? "pointer" : "default", opacity: newItem.trim() ? 1 : 0.5, display: "flex", alignItems: "center" }}>
+            <button aria-label="Toevoegen" onClick={addItem} disabled={!newItem.trim()} style={{ background: C.blueBtn, border: "none", borderRadius: 10, padding: "0 12px", cursor: newItem.trim() ? "pointer" : "default", opacity: newItem.trim() ? 1 : 0.5, display: "flex", alignItems: "center" }}>
               <Plus size={14} color="#fff" />
             </button>
           </div>
@@ -9764,7 +9889,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
               <summary style={{ fontSize: 11.5, color: C.inkSoft, cursor: "pointer" }}>
                 Liever de code doorgeven?
               </summary>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: "10px 12px", marginTop: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: "10px 12px", marginTop: 8 }}>
                 <span style={{ fontFamily: FONT_MONO, fontSize: 16, letterSpacing: 1, flex: 1 }}>{household.invite_code}</span>
                 <button aria-label="Code kopiëren" onClick={copyCode} style={{ background: C.ceramic, border: "none", borderRadius: 10, padding: 8, cursor: "pointer", display: "flex" }}>
                   <Copy size={15} color={C.blueDeep} />
@@ -9778,7 +9903,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
       {members && members.length > 0 && (
         <>
           <div style={{ fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }}>Wie kan inloggen</div>
-          <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 16 }}>
+          <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 16 }}>
             {members.map((m, idx) => (
               <div key={m.userId || idx} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderBottom: idx < members.length - 1 ? `1px solid ${C.ceramic}` : "none" }}>
                 <div style={{ width: 26, height: 26, borderRadius: "50%", background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: C.blueDeep, flexShrink: 0 }}>
@@ -9796,7 +9921,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
       {cooks && cooks.length > 0 && (
         <>
           <div style={{ fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }}>Dieetwensen &amp; allergieën</div>
-          <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 16, padding: "4px 12px" }}>
+          <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 16, padding: "4px 12px" }}>
             {cooks.map((cookName) => (
               <CookDietRow key={cookName} name={cookName} preferences={preferences} onUpdate={onUpdateCookDiets} />
             ))}
@@ -9806,7 +9931,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
           <p style={{ fontSize: 11, color: C.inkSoft, marginTop: -4, marginBottom: 8 }}>
             Geen dieet, gewoon een voorkeur — bijv. "paddenstoelen". Je krijgt een seintje op een recept, geen harde blokkade.
           </p>
-          <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 16, padding: "4px 12px" }}>
+          <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 16, padding: "4px 12px" }}>
             {cooks.map((cookName) => (
               <CookDislikeRow key={cookName} name={cookName} preferences={preferences} onUpdate={onUpdateCookDislikes} />
             ))}
@@ -9816,7 +9941,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
       <div style={{ fontSize: 11.5, fontWeight: 700, color: C.inkSoft, letterSpacing: "0.04em", textTransform: "uppercase", margin: "22px 0 8px" }}>
         Hoe de app werkt
       </div>
-      <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 6, overflow: "hidden" }}>
+      <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 6, overflow: "hidden" }}>
         <div style={{ padding: "12px", borderBottom: `1px solid ${C.ceramic}` }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: C.ink }}>
@@ -9893,7 +10018,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
 
 
       <div style={{ fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }}>Volgorde boodschappenlijst</div>
-      <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 16 }}>
+      <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 16 }}>
         {(preferences?.categoryOrder && preferences.categoryOrder.length === CATEGORIES.length ? preferences.categoryOrder : CATEGORIES).map((cat, idx, arr) => (
           <div key={cat} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: idx < arr.length - 1 ? `1px solid ${C.ceramic}` : "none" }}>
             <span style={{ fontSize: 13, color: C.ink, flex: 1 }}>{cat}</span>
@@ -9912,7 +10037,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
       <div style={{ fontSize: 12, fontWeight: 600, color: C.inkSoft, margin: "0 0 8px" }}>
         Altijd gratis
       </div>
-      <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 6, overflow: "hidden" }}>
+      <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 6, overflow: "hidden" }}>
         {GRATIS_FEATURES.map((feat, idx) => (
           <div key={feat.key} style={{ padding: "11px 12px", borderBottom: idx < GRATIS_FEATURES.length - 1 ? `1px solid ${C.ceramic}` : "none" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: C.ink, fontWeight: 600 }}>
@@ -9932,7 +10057,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
         <span style={{ fontSize: 12, fontWeight: 600, color: C.inkSoft }}>Met Premium</span>
         {heeftPremium ? <Pill tone="ok">actief</Pill> : <Pill tone="auto">proefstand</Pill>}
       </div>
-      <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 6, overflow: "hidden" }}>
+      <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 6, overflow: "hidden" }}>
         {PREMIUM_FEATURES.map((feat, idx) => {
           const on = preferences?.premium ? preferences.premium[feat.key] !== false : true;
           return (
@@ -9964,7 +10089,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
       <div style={{ fontSize: 11.5, fontWeight: 700, color: C.inkSoft, letterSpacing: "0.04em", textTransform: "uppercase", margin: "22px 0 8px" }}>
         Hulpmiddelen
       </div>
-      <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 6, overflow: "hidden" }}>
+      <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 6, overflow: "hidden" }}>
         <button
           onClick={onOpenMagnet}
           style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 12px", background: "none", border: "none", borderBottom: `1px solid ${C.ceramic}`, cursor: "pointer", textAlign: "left" }}
@@ -10032,7 +10157,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
       <div style={{ fontSize: 11.5, fontWeight: 700, color: C.inkSoft, letterSpacing: "0.04em", textTransform: "uppercase", margin: "22px 0 8px" }}>
         Meehelpen
       </div>
-      <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 6, overflow: "hidden" }}>
+      <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 6, overflow: "hidden" }}>
         <button
           onClick={() => setDelenOpen(true)}
           style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 12px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}
@@ -10077,7 +10202,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
             Account verwijderen
           </button>
         ) : (
-          <div style={{ background: C.warnBg, border: `1.5px solid ${C.brick}`, borderRadius: 14, padding: 13, marginTop: 8 }}>
+          <div style={{ background: C.warnBg, border: "none", borderRadius: 12, padding: 13, marginTop: 8 }}>
             <div style={{ fontSize: 13.5, fontWeight: 600, color: C.brick, marginBottom: 6 }}>
               Weet je het zeker?
             </div>
@@ -10245,7 +10370,7 @@ function DataDelenModal({ household, dataConsent, onSetDataConsent, onSetHouseho
       </p>
 
       {/* De schakelaar */}
-      <div style={{ background: dataConsent ? C.successBg : C.cardBg, border: `1.5px solid ${dataConsent ? C.sage : C.borderTint}`, borderRadius: 14, padding: 13, margin: "16px 0 6px" }}>
+      <div style={{ background: dataConsent ? C.successBg : C.cardBg, border: `1.5px solid ${dataConsent ? C.sage : C.borderTint}`, borderRadius: 12, padding: 13, margin: "16px 0 6px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
           <span style={{ fontSize: 14, fontWeight: 600, color: C.ink }}>
             {dataConsent ? "Jullie tellen mee" : "Meetellen staat uit"}
@@ -10317,7 +10442,7 @@ function DataDelenModal({ household, dataConsent, onSetDataConsent, onSetHouseho
             </p>
           ) : (
             <>
-              <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, overflow: "hidden" }}>
+              <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, overflow: "hidden" }}>
                 {rijen.map((r, idx) => (
                   <div key={r.id || idx} style={{ padding: "9px 12px", borderBottom: idx < rijen.length - 1 ? `1px solid ${C.ceramic}` : "none", display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
                     <span style={{ fontSize: 12.5, color: C.ink }}>
@@ -10471,7 +10596,7 @@ function ShelfPhotoModal({ scanning, error, results, onScan, onToggleInclude, on
       )}
 
       {preview && (
-        <img src={preview} alt="Kast" style={{ width: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 14, border: `1.5px solid ${C.borderTint}`, background: C.ceramic, marginBottom: 12 }} />
+        <img src={preview} alt="Kast" style={{ width: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 12, border: `1px solid ${C.ceramicDark}`, background: C.ceramic, marginBottom: 12 }} />
       )}
 
       {scanning && (
@@ -10487,7 +10612,7 @@ function ShelfPhotoModal({ scanning, error, results, onScan, onToggleInclude, on
       {!scanning && results.length > 0 && (
         <>
           <p style={{ fontSize: 12, color: C.inkSoft }}>{results.length} product{results.length !== 1 ? "en" : ""} herkend — vink uit wat niet klopt:</p>
-          <div style={{ maxHeight: 320, overflowY: "auto", background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 14 }}>
+          <div style={{ maxHeight: 320, overflowY: "auto", background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 14 }}>
             {results.map((r, idx) => (
               <div key={r.tempId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderBottom: idx < results.length - 1 ? `1px solid ${C.ceramic}` : "none" }}>
                 <button
@@ -10589,7 +10714,7 @@ function ListPhotoModal({
       )}
 
       {preview && fase === "kiezen" && (
-        <img src={preview} alt="Lijstje" style={{ width: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 14, border: `1.5px solid ${C.borderTint}`, background: C.ceramic, marginBottom: 12 }} />
+        <img src={preview} alt="Lijstje" style={{ width: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 12, border: `1px solid ${C.ceramicDark}`, background: C.ceramic, marginBottom: 12 }} />
       )}
 
       {scanning && <PollepelLoader tekst="Lijstje lezen…" size={40} />}
@@ -10620,7 +10745,7 @@ function ListPhotoModal({
           <p style={{ fontSize: 12, color: C.inkSoft }}>
             {results.length} product{results.length !== 1 ? "en" : ""} gelezen — nog even nalopen:
           </p>
-          <div style={{ maxHeight: 320, overflowY: "auto", background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, marginBottom: 14 }}>
+          <div style={{ maxHeight: 320, overflowY: "auto", background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 14 }}>
             {results.map((r, idx) => (
               <div key={r.tempId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderBottom: idx < results.length - 1 ? `1px solid ${C.ceramic}` : "none" }}>
                 <button
@@ -10681,7 +10806,7 @@ function ListPhotoVraag({ regel, nummer, totaal, onBeslis, onWijzig, onVolgende,
         </button>
       </div>
 
-      <div style={{ background: C.cardBg, borderRadius: 14, border: `1.5px solid ${C.borderTint}`, padding: 14, marginBottom: 12 }}>
+      <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, padding: 14, marginBottom: 12 }}>
         <div style={{ fontSize: 18, fontWeight: 600, color: C.ink, marginBottom: 2 }}>{regel.name}</div>
         <div style={{ fontSize: 11, color: C.inkSoft, fontFamily: FONT_MONO, marginBottom: 12 }}>{regel.category}</div>
 
@@ -10694,7 +10819,7 @@ function ListPhotoVraag({ regel, nummer, totaal, onBeslis, onWijzig, onVolgende,
               <button
                 key={k.id}
                 onClick={() => onBeslis(regel.tempId, k.id)}
-                style={{ display: "block", width: "100%", textAlign: "left", background: C.ceramic, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: "9px 11px", marginBottom: 6, cursor: "pointer", fontFamily: FONT_BODY }}
+                style={{ display: "block", width: "100%", textAlign: "left", background: C.ceramic, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: "9px 11px", marginBottom: 6, cursor: "pointer", fontFamily: FONT_BODY }}
               >
                 <div style={{ fontSize: 14, color: C.ink }}>Ja, dit is <strong>{k.name}</strong></div>
                 <div style={{ fontSize: 11, color: C.inkSoft, fontFamily: FONT_MONO }}>
@@ -10853,7 +10978,7 @@ function TabletModeView({ inventory, onConsume, onRestock, onCreate, onClose }) 
     finishWith(`${newName.trim()} toegevoegd aan de voorraad.`, "sage");
   };
 
-  const stepperBtn = { width: 52, height: 52, borderRadius: 16, border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", fontSize: 26, cursor: "pointer" };
+  const stepperBtn = { width: 52, height: 52, borderRadius: 12, border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", fontSize: 26, cursor: "pointer" };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: C.blueDeep, zIndex: 80, display: "flex", flexDirection: "column", color: "#fff" }}>
@@ -10882,7 +11007,7 @@ function TabletModeView({ inventory, onConsume, onRestock, onCreate, onClose }) 
               onKeyDown={(e) => { if (e.key === "Enter") handleScan(code); }}
               inputMode="numeric"
               autoFocus
-              style={{ width: "100%", maxWidth: 380, fontSize: 26, textAlign: "center", padding: "18px", borderRadius: 16, border: "none", fontFamily: FONT_MONO }}
+              style={{ width: "100%", maxWidth: 380, fontSize: 26, textAlign: "center", padding: "18px", borderRadius: 12, border: "none", fontFamily: FONT_MONO }}
               placeholder="000000000000"
             />
           </>
@@ -10927,10 +11052,10 @@ function TabletModeView({ inventory, onConsume, onRestock, onCreate, onClose }) 
               <button onClick={() => setAmount((a) => a + 1)} style={{ ...stepperBtn, width: 46, height: 46, fontSize: 22 }}>+</button>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={confirmCreate} disabled={!newName.trim()} style={{ flex: 1, padding: "16px", borderRadius: 16, border: "none", background: newName.trim() ? C.mustard : "rgba(255,255,255,0.2)", color: "#fff", fontSize: 15, fontWeight: 700, cursor: newName.trim() ? "pointer" : "default" }}>
+              <button onClick={confirmCreate} disabled={!newName.trim()} style={{ flex: 1, padding: "16px", borderRadius: 12, border: "none", background: newName.trim() ? C.mustard : "rgba(255,255,255,0.2)", color: "#fff", fontSize: 15, fontWeight: 700, cursor: newName.trim() ? "pointer" : "default" }}>
                 Toevoegen
               </button>
-              <button onClick={resetToScanning} style={{ padding: "16px 22px", borderRadius: 16, border: "1px solid rgba(255,255,255,0.4)", background: "none", color: "#fff", fontSize: 15, cursor: "pointer" }}>
+              <button onClick={resetToScanning} style={{ padding: "16px 22px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.4)", background: "none", color: "#fff", fontSize: 15, cursor: "pointer" }}>
                 Annuleren
               </button>
             </div>
@@ -10962,7 +11087,7 @@ function FridgeMagnetView({ household, onClose }) {
         }
       `}</style>
       <div id="pollepel-magnet" style={{
-        background: C.cardBg, borderRadius: 28, padding: 32, width: "100%", maxWidth: 340, textAlign: "center",
+        background: C.cardBg, borderRadius: 24, padding: 32, width: "100%", maxWidth: 340, textAlign: "center",
         border: `6px solid ${C.blue}`, boxShadow: "0 20px 50px rgba(0,0,0,0.3)",
       }}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}><LogoMark size={44} /></div>
@@ -10975,7 +11100,7 @@ function FridgeMagnetView({ household, onClose }) {
         <PrimaryButton onClick={() => window.print()}><Printer size={16} /> Printen</PrimaryButton>
         <button
           onClick={onClose}
-          style={{ background: "rgba(255,255,255,0.15)", color: "#fff", border: "1.5px solid rgba(255,255,255,0.5)", borderRadius: 14, padding: "10px 16px", fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, cursor: "pointer" }}
+          style={{ background: "rgba(255,255,255,0.15)", color: "#fff", border: "1.5px solid rgba(255,255,255,0.5)", borderRadius: 12, padding: "10px 16px", fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, cursor: "pointer" }}
         >
           Sluiten
         </button>
@@ -11026,7 +11151,7 @@ function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose
           onClick={rol}
           style={{
             display: "flex", alignItems: "center", gap: 11, width: "100%", textAlign: "left",
-            background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14,
+            background: C.noteBg, border: "none", borderRadius: 12,
             padding: "12px 13px", marginBottom: 12, cursor: "pointer", fontFamily: FONT_BODY,
           }}
         >
@@ -11041,13 +11166,13 @@ function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose
       )}
 
       {rouletteBezig && (
-        <div style={{ background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14, padding: "18px 13px", marginBottom: 12 }}>
+        <div style={{ background: C.noteBg, border: "none", borderRadius: 12, padding: "18px 13px", marginBottom: 12 }}>
           <PollepelLoader tekst="Even roeren…" size={40} delay={0} />
         </div>
       )}
 
       {gerold && !rouletteBezig && (
-        <div style={{ background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14, padding: "13px", marginBottom: 12 }}>
+        <div style={{ background: C.noteBg, border: "none", borderRadius: 12, padding: "13px", marginBottom: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 11 }}>
             <span style={{ fontSize: 28, flexShrink: 0 }}>{gerold.r.emoji || "🍽️"}</span>
             <span style={{ flex: 1, minWidth: 0 }}>
@@ -11072,7 +11197,7 @@ function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose
           onClick={onPickOffNight}
           style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: C.cardBg, border: `1.5px dashed ${C.borderTint}`, borderRadius: 12, padding: "9px 10px", marginBottom: 12, cursor: "pointer" }}
         >
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>🍕</div>
+          <div style={{ width: 32, height: 32, borderRadius: 10, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>🍕</div>
           <div>
             <div style={{ fontSize: 14, color: C.ink, fontWeight: 500 }}>Geen kookavond</div>
             <div style={{ fontSize: 11, color: C.inkSoft }}>Afhaal, uit eten, of gewoon vrij — geen boodschappen nodig</div>
@@ -11088,9 +11213,9 @@ function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose
             <button
               key={item.id}
               onClick={() => onPick(recipe.id, item.id)}
-              style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 12, padding: "8px 10px", marginBottom: 8, cursor: "pointer" }}
+              style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: C.noteBg, border: "none", borderRadius: 12, padding: "8px 10px", marginBottom: 8, cursor: "pointer" }}
             >
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>{recipe.emoji || "🍽️"}</div>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>{recipe.emoji || "🍽️"}</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 14, color: C.ink, fontWeight: 500 }}>{recipe.name}</div>
                 <div style={{ fontSize: 11, color: C.mustardDeep, fontFamily: FONT_MONO }}>
@@ -11111,9 +11236,9 @@ function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose
           <button
             key={r.id}
             onClick={() => onPick(r.id)}
-            style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, padding: "8px 10px", marginBottom: 8, cursor: "pointer" }}
+            style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: "8px 10px", marginBottom: 8, cursor: "pointer" }}
           >
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>{r.emoji || "🍽️"}</div>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>{r.emoji || "🍽️"}</div>
             <div>
               <div style={{ fontSize: 14, color: C.ink, fontWeight: 500 }}>{r.name}</div>
               <div style={{ fontSize: 11, color: C.inkSoft, fontFamily: FONT_MONO }}>{r.cookTime} min · {r.servings} pers.</div>
@@ -11225,14 +11350,25 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
     [inventory, consumptionLog, isPremiumOn]
   );
 
+  // Hoeveel staat er onder het minimum? Dat is het enige getal dat je hier
+  // meteen wilt zien — de rest kun je zelf tellen.
+  const tekort = inventory.filter((i) => Number(i.current || 0) < Number(i.min || 0)).length;
+
   return (
     <div>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ ...TYPE.scherm, color: C.ink }}>Voorraad</div>
+        <div style={{ ...TYPE.label, color: tekort ? C.brick : C.inkSoft, marginTop: 6 }}>
+          {inventory.length} producten{tekort > 0 && ` · ${tekort} onder het minimum`}
+        </div>
+      </div>
+
       <div style={{ position: "relative", marginBottom: 12 }}>
-        <Search size={15} color={C.inkSoft} style={{ position: "absolute", left: 10, top: 13 }} />
+        <Search size={15} color={C.inkSoft} style={{ position: "absolute", left: 11, top: 14 }} />
         <input
           autoComplete="off"
-          style={{ ...inputStyle, paddingLeft: 30, paddingRight: zoek ? 36 : 11 }}
-          placeholder={`Zoek in ${inventory.length} producten…`}
+          style={{ ...inputStyle, paddingLeft: 32, paddingRight: zoek ? 36 : 12 }}
+          placeholder="Zoek een product of bakjenummer…"
           value={zoek}
           onChange={(e) => setZoek(e.target.value)}
         />
@@ -11279,7 +11415,7 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
                     display: "flex", alignItems: "center", gap: 11,
                     background: isKliekje ? C.warnBg : C.cardBg,
                     border: `1.5px solid ${isKliekje ? C.brick : C.borderTint}`,
-                    borderRadius: 14, padding: "12px 13px", marginBottom: 12,
+                    borderRadius: 12, padding: "12px 13px", marginBottom: 12,
                   }}>
                     <span style={{ fontSize: 24, flexShrink: 0 }}>{isKliekje ? "🍱" : "📦"}</span>
                     <span style={{ flex: 1, minWidth: 0 }}>
@@ -11323,7 +11459,7 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
           onClick={onOpenControle}
           style={{
             display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left",
-            background: C.warnBg, border: `1.5px solid ${C.brick}`, borderRadius: 14,
+            background: C.warnBg, border: "none", borderRadius: 12,
             padding: "11px 13px", marginBottom: 12, cursor: "pointer", fontFamily: FONT_BODY,
           }}
         >
@@ -11340,7 +11476,7 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
       )}
 
       {!zoek && depletionForecast.length > 0 && (
-        <div style={{ background: C.successBg, border: `1.5px solid ${C.sage}`, borderRadius: 16, padding: 12, marginBottom: 16 }}>
+        <div style={{ background: C.successBg, border: "none", borderRadius: 12, padding: 12, marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
             <span style={{ fontSize: 14 }}>📉</span>
             <span style={{ fontSize: 13, fontWeight: 700, color: C.sage }}>Voorspelde uitputting</span>
@@ -11355,7 +11491,7 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
       )}
 
       {!zoek && expirySuggestions.length > 0 && (
-        <div style={{ background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 16, padding: 12, marginBottom: 16 }}>
+        <div style={{ background: C.noteBg, border: "none", borderRadius: 12, padding: 12, marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
             <CalendarClock size={15} color={C.mustardDeep} />
             <span style={{ fontSize: 13, fontWeight: 700, color: C.mustardDeep }}>Bijna over de datum</span>
@@ -11407,7 +11543,7 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
         return (
           <div key={cat} style={{ marginBottom: 16 }}>
             <div style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: 0.5, color: C.blueSoft, marginBottom: 6, textTransform: "uppercase" }}>{cat}</div>
-            <div style={{ background: C.cardBg, borderRadius: 16, border: `1.5px solid ${C.borderTint}` }}>
+            <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}` }}>
               {items.map((item, idx) => {
                 const low = item.current < item.min;
                 const expDays = item.expiryDate ? daysUntil(item.expiryDate) : null;
@@ -11580,7 +11716,7 @@ function InventoryForm({ initial, consumptionLog = [], inventory = [], nummertBa
             <div style={{ position: "absolute", right: 10, top: 9 }}><PollepelLoader size={16} inline delay={0} /></div>
           )}
           {showSuggestions && suggestions.length > 0 && (
-            <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 12, zIndex: 5, maxHeight: 220, overflowY: "auto", boxShadow: "0 6px 16px rgba(0,0,0,0.12)" }}>
+            <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, zIndex: 5, maxHeight: 220, overflowY: "auto", boxShadow: "0 6px 16px rgba(0,0,0,0.12)" }}>
               {suggestions.map((p, idx) => (
                 <button
                   key={p.code || idx}
@@ -11635,7 +11771,7 @@ function InventoryForm({ initial, consumptionLog = [], inventory = [], nummertBa
           onClick={() => { setMin(String(voorstel.minimum)); setMax(String(voorstel.maximum)); }}
           style={{
             display: "flex", alignItems: "flex-start", gap: 9, width: "100%", textAlign: "left",
-            background: C.noteBg, border: `1.5px solid ${C.mustard}`, borderRadius: 14,
+            background: C.noteBg, border: "none", borderRadius: 12,
             padding: "11px 13px", marginBottom: 12, cursor: "pointer", fontFamily: FONT_BODY,
           }}
         >
@@ -11725,7 +11861,7 @@ const stepKnop = {
 };
 
 const stepVlak = {
-  width: 24, height: 24, borderRadius: 8,
+  width: 24, height: 24, borderRadius: 10,
   display: "flex", alignItems: "center", justifyContent: "center",
   get border() { return `1.5px solid ${C.ceramicDark}`; },
   get background() { return C.cardBg; },
@@ -11840,7 +11976,11 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
   if (list.length === 0) {
     return (
       <div>
-        <div style={{ textAlign: "center", padding: "40px 10px", color: C.inkSoft }}>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ ...TYPE.scherm, color: C.ink }}>Boodschappen</div>
+          <div style={{ ...TYPE.label, color: C.inkSoft, marginTop: 6 }}>Niets te halen</div>
+        </div>
+        <div style={{ textAlign: "center", padding: "30px 10px", color: C.inkSoft }}>
           <ShoppingCart size={28} color={C.ceramicDark} style={{ marginBottom: 8 }} />
           <p style={{ fontSize: 13 }}>Boodschappenlijst is leeg. Kook een gerecht of voeg zelf iets toe — die verschijnen hier automatisch als voorraad onder het minimum komt.</p>
         </div>
@@ -11853,15 +11993,32 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
     );
   }
 
+  // Wat staat er nog open? Dat is het getal waar je in de winkel naar kijkt.
+  const nogTeHalen = list.filter((i) => !i.checked).length;
+
   return (
     <div>
-      <div style={{ marginBottom: 14, display: "flex", gap: 8 }}>
-        <button aria-label="Delen" onClick={shareList} title="Lijst delen / kopiëren" style={{ width: 44, height: 44, background: C.cardBg, border: `1.5px solid ${C.blue}`, borderRadius: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <Share2 size={17} color={C.blue} />
-        </button>
-        <button aria-label="Downloaden" onClick={downloadList} title="Downloaden als afvinklijst" style={{ width: 44, height: 44, background: C.cardBg, border: `1.5px solid ${C.blue}`, borderRadius: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <Download size={17} color={C.blue} />
-        </button>
+      {/* De twee knoppen stonden eerst alleen bovenaan, breed omlijnd in de
+          accentkleur, en waren daarmee het eerste wat je zag — terwijl delen
+          en downloaden hooguit één keer per lijst gebeurt. Nu staat de stand
+          van je lijst vooraan en zijn zij twee kleine knoppen ernaast. */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 14 }}>
+        <div>
+          <div style={{ ...TYPE.scherm, color: C.ink }}>Boodschappen</div>
+          <div style={{ ...TYPE.label, color: C.inkSoft, marginTop: 6 }}>
+            {nogTeHalen === 0
+              ? `Alles afgevinkt · ${list.length} ${list.length === 1 ? "product" : "producten"}`
+              : `Nog ${nogTeHalen} van ${list.length}`}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 7, flexShrink: 0, paddingTop: 4 }}>
+          <button aria-label="Delen" onClick={shareList} title="Lijst delen / kopiëren" style={{ width: 38, height: 38, background: C.ceramic, border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Share2 size={16} color={C.inkSoft} />
+          </button>
+          <button aria-label="Downloaden" onClick={downloadList} title="Downloaden als afvinklijst" style={{ width: 38, height: 38, background: C.ceramic, border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Download size={16} color={C.inkSoft} />
+          </button>
+        </div>
       </div>
       {shareMsg && <p style={{ fontSize: 12, color: C.inkSoft, marginTop: -8, marginBottom: 10 }}>{shareMsg}</p>}
       {orderedCatsForDisplay.map((cat) => {
@@ -11895,7 +12052,7 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
         return (
           <div key={cat} style={{ marginBottom: 14 }}>
             <div style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: 0.5, color: C.blueSoft, marginBottom: 6, textTransform: "uppercase" }}>{cat}</div>
-            <div style={{ background: C.cardBg, borderRadius: 16, border: `1.5px solid ${C.borderTint}` }}>
+            <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}` }}>
               {items.map((item, idx) => (
                 <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: idx < items.length - 1 ? `1px solid ${C.ceramic}` : "none" }}>
                   <button onClick={() => onToggle(item.id)} style={{
@@ -11946,7 +12103,7 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
                           onBlur={() => { onSetAmount(item.id, editAmountValue); setEditAmountId(null); }}
                           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                           style={{
-                            width: 58, padding: "2px 6px", borderRadius: 8,
+                            width: 58, padding: "2px 6px", borderRadius: 10,
                             border: `1.5px solid ${C.mustard}`, fontFamily: FONT_MONO, fontSize: 12,
                             background: C.cardBg, color: C.ink,
                           }}
@@ -12101,7 +12258,7 @@ function ImportModal({ importing, error, onCancel, onImportText, onImportUrl, on
 
           {photoPreview ? (
             <div style={{ marginBottom: 10 }}>
-              <img src={photoPreview} alt="Recept" style={{ width: "100%", maxHeight: 220, objectFit: "contain", borderRadius: 14, border: `1.5px solid ${C.borderTint}`, background: C.ceramic }} />
+              <img src={photoPreview} alt="Recept" style={{ width: "100%", maxHeight: 220, objectFit: "contain", borderRadius: 12, border: `1px solid ${C.ceramicDark}`, background: C.ceramic }} />
               <div style={{ marginTop: 6 }}>
                 <GhostButton onClick={() => { setPhotoFile(null); setPhotoPreview(""); }}><X size={13} /> Andere foto kiezen</GhostButton>
               </div>
@@ -12165,7 +12322,7 @@ function AIWeekmenuModal({ generating, progress, error, weekdayStyles, onSetWeek
         onClick={() => setStyleId("gevarieerd")}
         style={{
           display: "flex", alignItems: "center", gap: 11, width: "100%", textAlign: "left",
-          padding: "12px 13px", borderRadius: 14, cursor: "pointer", marginBottom: 8,
+          padding: "12px 13px", borderRadius: 12, cursor: "pointer", marginBottom: 8,
           border: `1.5px solid ${styleId === "gevarieerd" ? C.blue : C.borderTint}`,
           background: styleId === "gevarieerd" ? C.blue : C.cardBg,
           color: styleId === "gevarieerd" ? "#fff" : C.ink,
@@ -12198,7 +12355,7 @@ function AIWeekmenuModal({ generating, progress, error, weekdayStyles, onSetWeek
           </button>
 
           {dagenOpen && (
-            <div style={{ background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: 10, marginTop: 4 }}>
+            <div style={{ background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: 10, marginTop: 4 }}>
               {[1, 2, 3, 4, 5, 6, 0].map((wd) => (
                 <div key={wd} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
                   <span style={{ width: 62, fontSize: 12, color: C.ink, flexShrink: 0 }}>
@@ -12246,7 +12403,7 @@ function AIWeekmenuModal({ generating, progress, error, weekdayStyles, onSetWeek
             key={s.id}
             onClick={() => setStyleId(s.id)}
             style={{
-              textAlign: "left", padding: "10px 10px", borderRadius: 14, cursor: "pointer",
+              textAlign: "left", padding: "10px 10px", borderRadius: 12, cursor: "pointer",
               border: `1.5px solid ${styleId === s.id ? C.blue : C.borderTint}`,
               background: styleId === s.id ? C.blue : C.cardBg,
               color: styleId === s.id ? "#fff" : C.ink,
@@ -12283,7 +12440,7 @@ function AIWeekmenuModal({ generating, progress, error, weekdayStyles, onSetWeek
       </div>
 
       {generating && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: 12, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: 12, marginBottom: 12 }}>
           <PollepelLoader size={20} inline delay={0} />
           <span style={{ fontSize: 13, color: C.ink }}>{progress || "Bezig…"}</span>
         </div>
@@ -12470,9 +12627,9 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
 
   const stepper = (value, setValue, unitLabel) => (
     <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", margin: "10px 0" }}>
-      <button onClick={() => setValue(Math.max(0, round2(value - 1)))} style={{ width: 38, height: 38, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }}><Minus size={16} /></button>
+      <button onClick={() => setValue(Math.max(0, round2(value - 1)))} style={{ width: 38, height: 38, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer" }}><Minus size={16} /></button>
       <div style={{ minWidth: 70, textAlign: "center", fontFamily: FONT_MONO, fontSize: 16 }}>{value} {unitLabel}</div>
-      <button onClick={() => setValue(round2(value + 1))} style={{ width: 38, height: 38, borderRadius: 12, border: `1.5px solid ${C.borderTint}`, background: C.cardBg, cursor: "pointer" }}><Plus size={16} /></button>
+      <button onClick={() => setValue(round2(value + 1))} style={{ width: 38, height: 38, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, background: C.cardBg, cursor: "pointer" }}><Plus size={16} /></button>
     </div>
   );
 
@@ -12484,7 +12641,7 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
         <div>
           <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", background: "#000", aspectRatio: "3/4" }}>
             <video ref={videoRef} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-            <div style={{ position: "absolute", inset: "30% 8%", border: `2px solid ${C.mustard}`, borderRadius: 14, boxShadow: "0 0 0 999px rgba(0,0,0,0.28)" }} />
+            <div style={{ position: "absolute", inset: "30% 8%", border: `2px solid ${C.mustard}`, borderRadius: 12, boxShadow: "0 0 0 999px rgba(0,0,0,0.28)" }} />
             {flash && (
               <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: C.sage, color: "#fff", padding: "10px 12px", fontSize: 14, fontWeight: 600, textAlign: "center" }}>
                 <CheckCircle2 size={16} style={{ verticalAlign: -3, marginRight: 6 }} />{flash}
@@ -12498,7 +12655,7 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
           </p>
 
           {session.length > 0 && (
-            <div style={{ background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: 10, marginBottom: 10 }}>
+            <div style={{ background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: 10, marginBottom: 10 }}>
               <div style={{ fontSize: 12, color: C.inkSoft, marginBottom: 4 }}>Deze sessie bijgeboekt:</div>
               {session.map((s, i) => (
                 <div key={i} style={{ fontSize: 13, padding: "2px 0" }}>
@@ -12545,7 +12702,7 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
       {phase === "found" && matchedItem && (
         <div>
           <p style={{ fontSize: 13, color: C.ink, marginTop: 0 }}>Herkend als bestaand voorraaditem:</p>
-          <div style={{ background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: 12, marginBottom: 8 }}>
+          <div style={{ background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: 12, marginBottom: 8 }}>
             <div style={{ fontWeight: 600, fontSize: 15 }}>{matchedItem.name}</div>
             <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.inkSoft }}>Huidige voorraad: {matchedItem.current} {matchedItem.unit}</div>
           </div>
@@ -12732,7 +12889,7 @@ function ManualAddForm({ newName, setNewName, newAmount, setNewAmount, newUnit, 
     setToonSuggesties(false);
   };
   return (
-    <div style={{ background: C.cardBg, border: `1.5px solid ${C.borderTint}`, borderRadius: 14, padding: 10, marginTop: 8 }}>
+    <div style={{ background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: 10, marginTop: 8 }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
         <input
           autoComplete="off"
