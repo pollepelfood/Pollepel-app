@@ -345,22 +345,88 @@
         },
       };
 
+      // ---------- Receptfoto's ----------
+      // In photo_url staan twee soorten waarden: een webadres van buiten
+      // (begint met http) of een pad in ons eigen bakje. Het bakje staat
+      // dicht, dus zo'n pad moet eerst omgezet worden in een tijdelijk adres.
+      // Een pad is altijd "huishouden/recept.jpg" en kan dus nooit met http
+      // beginnen; daarmee is het onderscheid hard en niet geraden.
+      const FOTO_BAKJE = "recipe-photos";
+      const FOTO_ADRES_GELDIG = 8 * 60 * 60;
+
+      const isExternAdres = (waarde) => /^https?:\/\//i.test(String(waarde || ""));
+
+      // Eén functie voor beide receptlijsten: anders zou de community-lijst
+      // later wél of juist niet meegaan met een wijziging hier.
+      async function fotoAdressen(rijen) {
+        const paden = [...new Set(
+          (rijen || [])
+            .map((r) => r.photo_url)
+            .filter((v) => v && !isExternAdres(v))
+        )];
+        if (!paden.length) return {};
+        try {
+          const { data, error } = await supabase.storage.from(FOTO_BAKJE)
+            .createSignedUrls(paden, FOTO_ADRES_GELDIG);
+          if (error || !data) return {};
+          const kaart = {};
+          data.forEach((d) => { if (d && d.path && d.signedUrl) kaart[d.path] = d.signedUrl; });
+          return kaart;
+        } catch (e) {
+          // Geen adres betekent: geen foto tonen. De emoji neemt het over.
+          console.warn("Fotoadressen konden niet worden opgehaald:", e);
+          return {};
+        }
+      }
+
+      const fotoAdres = (waarde, kaart) =>
+        !waarde ? "" : (isExternAdres(waarde) ? waarde : (kaart[waarde] || ""));
+
       window.dataAPI = {
+        // ---------- Foto's ----------
+        photos: {
+          pad(recipeId) { return `${householdId}/${recipeId}.jpg`; },
+          async upload(recipeId, blob) {
+            const pad = `${householdId}/${recipeId}.jpg`;
+            const { error } = await supabase.storage.from(FOTO_BAKJE)
+              .upload(pad, blob, { contentType: "image/jpeg", upsert: true });
+            if (error) throw error;
+            return pad;
+          },
+          async remove(recipeId) {
+            const pad = `${householdId}/${recipeId}.jpg`;
+            const { error } = await supabase.storage.from(FOTO_BAKJE).remove([pad]);
+            if (error) throw error;
+          },
+          // Voor een los adres dat verlopen is.
+          async sign(pad) {
+            if (!pad || isExternAdres(pad)) return pad || "";
+            const { data, error } = await supabase.storage.from(FOTO_BAKJE)
+              .createSignedUrl(pad, FOTO_ADRES_GELDIG);
+            if (error || !data) return "";
+            return data.signedUrl;
+          },
+        },
+
         // ---------- Recepten ----------
         recipes: {
           async list() {
             const { data: recs, error } = await supabase.from("recipes").select("*").eq("household_id", householdId).order("created_at");
             if (error || !recs) return [];
             const ids = recs.map((r) => r.id);
-            const [{ data: ings }, { data: steps }] = await Promise.all([
+            const [{ data: ings }, { data: steps }, adressen] = await Promise.all([
               supabase.from("recipe_ingredients").select("*").in("recipe_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]).order("sort_order"),
               supabase.from("recipe_steps").select("*").in("recipe_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]).order("step_number"),
+              fotoAdressen(recs),
             ]);
             return recs.map((r) => ({
               id: r.id,
               name: r.name,
               emoji: r.emoji,
-              photoUrl: r.photo_url || "",
+              // photoPath is wat in de database staat, photoUrl is waar de
+              // browser hem vandaan haalt. Bij een eigen foto verschillen die.
+              photoPath: r.photo_url || "",
+              photoUrl: fotoAdres(r.photo_url, adressen),
               cookTime: r.cook_time,
               servings: r.servings,
               favorite: r.favorite,
@@ -381,7 +447,7 @@
           },
           async create(recipe) {
             const { data, error } = await supabase.from("recipes").insert({
-              household_id: householdId, name: recipe.name, emoji: recipe.emoji, photo_url: recipe.photoUrl || null, cook_time: recipe.cookTime,
+              household_id: householdId, name: recipe.name, emoji: recipe.emoji, photo_url: recipe.photoPath || recipe.photoUrl || null, cook_time: recipe.cookTime,
               servings: recipe.servings, favorite: !!recipe.favorite, community: !!recipe.community,
               notes: recipe.notes || null, diets: recipe.diets || [],
             }).select().single();
@@ -400,7 +466,7 @@
           },
           async update(id, recipe) {
             const { error } = await supabase.from("recipes").update({
-              name: recipe.name, emoji: recipe.emoji, photo_url: recipe.photoUrl || null, cook_time: recipe.cookTime, servings: recipe.servings,
+              name: recipe.name, emoji: recipe.emoji, photo_url: recipe.photoPath || recipe.photoUrl || null, cook_time: recipe.cookTime, servings: recipe.servings,
               favorite: !!recipe.favorite, community: !!recipe.community, notes: recipe.notes || null,
               diets: recipe.diets || [], updated_at: new Date().toISOString(),
             }).eq("id", id);
@@ -423,25 +489,41 @@
             }
           },
           async patch(id, fields) {
-            const map = { favorite: "favorite", community: "community" };
+            // photoPath staat erbij zodat een foto met één regel bijgewerkt
+            // wordt in plaats van via update(), die ook alle ingrediënten en
+            // stappen opnieuw wegschrijft (werkafspraak 13).
+            const map = { favorite: "favorite", community: "community", photoPath: "photo_url" };
             const dbFields = {};
             Object.keys(fields).forEach((k) => { if (map[k]) dbFields[map[k]] = fields[k]; });
             const { error } = await supabase.from("recipes").update(dbFields).eq("id", id);
             if (error) throw error;
           },
           async remove(id) {
+            // Eerst de foto, dan het recept. Andersom weet niemand meer welk
+            // bestand erbij hoorde en blijft het liggen tot het einde der
+            // tijden — onvindbaar, maar het telt wel mee voor de opslag.
+            try {
+              const { data: rij } = await supabase.from("recipes").select("photo_url").eq("id", id).single();
+              if (rij && rij.photo_url && !isExternAdres(rij.photo_url)) {
+                await supabase.storage.from(FOTO_BAKJE).remove([rij.photo_url]);
+              }
+            } catch (e) {
+              console.warn("Foto bij het recept kon niet worden opgeruimd:", e);
+            }
             await supabase.from("recipes").delete().eq("id", id);
           },
           async listCommunity() {
             const { data: recs, error } = await supabase.from("recipes").select("*").eq("community", true).order("created_at", { ascending: false });
             if (error || !recs) return [];
             const ids = recs.map((r) => r.id);
-            const [{ data: ings }, { data: steps }] = await Promise.all([
+            const [{ data: ings }, { data: steps }, adressen] = await Promise.all([
               supabase.from("recipe_ingredients").select("*").in("recipe_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]).order("sort_order"),
               supabase.from("recipe_steps").select("*").in("recipe_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]).order("step_number"),
+              fotoAdressen(recs),
             ]);
             return recs.map((r) => ({
-              id: r.id, name: r.name, emoji: r.emoji, photoUrl: r.photo_url || "", cookTime: r.cook_time, servings: r.servings,
+              id: r.id, name: r.name, emoji: r.emoji,
+              photoPath: r.photo_url || "", photoUrl: fotoAdres(r.photo_url, adressen), cookTime: r.cook_time, servings: r.servings,
               favorite: false, community: true, notes: r.notes || "", diets: r.diets || [],
               ingredients: (ings || []).filter((i) => i.recipe_id === r.id).map((i) => ({ name: i.name, amount: Number(i.amount), unit: i.unit, inventoryItemId: i.inventory_item_id || null })),
               steps: (steps || []).filter((s) => s.recipe_id === r.id).map((s) => s.content),

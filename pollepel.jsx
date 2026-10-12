@@ -210,8 +210,9 @@ const LIGHT_PALETTE = {
   paper: "#F7F1E6",
   mustard: "#D9A441",
   // mustardDeep is tekstkleur op het notitievlak, geen vlakkleur: daar moet
-  // hij donker genoeg voor zijn (was 2,9:1).
-  mustardDeep: "#8A6018",
+  // hij donker genoeg voor zijn (was 2,9:1). Daarna nog iets donkerder: op het
+  // keramiekvlak bleef #8A6018 op precies 4,50:1 staan en dat is geen marge.
+  mustardDeep: "#855B16",
   // Doorgerekend tegen de vlakken waar ze op staan. Steenrood op #F4E2CE haalde
   // met de oude waarde maar 3,9:1 en salie precies 4,5 — te krap om op te
   // bouwen.
@@ -223,7 +224,10 @@ const LIGHT_PALETTE = {
   // Eerst op #8A7F6C gezet omdat dat in de ontwerpschetsen mooi stond. Daar
   // staat het ook op 20 pixels; in de app draagt inkSoft alle bijzinnen van
   // 11 en 12 pixels, en dan is 3,5:1 simpelweg te licht om te lezen.
-  inkSoft: "#746A59",
+  // Daarna van #746A59 naar deze waarde: die haalde het wel op papier (4,73)
+  // maar niet op de getinte vlakken waar inkSoft ook staat — op het
+  // waarschuwvlak bleef het op 4,21:1 steken. Nu is het slechtste geval 4,81.
+  inkSoft: "#6B6151",
   // Geen karton meer. Nog net lichter dan het papier, zodat een kaart zich
   // aftekent zonder eruit te springen.
   cardBg: "#FDFAF3",
@@ -232,6 +236,9 @@ const LIGHT_PALETTE = {
   warnBg: "#F4E2CE",
   successBg: "#E8EDE2",
   noteBg: "#F6EBD6",
+  // Vlak van een uitgeschakelde knop. Was een vast grijs met witte letters
+  // (2,03:1) dat in beide thema's hetzelfde bleef.
+  offBtn: "#C6BDA9",
   // Een gevulde blauwe knop is iets anders dan blauwe tekst. In het donkere
   // thema moet blauwe tékst licht zijn om leesbaar te blijven, maar een knop
   // met die lichte blauwe vulling en witte letters haalt het contrast niet.
@@ -244,7 +251,9 @@ const LIGHT_PALETTE = {
 // keramiekidentiteit: 's avonds was het een andere app. Nu is het dezelfde
 // kleurtemperatuur, alleen omgekeerd — warm donker in plaats van warm licht.
 const DARK_PALETTE = {
-  blue: "#5E8DBE",
+  // Was #5E8DBE. Als tekstkleur haalde dat op een kaart 4,32:1 — net onder de
+  // grens, en C.blue draagt tien stukjes tekst door de app heen.
+  blue: "#6A96C4",
   blueDeep: "#13202E",
   blueSoft: "#9DB4C9",
   ceramic: "#1A1713",
@@ -263,6 +272,7 @@ const DARK_PALETTE = {
   warnBg: "#3A291E",
   successBg: "#23291F",
   noteBg: "#332A18",
+  offBtn: "#554F43",
   blueBtn: "#2E4F74",
   blueBtnInk: "#F2EBDD",
 };
@@ -292,7 +302,7 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v84 · 11 oktober 2026";
+const APP_VERSIE = "v87 · 12 oktober 2026";
 
 // Versie van de toestemmingstekst. Verandert de tekst wezenlijk, dan gaat dit
 // omhoog en moet er opnieuw gevraagd worden — oude toestemming dekt een nieuwe
@@ -1342,10 +1352,103 @@ function canvasIsLeeg(ctx, width, height) {
         }
       }
     }
-    return true;
+    // Egaal is nog niet leeg. Er zijn twee manieren om hier te komen:
+    // het tekenen mislukte, of de foto is werkelijk één kleur. In het eerste
+    // geval blijft precies het witte vlak over dat wij er zelf onder legden,
+    // dus alleen bij wit is dit een mislukking. Een egaal mosterdgeel vlak
+    // werd eerder geweigerd met "leeg canvas", en dat klopte niet.
+    if (!eerste) return true;
+    return eerste[0] > 247 && eerste[1] > 247 && eerste[2] > 247;
   } catch (e) {
     return false;
   }
+}
+
+// Een foto voor in het kookboek. Andere maatstaf dan de AI-trap hierboven:
+// daar is scherpte nodig om tekst te kunnen lezen, hier moet het er alleen
+// goed uitzien op een schijf van 56 of een kop van 150 pixels — op een scherm
+// met dubbele beeldpunten is 1400 ruim genoeg.
+const FOTO_OPSLAG_TRAPPEN = [
+  [1400, 0.82], [1200, 0.78], [1000, 0.72], [800, 0.64],
+];
+
+// Het bakje bij Supabase weigert boven 2 MB. Dit is de grens die de app zelf
+// aanhoudt, met flink wat lucht ertussen: de app weet hoe groot het bestand
+// wordt en schikt in tot het past, in plaats van een foutmelding te laten
+// komen waar de gebruiker niets mee kan (werkafspraak 14).
+const FOTO_OPSLAG_BUDGET = 400 * 1024;
+
+// Een bestand inlezen als afbeelding. Beide verkleiners beginnen hiermee.
+function leesAlsAfbeelding(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("lezen mislukt"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("afbeelding ongeldig"));
+      img.onload = () => {
+        if (!img.width || !img.height) { reject(new Error("afbeelding ongeldig")); return; }
+        resolve(img);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Het tekenen zelf staat op één plek omdat hier de Safari-valkuil zit: boven
+// een bepaalde oppervlakte tekent drawImage niets en houd je een egaal vlak
+// over. Twee verkleiners die dat allebei apart afvangen is één verkleiner die
+// het een keer vergeet.
+function tekenGeschaald(img, maxDim, controleerLeeg) {
+  let width = img.width, height = img.height;
+  if (width > maxDim || height > maxDim) {
+    const scale = maxDim / Math.max(width, height);
+    width = Math.max(1, Math.round(width * scale));
+    height = Math.max(1, Math.round(height * scale));
+  }
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas niet beschikbaar");
+  canvas.width = width;
+  canvas.height = height;
+  // Wit eronder: een PNG met doorzichtige delen wordt in JPEG anders zwart,
+  // en zwart op zwarte tekst leest niemand meer.
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(img, 0, 0, width, height);
+  if (controleerLeeg && canvasIsLeeg(ctx, width, height)) throw new Error("leeg canvas");
+  return canvas;
+}
+
+// Verkleint een foto tot een bestand dat in het bakje past. Geeft een Blob
+// terug, geen base64: base64 is een derde groter en zou hier alleen maar
+// extra over de lijn sturen.
+function fotoVoorOpslag(file, budget = FOTO_OPSLAG_BUDGET) {
+  return leesAlsAfbeelding(file).then((img) => new Promise((resolve, reject) => {
+    let laatste = null;
+    let eersteTrap = true;
+    const volgende = (i) => {
+      if (i >= FOTO_OPSLAG_TRAPPEN.length) {
+        // Zelfs de kleinste trap past niet. Opsturen en de server laten
+        // beslissen; die zegt het eerlijk als het alsnog te veel is.
+        if (laatste) resolve(laatste); else reject(new Error("afbeelding ongeldig"));
+        return;
+      }
+      const [maxDim, quality] = FOTO_OPSLAG_TRAPPEN[i];
+      let canvas;
+      try { canvas = tekenGeschaald(img, maxDim, eersteTrap); }
+      catch (e) { reject(e); return; }
+      eersteTrap = false;
+      canvas.toBlob((blob) => {
+        if (!blob) { volgende(i + 1); return; }
+        laatste = blob;
+        if (blob.size <= budget) { resolve(blob); return; }
+        volgende(i + 1);
+      }, "image/jpeg", quality);
+    };
+    volgende(0);
+  }));
 }
 
 // Verkleint een foto tot iets dat de AI-tussenlaag wél aanneemt.
@@ -1366,32 +1469,16 @@ function resizeImageFile(file, budget = AI_VERZOEK_BUDGET) {
       img.onerror = () => reject(new Error("afbeelding ongeldig"));
       img.onload = () => {
         if (!img.width || !img.height) { reject(new Error("afbeelding ongeldig")); return; }
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        if (!ctx) { reject(new Error("canvas niet beschikbaar")); return; }
 
         let laatste = null;
         let eersteTrap = true;
         for (const [maxDim, quality] of FOTO_TRAPPEN) {
-          let width = img.width, height = img.height;
-          if (width > maxDim || height > maxDim) {
-            const scale = maxDim / Math.max(width, height);
-            width = Math.max(1, Math.round(width * scale));
-            height = Math.max(1, Math.round(height * scale));
-          }
-          canvas.width = width;
-          canvas.height = height;
-          // Wit eronder: een PNG met doorzichtige delen wordt in JPEG anders
-          // zwart, en zwart op zwarte tekst leest niemand meer.
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(0, 0, width, height);
-          ctx.drawImage(img, 0, 0, width, height);
-          // Safari legt een grens op de oppervlakte van een canvas. Zit je
-          // erboven, dan tekent drawImage niets en houd je een egaal vlak over
-          // dat qua bestandsgrootte volkomen normaal lijkt — een leeg canvas
-          // van 1600 bij 1200 is zo'n 40 KB. Op de grootte kun je het dus niet
-          // zien; je moet in de beeldpunten kijken.
-          if (eersteTrap && canvasIsLeeg(ctx, width, height)) { reject(new Error("leeg canvas")); return; }
+          // Het schalen, het witte vlak eronder en de Safari-controle staan in
+          // tekenGeschaald, zodat de opslagverkleiner hieronder precies
+          // dezelfde stap doet (werkafspraak 16).
+          let canvas;
+          try { canvas = tekenGeschaald(img, maxDim, eersteTrap); }
+          catch (e) { reject(e); return; }
           eersteTrap = false;
 
           const base64 = canvas.toDataURL("image/jpeg", quality).split(",")[1] || "";
@@ -2246,32 +2333,173 @@ async function saveKey(key, value) {
 /*  Kleine UI-onderdelen                                             */
 /* ---------------------------------------------------------------- */
 
-function TileThumb({ recipe, size = "normal" }) {
-  const h = size === "large" ? 180 : size === "rij" ? 44 : 96;
-  const rond = size === "rij" ? "50%" : 12;
-  if (recipe.photoUrl) {
-    return (
-      <div style={{ height: h, width: size === "rij" ? h : "auto", borderRadius: rond, overflow: "hidden", position: "relative", flexShrink: 0 }}>
-        <img src={recipe.photoUrl} alt={recipe.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-      </div>
-    );
-  }
+function TileThumb({ recipe, size = "normal", onFoto = null }) {
+  // "kop" is de schijf naast een recepttitel, "rij" die in de lijst.
+  const h = size === "large" ? 150 : size === "kop" ? 56 : size === "rij" ? 44 : 96;
+  const rondeSchijf = size === "rij" || size === "kop";
+  const rond = rondeSchijf ? "50%" : 12;
+  // Het adres van een eigen foto is tijdelijk en verloopt na acht uur. Blijft
+  // de app langer open, dan laadt het plaatje niet meer. Dat mag geen gat in
+  // het scherm worden: dan valt hij terug op de emoji, net als een recept dat
+  // nooit een foto had.
+  const [mislukt, setMislukt] = useState(false);
+  useEffect(() => { setMislukt(false); }, [recipe.photoUrl]);
+
+  const toonFoto = recipe.photoUrl && !mislukt;
+
+  const binnenkant = toonFoto ? (
+    <img
+      src={recipe.photoUrl}
+      alt={recipe.name}
+      onError={() => setMislukt(true)}
+      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+    />
+  ) : (
+    <span style={{ fontSize: size === "large" ? 56 : size === "kop" ? 26 : size === "rij" ? 21 : 34, lineHeight: 1 }}>
+      {recipe.emoji || "\u{1F37D}\uFE0F"}
+    </span>
+  );
+
+  const vlak = {
+    height: h,
+    width: rondeSchijf ? h : "auto",
+    flexShrink: 0,
+    borderRadius: rond,
+    overflow: "hidden",
+    position: "relative",
+    background: toonFoto ? "transparent" : tegelToon(recipe.name),
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  };
+
+  // Zonder onFoto blijft dit precies wat het was: een plaatje, geen knop.
+  if (!onFoto) return <div style={vlak}>{binnenkant}</div>;
+
   return (
-    <div
+    <button
+      type="button"
+      onClick={onFoto}
+      aria-label={toonFoto ? `Foto van ${recipe.name} vervangen` : `Foto toevoegen bij ${recipe.name}`}
+      title={toonFoto ? "Foto vervangen" : "Foto toevoegen"}
+      style={{ ...vlak, border: "none", padding: 0, cursor: "pointer", overflow: "visible", fontFamily: FONT_BODY }}
+    >
+      <span style={{ position: "absolute", inset: 0, borderRadius: rond, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {binnenkant}
+      </span>
+      {!toonFoto && (
+        <span
+          style={{
+            position: "absolute", right: -3, bottom: -3, width: 23, height: 23, borderRadius: "50%",
+            // C.blue en niet C.blueBtn: de knopvulling is in het donkere thema
+            // expres donker, en dan staat dit vlaggetje op 1,95:1 tegen het
+            // papier eromheen — precies de fout die in v86 bij de keuzecirkel
+            // zat. C.blue draait wél met het thema mee.
+            background: C.blue, border: `2.5px solid ${C.paper}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <Camera size={11} color={leesbareInkt(C.blue)} strokeWidth={2.4} />
+        </span>
+      )}
+    </button>
+  );
+}
+
+// Het blad dat opengaat als je op de schijf tikt. Drie manieren om aan een
+// foto te komen, en als er al een is ook de weg terug.
+//
+// Twee aparte bestandsvelden: met capture="environment" opent een telefoon
+// meteen de camera, zonder opent hij de fotobibliotheek. Eén veld dat beide
+// zou moeten doen bestaat niet.
+function FotoBronBlad({ recipe, heeftFoto, bezig, onBestand, onAdres, onWeg, onClose }) {
+  const cameraRef = React.useRef(null);
+  const galerijRef = React.useRef(null);
+  const [adresOpen, setAdresOpen] = useState(false);
+  const [adres, setAdres] = useState("");
+
+  const kies = (e) => {
+    const file = e.target.files && e.target.files[0];
+    // Leegmaken, anders kun je twee keer achter elkaar dezelfde foto niet kiezen.
+    e.target.value = "";
+    if (file) onBestand(file);
+  };
+
+  const regel = (icoon, kop, onder, actie) => (
+    <button
+      type="button"
+      onClick={actie}
+      disabled={bezig}
       style={{
-        height: h,
-        width: size === "rij" ? h : "auto",
-        flexShrink: 0,
-        borderRadius: rond,
-        background: tegelToon(recipe.name),
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: size === "large" ? 56 : size === "rij" ? 21 : 34,
+        display: "flex", alignItems: "center", gap: 11, width: "100%", textAlign: "left",
+        padding: "12px 12px", minHeight: 50, borderRadius: 12, marginBottom: 8,
+        background: C.cardBg, border: `1px solid ${C.ceramicDark}`,
+        cursor: bezig ? "default" : "pointer", opacity: bezig ? 0.55 : 1, fontFamily: FONT_BODY,
       }}
     >
-      {recipe.emoji || "\u{1F37D}\uFE0F"}
-    </div>
+      {icoon}
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 13.5, fontWeight: 600, color: C.ink }}>{kop}</span>
+        <span style={{ display: "block", fontSize: 11.5, color: C.inkSoft, marginTop: 1 }}>{onder}</span>
+      </span>
+    </button>
+  );
+
+  return (
+    <Modal title={heeftFoto ? "Foto vervangen" : "Foto toevoegen"} onClose={bezig ? () => {} : onClose}>
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={kies} style={{ display: "none" }} />
+      <input ref={galerijRef} type="file" accept="image/*" onChange={kies} style={{ display: "none" }} />
+
+      <p style={{ fontSize: 12.5, color: C.inkSoft, margin: "0 0 13px", lineHeight: 1.5 }}>
+        Komt op je receptpagina en overal waar {recipe.name} in je kookboek staat.
+      </p>
+
+      {bezig ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "16px 2px", color: C.ink, fontSize: 13.5 }}>
+          <PollepelLoader size={20} inline delay={0} />
+          Foto verkleinen en opsturen…
+        </div>
+      ) : (
+        <>
+          {regel(<Camera size={19} color={C.blue} strokeWidth={1.9} />, "Foto maken", "Opent de camera",
+            () => cameraRef.current && cameraRef.current.click())}
+          {regel(<ImagePlus size={19} color={C.blue} strokeWidth={1.9} />, "Kiezen uit je foto's", "Uit je bibliotheek",
+            () => galerijRef.current && galerijRef.current.click())}
+          {!adresOpen
+            ? regel(<Link2 size={19} color={C.blue} strokeWidth={1.9} />, "Webadres plakken", "Van een receptensite",
+                () => setAdresOpen(true))
+            : (
+              <div style={{ padding: "11px 12px", borderRadius: 12, marginBottom: 8, background: C.cardBg, border: `1px solid ${C.ceramicDark}` }}>
+                <label style={{ display: "block", fontSize: 11.5, color: C.inkSoft, marginBottom: 5 }}>Webadres van de foto</label>
+                <input
+                  autoComplete="off"
+                  autoFocus
+                  value={adres}
+                  onChange={(e) => setAdres(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && adres.trim()) onAdres(adres.trim()); }}
+                  placeholder="https://…"
+                  style={{ ...inputStyle, fontSize: 13 }}
+                />
+                <div style={{ display: "flex", gap: 8, marginTop: 9 }}>
+                  <PrimaryButton compact disabled={!adres.trim()} onClick={() => onAdres(adres.trim())}>
+                    <Check size={15} /> Gebruiken
+                  </PrimaryButton>
+                  <GhostButton onClick={() => { setAdresOpen(false); setAdres(""); }}>Terug</GhostButton>
+                </div>
+                <p style={{ fontSize: 11, color: C.inkSoft, margin: "9px 0 0", lineHeight: 1.45 }}>
+                  Een foto van een andere site blijft daar staan. Haalt die site hem weg, dan is hij hier ook weg.
+                </p>
+              </div>
+            )}
+
+          {heeftFoto && onWeg && (
+            <div style={{ marginTop: 6, paddingTop: 12, borderTop: `1px solid ${C.ceramicDark}` }}>
+              <GhostButton full danger onClick={onWeg}><Trash2 size={14} /> Foto weghalen</GhostButton>
+            </div>
+          )}
+        </>
+      )}
+    </Modal>
   );
 }
 
@@ -2344,8 +2572,8 @@ function PrimaryButton({ children, onClick, tone = "blue", disabled, full, compa
       onClick={onClick}
       disabled={disabled}
       style={{
-        background: disabled ? "#B9B6AC" : bg,
-        color: disabled ? "#fff" : tekstkleur,
+        background: disabled ? C.offBtn : bg,
+        color: disabled ? leesbareInkt(C.offBtn) : tekstkleur,
         border: "none",
         borderRadius: 12,
         padding: compact ? "9px 14px" : "10px 16px",
@@ -2445,6 +2673,18 @@ function Field({ label, children }) {
 // De kleuren staan als getter, niet als vaste waarde. Een gewoon object zou de
 // lichte kleuren vastleggen op het moment dat dit bestand geladen wordt, en dan
 // blijven alle 43 invoervelden wit — ook in donkere modus.
+// Een knop die als een zin leest.
+//
+// De kleur staat achter een getter, net als bij inputStyle hieronder. Dit
+// object wordt één keer gemaakt bij het laden van de module; een gewone
+// `color: C.blue` zou daarmee voor altijd de lichte waarde vasthouden, ook
+// nadat applyTheme het donkere thema erin heeft gezet.
+const linkKnop = {
+  background: "none", border: "none", padding: 0, cursor: "pointer",
+  fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600,
+  get color() { return C.blue; },
+};
+
 const inputStyle = {
   width: "100%",
   boxSizing: "border-box",
@@ -3556,7 +3796,7 @@ function ControleModal({ bevindingen, onHerstel, onClose }) {
   );
 }
 
-function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, inventory = [], onOpen, onVerrasMe, onNaarWeekmenu, onKliekjeVraag }) {
+function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, inventory = [], onOpen, onVerrasMe, onNaarWeekmenu, onKliekjeVraag, onFoto = null }) {
   const basis = {
     display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left",
     borderRadius: 12, padding: "12px 14px", marginBottom: 12, cursor: "pointer",
@@ -3630,6 +3870,18 @@ function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, invento
           </span>
           {cookNaam && <span style={{ fontSize: 11.5, color: C.inkSoft }}>{cookNaam} kookte</span>}
         </div>
+        {/* Eén vraag tegelijk. De kliekjesvraag heeft haast — eten bederft —
+            dus die gaat voor; het fotoduwtje wacht tot die beantwoord is en
+            verdwijnt zodra er een foto staat. Wie hem negeert, krijgt hem de
+            volgende keer dat dit gerecht op tafel staat gewoon opnieuw. */}
+        {!kliekjeNogVragen && onFoto && !recipe.photoUrl && !recipe.photoPath && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 13, paddingTop: 12, borderTop: `1px solid ${C.ceramicDark}` }}>
+            <span style={{ fontSize: 13, color: C.ink }}>Een foto van hoe het werd?</span>
+            <button onClick={onFoto} style={{ background: "none", border: "none", padding: "6px 0", cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: C.blue }}>
+              Foto maken &rarr;
+            </button>
+          </div>
+        )}
         {kliekjeNogVragen && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 13, paddingTop: 12, borderTop: `1px solid ${C.ceramicDark}` }}>
             <span style={{ fontSize: 13, color: C.ink }}>Is er iets over?</span>
@@ -3704,10 +3956,13 @@ function WelcomeTour({ onFinish }) {
   const [step, setStep] = useState(0);
 
   const LOOP = [
-    { emoji: "📦", label: "Voorraad", color: C.sage, text: "Je legt vast wat er in huis hoort te zijn." },
-    { emoji: "🗓️", label: "Weekmenu", color: C.blue, text: "Je plant welke avonden je wat eet." },
-    { emoji: "🛒", label: "Boodschappen", color: C.mustard, text: "De lijst vult zichzelf met wat je mist." },
-    { emoji: "🔥", label: "Koken", color: C.brick, text: "Na het koken gaat het van je voorraad af." },
+    // color is de vulling van de cirkel, ink de labeltekst eronder. Voor salie,
+    // blauw en steenrood is dat dezelfde kleur; mosterd is als tekst te licht
+    // (2,16:1 op een kaart) en gebruikt daarom de diepe variant.
+    { emoji: "📦", label: "Voorraad", color: C.sage, ink: C.sage, text: "Je legt vast wat er in huis hoort te zijn." },
+    { emoji: "🗓️", label: "Weekmenu", color: C.blue, ink: C.blue, text: "Je plant welke avonden je wat eet." },
+    { emoji: "🛒", label: "Boodschappen", color: C.mustard, ink: C.mustardDeep, text: "De lijst vult zichzelf met wat je mist." },
+    { emoji: "🔥", label: "Koken", color: C.brick, ink: C.brick, text: "Na het koken gaat het van je voorraad af." },
   ];
 
   const steps = [
@@ -3726,7 +3981,7 @@ function WelcomeTour({ onFinish }) {
                   display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0,
                 }}>{s.emoji}</div>
                 <div style={{ paddingTop: 2 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: s.color }}>{s.label}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: s.ink }}>{s.label}</div>
                   <div style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.45 }}>{s.text}</div>
                 </div>
                 {i < LOOP.length - 1 && null}
@@ -5002,6 +5257,11 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
 
   const [dietOnly, setDietOnly] = useState(false);
 
+  // Welk recept heeft het fotoblad open, en is er iets onderweg? Staat hier
+  // omdat de fotofuncties verderop deze staat gebruiken (werkafspraak 10).
+  const [fotoVoorRecept, setFotoVoorRecept] = useState(null);
+  const [fotoBezig, setFotoBezig] = useState(false);
+
   const activeDietTags = useMemo(() => {
     const all = new Set();
     (preferences.diets || []).forEach((d) => d.tags.forEach((t) => all.add(t)));
@@ -5134,14 +5394,104 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       : `${recipe.name} is niet langer gedeeld.`);
   };
 
+  // ---------- Receptfoto's ----------
+  // Het bakje bij Supabase staat dicht: wat in de database staat is een pad,
+  // en de browser krijgt daar een tijdelijk adres bij. Daarom twee velden op
+  // een recept — photoPath om te bewaren, photoUrl om te tonen.
+  const zetFotoOpRecept = (id, pad, adres) => {
+    const next = recipes.map((r) => (r.id === id ? { ...r, photoPath: pad || "", photoUrl: adres || "" } : r));
+    if (hasDataAPI) setRecipes(next); else persist("recipes", next, setRecipes);
+  };
+
+  const fotoBestandOpslaan = async (id, file) => {
+    const recipe = recipes.find((r) => r.id === id);
+    if (!recipe) return;
+    if (!hasDataAPI) {
+      showToast("Een foto uit je telefoon kan alleen als de app verbonden is. Een webadres plakken kan wel.");
+      return;
+    }
+    setFotoBezig(true);
+    try {
+      const blob = await fotoVoorOpslag(file);
+      const pad = await window.dataAPI.photos.upload(id, blob);
+      const adres = await window.dataAPI.photos.sign(pad);
+      await window.dataAPI.recipes.patch(id, { photoPath: pad });
+      zetFotoOpRecept(id, pad, adres);
+      setFotoVoorRecept(null);
+      showToast(`Foto toegevoegd bij ${recipe.name}.`);
+    } catch (e) {
+      console.error("Foto opslaan mislukte:", e);
+      // Niet stil falen (werkafspraak 9), en zeggen wát er mis is.
+      const m = String((e && e.message) || "");
+      showToast(
+        m.includes("leeg canvas") ? "Deze foto kon niet worden gelezen. Probeer er een opnieuw te maken."
+        : m.includes("ongeldig") || m.includes("lezen mislukt") ? "Dit bestand is geen afbeelding die de app kan openen."
+        : "De foto kon niet worden opgeslagen. Probeer het zo nog eens."
+      );
+    } finally {
+      setFotoBezig(false);
+    }
+  };
+
+  const fotoAdresOpslaan = async (id, adres) => {
+    const recipe = recipes.find((r) => r.id === id);
+    if (!recipe) return;
+    if (!/^https?:\/\//i.test(adres)) {
+      showToast("Een webadres begint met http:// of https://.");
+      return;
+    }
+    setFotoBezig(true);
+    try {
+      // Een extern adres is zelf de bewaarde waarde: er staat niets in ons bakje.
+      if (hasDataAPI) await window.dataAPI.recipes.patch(id, { photoPath: adres });
+      zetFotoOpRecept(id, adres, adres);
+      setFotoVoorRecept(null);
+      showToast(`Foto toegevoegd bij ${recipe.name}.`);
+    } catch (e) {
+      console.error("Fotoadres opslaan mislukte:", e);
+      showToast("Het adres kon niet worden opgeslagen. Probeer het zo nog eens.");
+    } finally {
+      setFotoBezig(false);
+    }
+  };
+
+  const fotoWeghalen = async (id) => {
+    const recipe = recipes.find((r) => r.id === id);
+    if (!recipe) return;
+    const eigenBestand = recipe.photoPath && !/^https?:\/\//i.test(recipe.photoPath);
+    setFotoBezig(true);
+    try {
+      if (hasDataAPI) {
+        if (eigenBestand) await window.dataAPI.photos.remove(id);
+        await window.dataAPI.recipes.patch(id, { photoPath: null });
+      }
+      zetFotoOpRecept(id, "", "");
+      setFotoVoorRecept(null);
+      showToast(`Foto weggehaald bij ${recipe.name}.`);
+    } catch (e) {
+      console.error("Foto weghalen mislukte:", e);
+      showToast("De foto kon niet worden weggehaald. Probeer het zo nog eens.");
+    } finally {
+      setFotoBezig(false);
+    }
+  };
+
   const duplicateToMyBook = async (id) => {
     const recipe = recipes.find((r) => r.id === id) || communityRecipes.find((r) => r.id === id);
     if (!recipe) return;
+    // De foto gaat niet mee bij een kopie uit de community. Het pad wijst naar
+    // het bakje van het andere huishouden, en dat blijft alleen leesbaar
+    // zolang zíj het recept gedeeld houden — halen ze het weg, dan staat er in
+    // jouw kookboek een recept met een foto die het niet meer doet. Een foto
+    // naar je eigen bakje overhalen zou betekenen dat je hem houdt ook nadat
+    // zij hem hebben ingetrokken, en dat is niet aan ons om te beslissen.
+    const eigenFoto = recipes.some((r) => r.id === id);
+    const kopie = eigenFoto ? recipe : { ...recipe, photoPath: "", photoUrl: "" };
     if (hasDataAPI) {
-      const newId = await window.dataAPI.recipes.create({ ...recipe, community: false, favorite: false });
-      setRecipes([...recipes, { ...recipe, id: newId, community: false, favorite: false }]);
+      const newId = await window.dataAPI.recipes.create({ ...kopie, community: false, favorite: false });
+      setRecipes([...recipes, { ...kopie, id: newId, community: false, favorite: false }]);
     } else {
-      const copy = { ...recipe, id: uid(), community: false, favorite: false };
+      const copy = { ...kopie, id: uid(), community: false, favorite: false };
       persist("recipes", [...recipes, copy], setRecipes);
     }
     showToast(`${recipe.name} toegevoegd aan jouw kookboek.`);
@@ -6908,7 +7258,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           role="alert"
           style={{
             position: "fixed", left: 12, right: 12, bottom: 12, zIndex: 180,
-            maxWidth: 460, margin: "0 auto", background: C.brick, color: "#fff",
+            maxWidth: 460, margin: "0 auto", background: C.brick, color: leesbareInkt(C.brick),
             borderRadius: 12, padding: "11px 13px", display: "flex", alignItems: "center", gap: 10,
             boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
           }}
@@ -6930,7 +7280,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           <button
             onClick={() => setSaveError(null)}
             aria-label="Melding sluiten"
-            style={{ background: "none", border: "none", color: "#fff", opacity: 0.8, cursor: "pointer", padding: 0, flexShrink: 0 }}
+            style={{ background: "none", border: "none", color: "inherit", opacity: 0.8, cursor: "pointer", padding: 0, flexShrink: 0 }}
           >
             <X size={16} />
           </button>
@@ -6978,7 +7328,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
       </div>
 
       {isOffline && (
-        <div style={{ background: C.brick, color: "#fff", textAlign: "center", padding: "6px 10px", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+        <div style={{ background: C.brick, color: leesbareInkt(C.brick), textAlign: "center", padding: "6px 10px", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
           <WifiOff size={13} /> Geen internetverbinding — wijzigingen worden pas opgeslagen zodra je weer online bent.
         </div>
       )}
@@ -7005,6 +7355,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             alGekookt={vanavondAlGekookt}
             inventory={inventory}
             onKliekjeVraag={() => setKliekjeVraagDag(dateKey(new Date()))}
+            onFoto={vanavondRecept && recipes.some((r) => r.id === vanavondRecept.id) ? () => setFotoVoorRecept(vanavondRecept.id) : null}
             onOpen={(id) => openRecipeVanuit(id, { dag: dateKey(new Date()), dubbel: (weekmenu[dateKey(new Date())] || {}).doublePortion })}
             onVerrasMe={verrasMeVanavond}
             onNaarWeekmenu={() => setTab("weekmenu")}
@@ -7051,6 +7402,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             onToggleCommunity={() => toggleCommunity(openRecipe.id)}
             onEdit={() => setEditingRecipe(openRecipe)}
             onDelete={() => deleteRecipe(openRecipe.id)}
+            onFoto={() => setFotoVoorRecept(openRecipe.id)}
             onCook={(scale, overrides) => cookRecipe(openRecipe, scale, overrides, cookDayContext)}
             dagAlGekooktOp={cookDayContext ? (leesDag(weekmenu, cookDayContext) || {}).cookedAt || null : null}
             onUndoCook={cookDayContext ? () => undoCook(cookDayContext) : null}
@@ -7239,6 +7591,22 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
         />
       )}
 
+      {fotoVoorRecept && (() => {
+        const fr = recipes.find((r) => r.id === fotoVoorRecept);
+        if (!fr) return null;
+        return (
+          <FotoBronBlad
+            recipe={fr}
+            heeftFoto={!!fr.photoUrl || !!fr.photoPath}
+            bezig={fotoBezig}
+            onBestand={(file) => fotoBestandOpslaan(fr.id, file)}
+            onAdres={(adres) => fotoAdresOpslaan(fr.id, adres)}
+            onWeg={() => fotoWeghalen(fr.id)}
+            onClose={() => setFotoVoorRecept(null)}
+          />
+        );
+      })()}
+
       {planRecept && (
         <DagKiezerModal
           recept={planRecept}
@@ -7343,6 +7711,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
       {editingRecipe !== null && (
         <RecipeForm
           initial={editingRecipe}
+          onFoto={editingRecipe.id ? () => { setEditingRecipe(null); setFotoVoorRecept(editingRecipe.id); } : null}
           inventoryNames={[...new Set([...inventory.map((i) => i.name), ...COMMON_GROCERY_ITEMS])]}
           inventoryItems={inventory}
           onImport={() => { setEditingRecipe(null); setImportError(""); setImportOpen(true); }}
@@ -7418,7 +7787,8 @@ function TabButton({ icon, label, active, onClick, badge, badgeTone = "warn" }) 
         {badge && (
           <span style={{
             position: "absolute", top: -6, right: -10, background: badgeTone === "warn" ? C.brick : C.mustard,
-            color: "#fff", fontSize: 11, fontFamily: FONT_MONO, borderRadius: 20, padding: "1px 5px", lineHeight: "13px",
+            color: leesbareInkt(badgeTone === "warn" ? C.brick : C.mustard),
+            fontSize: 11, fontFamily: FONT_MONO, borderRadius: 20, padding: "1px 5px", lineHeight: "13px",
           }}>{badge}</span>
         )}
       </div>
@@ -7483,7 +7853,7 @@ function SeasonalAndSurpriseBar({ recipes, inventory, onOpen, showToast }) {
         onClick={surpriseMe}
         style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-          background: `linear-gradient(135deg, ${C.mustard}, ${C.mustardDeep})`, color: "#fff", border: "none",
+          background: C.mustard, color: leesbareInkt(C.mustard), border: "none",
           borderRadius: 12, padding: "11px", fontWeight: 700, fontSize: 14, cursor: "pointer", marginBottom: 10,
         }}
       >
@@ -7718,7 +8088,7 @@ function KookboekView({ recipes, allRecipes, cookLog, query, setQuery, favOnly, 
                   aria-label={r.favorite ? "Haal uit favorieten" : "Zet bij favorieten"}
                   style={{ background: "none", border: "none", cursor: "pointer", flexShrink: 0, padding: 6, margin: -6 }}
                 >
-                  <Star size={17} fill={r.favorite ? C.mustard : "none"} color={r.favorite ? C.mustard : C.ceramicDark} />
+                  <Star size={17} fill={r.favorite ? C.mustard : "none"} color={r.favorite ? C.mustard : C.inkSoft} />
                 </button>
               ) : (
                 <button
@@ -7736,7 +8106,7 @@ function KookboekView({ recipes, allRecipes, cookLog, query, setQuery, favOnly, 
 
       {recipes.length === 0 && bookMode === "community" && (
         <div style={{ textAlign: "center", padding: "40px 10px", color: C.inkSoft, fontSize: 13 }}>
-          <Users size={26} color={C.ceramicDark} style={{ marginBottom: 8 }} />
+          <Users size={26} color={C.inkSoft} style={{ marginBottom: 8 }} />
           <p>Nog geen gedeelde recepten. Open een recept in je eigen kookboek en tik op het community-icoon om als eerste iets te delen.</p>
         </div>
       )}
@@ -7793,7 +8163,7 @@ function CookHistoryList({ cookLog, onOpen }) {
   if (!cookLog.length) {
     return (
       <div style={{ textAlign: "center", padding: "40px 10px", color: C.inkSoft, fontSize: 13 }}>
-        <Clock size={26} color={C.ceramicDark} style={{ marginBottom: 8 }} />
+        <Clock size={26} color={C.inkSoft} style={{ marginBottom: 8 }} />
         <p>Nog geen kookgeschiedenis. Zodra je "Ik heb dit gekookt" gebruikt, verschijnt het hier.</p>
       </div>
     );
@@ -8101,10 +8471,10 @@ function DagKiezerModal({ recept, weekmenu, recipes, periods, startPeriode = 0, 
               </span>
               <span style={{
                 width: 19, height: 19, borderRadius: "50%", flexShrink: 0,
-                border: `1.5px solid ${aan ? C.blueBtn : C.ceramicDark}`, background: aan ? C.blueBtn : "transparent",
+                border: `1.5px solid ${aan ? C.blue : C.inkSoft}`, background: aan ? C.blueBtn : "transparent",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                {aan && <Check size={11} color="#fff" strokeWidth={3.5} />}
+                {aan && <Check size={11} color={C.blueBtnInk} strokeWidth={3.5} />}
               </span>
             </button>
           );
@@ -8244,7 +8614,7 @@ function KliekjeVraag({ gekooktOp, toonBakjesTip, nummertBakjes = false, bakjesV
   );
 }
 
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onPlanOpDag = null, onGeenKliekje = null, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook, onKliekjeVraag, autoStartKoken = false, onAutoStartGedaan }) {
+function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onPlanOpDag = null, onGeenKliekje = null, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook, onKliekjeVraag, autoStartKoken = false, onAutoStartGedaan, onFoto = null }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [usedAmounts, setUsedAmounts] = useState({}); // werkelijk gebruikte hoeveelheden bij tekort
   const [eatPortions, setEatPortions] = useState(1);
@@ -8486,32 +8856,97 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         </div>
       )}
 
-      <TileThumb recipe={recipe} size="large" />
-
-
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: 12 }}>
-        <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700, color: C.ink, margin: 0 }}>{recipe.name}</h1>
-        {isMine && (
-        <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: 8 }}>
-          <button aria-label="Recept delen met andere huishoudens" onClick={onToggleCommunity} title={recipe.community ? "Niet meer delen" : "Delen met community"} style={{ padding: 8, margin: -8, background: "none", border: "none", cursor: "pointer" }}>
-            <Users size={20} fill={recipe.community ? C.blue : "none"} color={recipe.community ? C.blue : C.ceramicDark} />
-          </button>
-          <button aria-label="Markeren als favoriet" onClick={onToggleFav} style={{ padding: 8, margin: -8, background: "none", border: "none", cursor: "pointer" }}>
-            <Star size={22} fill={recipe.favorite ? C.mustard : "none"} color={recipe.favorite ? C.mustard : C.ceramicDark} />
-          </button>
+      {/* De kop van een recept.
+          Er stond altijd een blok van 180 pixels bovenaan, ook als er geen foto
+          was — dan vulde een algemene bordjes-emoji een kwart van het scherm en
+          begon de titel pas onder de vouw. Nu bepaalt de inhoud de maat: een
+          echte foto krijgt ruimte, een emoji krijgt een schijf naast de titel,
+          precies zoals in de receptenlijst. */}
+      {recipe.photoUrl ? (
+        <>
+          <div style={{ position: "relative" }}>
+            <TileThumb recipe={recipe} size="large" />
+            {isMine && onFoto && (
+              <div style={{ position: "absolute", right: 9, bottom: 9, display: "flex", gap: 7 }}>
+                <button
+                  onClick={onFoto}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 5, border: "none",
+                    // Vast lichtbeige met donkere inkt zou in het donkere thema
+                    // een licht plaatje met lichte letters worden. Het token
+                    // draait mee; dekkend in plaats van doorschijnend, want op
+                    // een foto weet je niet wat eronder ligt.
+                    background: C.cardBg, borderRadius: 20, padding: "7px 12px",
+                    minHeight: 32, cursor: "pointer", fontFamily: FONT_BODY,
+                    fontSize: 11.5, fontWeight: 600, color: C.ink,
+                  }}
+                >
+                  <Camera size={12} color={C.ink} /> Vervangen
+                </button>
+              </div>
+            )}
+          </div>
+          <h1 style={{ ...TYPE.stuk, fontSize: 25, color: C.ink, margin: "13px 0 0" }}>{recipe.name}</h1>
+        </>
+      ) : (
+        <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+          {/* De schijf is zelf de fotoknop. Een losse knop erbij zou de derde
+              worden naast Favoriet en Delen, en dan is elke knop nog maar een
+              goede honderd pixels breed op een telefoon. */}
+          <TileThumb recipe={recipe} size="kop" onFoto={isMine && onFoto ? onFoto : null} />
+          <h1 style={{ ...TYPE.stuk, fontSize: 25, color: C.ink, margin: 0, flex: 1, minWidth: 0 }}>{recipe.name}</h1>
         </div>
-        )}
-      </div>
+      )}
 
-      <div style={{ display: "flex", gap: 10, marginTop: 6, marginBottom: 14, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 8, marginTop: 9, flexWrap: "wrap" }}>
         <Pill><Clock size={11} /> {recipe.cookTime} min</Pill>
-        {recipe.community && <Pill tone="auto"><Users size={10} /> Gedeeld met community</Pill>}
         {readiness.relevant > 0 && (
           readiness.complete
             ? <Pill tone="ok"><Check size={10} /> Alles in huis</Pill>
             : <Pill tone="warn">Nog {readiness.missing.length} nodig</Pill>
         )}
       </div>
+
+      {/* Favoriet en delen waren twee omtrekjes rechtsboven in ceramicDark op
+          papier — een contrast van ongeveer 1,1 op 1, dus in de praktijk
+          onzichtbaar. En delen met de community kon je alleen ontdekken als je
+          het al een keer had gedaan. Nu zijn het knoppen met een woord erbij,
+          groot genoeg om te raken, en ze laten hun stand zien. */}
+      {isMine && (
+        <div style={{ display: "flex", gap: 8, marginTop: 15, marginBottom: 16, paddingTop: 14, borderTop: `1px solid ${C.ceramicDark}` }}>
+          <button
+            onClick={onToggleFav}
+            aria-pressed={!!recipe.favorite}
+            style={{
+              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+              minHeight: 44, borderRadius: 12, cursor: "pointer", fontFamily: FONT_BODY,
+              fontSize: 13.5, fontWeight: 600,
+              background: recipe.favorite ? C.noteBg : "transparent",
+              border: `1px solid ${recipe.favorite ? C.mustard : C.ceramicDark}`,
+              color: recipe.favorite ? C.mustardDeep : C.inkSoft,
+            }}
+          >
+            <Star size={16} fill={recipe.favorite ? C.mustard : "none"} color={recipe.favorite ? C.mustard : C.inkSoft} />
+            Favoriet
+          </button>
+          <button
+            onClick={onToggleCommunity}
+            aria-pressed={!!recipe.community}
+            title={recipe.community ? "Niet meer delen met andere huishoudens" : "Delen met andere huishoudens"}
+            style={{
+              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+              minHeight: 44, borderRadius: 12, cursor: "pointer", fontFamily: FONT_BODY,
+              fontSize: 13.5, fontWeight: 600,
+              background: recipe.community ? C.ceramic : "transparent",
+              border: `1px solid ${recipe.community ? C.blue : C.ceramicDark}`,
+              color: recipe.community ? C.blue : C.inkSoft,
+            }}
+          >
+            <Users size={16} color={recipe.community ? C.blue : C.inkSoft} strokeWidth={recipe.community ? 2.2 : 1.8} />
+            {recipe.community ? "Gedeeld" : "Delen"}
+          </button>
+        </div>
+      )}
 
       {readiness.missing.length > 0 && (
         <div style={{ background: C.warnBg, border: `1px solid ${C.mustardDeep}`, borderRadius: 12, padding: "10px 12px", marginBottom: 14 }}>
@@ -8550,7 +8985,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
               onClick={() => onAddMissingToShopping(scale)}
               style={{
                 width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                background: C.mustard, color: "#2A1F06", border: "none", borderRadius: 12,
+                background: C.mustard, color: leesbareInkt(C.mustard), border: "none", borderRadius: 12,
                 padding: "9px 12px", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: FONT_BODY,
               }}
             >
@@ -8603,7 +9038,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
             const done = remaining <= 0;
             return (
               <div key={t.id} style={{
-                background: done ? C.brick : C.blueDeep, color: "#fff",
+                background: done ? C.brick : C.blueDeep, color: leesbareInkt(done ? C.brick : C.blueDeep),
                 borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between",
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
@@ -8615,7 +9050,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
                     {done ? "Klaar!" : formatTimer(remaining)}
                   </span>
                   <button onClick={() => cancelTimer(t.id)} style={{ background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 10, padding: 4, cursor: "pointer", display: "flex" }}>
-                    <X size={14} color="#fff" />
+                    <X size={14} />
                   </button>
                 </div>
               </div>
@@ -8637,8 +9072,8 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
                   title={`Start timer van ${minutes} minuten`}
                   style={{ flexShrink: 0, background: C.ceramic, border: "none", borderRadius: 10, padding: "3px 8px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, height: 22 }}
                 >
-                  <TimerIcon size={12} color={C.blueDeep} />
-                  <span style={{ fontSize: 11, color: C.blueDeep, fontFamily: FONT_MONO }}>{minutes}m</span>
+                  <TimerIcon size={12} color={C.blue} />
+                  <span style={{ fontSize: 11, color: C.blue, fontFamily: FONT_MONO }}>{minutes}m</span>
                 </button>
               )}
             </li>
@@ -8985,10 +9420,15 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
   );
 }
 
-function RecipeForm({ initial, inventoryNames, inventoryItems = [], onImport, onCancel, onSave }) {
+function RecipeForm({ initial, inventoryNames, inventoryItems = [], onImport, onCancel, onSave, onFoto = null }) {
   const [name, setName] = useState(initial.name || "");
   const [emoji, setEmoji] = useState(initial.emoji || "🍽️");
   const [emojiTouched, setEmojiTouched] = useState(Boolean(initial.id || initial.emoji));
+  // photoPath is wat bewaard wordt, photoUrl waar de browser hem haalt. Bij
+  // een eigen foto is dat een pad en een tijdelijk adres; bij een foto van een
+  // andere site zijn ze gelijk. Het formulier mag photoUrl nooit bewaren: dat
+  // adres verloopt na acht uur.
+  const [photoPath, setPhotoPath] = useState(initial.photoPath || initial.photoUrl || "");
   const [photoUrl, setPhotoUrl] = useState(initial.photoUrl || "");
   const [cookTime, setCookTime] = useState(initial.cookTime || 30);
   const [servings, setServings] = useState(initial.servings || 4);
@@ -9029,7 +9469,8 @@ function RecipeForm({ initial, inventoryNames, inventoryItems = [], onImport, on
       ...initial,
       name: name.trim(),
       emoji,
-      photoUrl: photoUrl.trim(),
+      photoPath: (photoPath || "").trim(),
+      photoUrl: (photoUrl || "").trim(),
       cookTime: Number(cookTime) || 0,
       servings: Number(servings) || 1,
       ingredients: ingredients.filter((i) => i.name.trim() && i.amount !== "").map((i) => ({ ...i, amount: Number(i.amount) })),
@@ -9067,7 +9508,35 @@ function RecipeForm({ initial, inventoryNames, inventoryItems = [], onImport, on
       <Field label="Naam"><input autoComplete="off" style={inputStyle} value={name} onChange={(e) => handleNameChange(e.target.value)} placeholder="Bijv. Groentecurry" /></Field>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ width: 70 }}><Field label="Emoji"><input autoComplete="off" style={inputStyle} value={emoji} onChange={(e) => handleEmojiChange(e.target.value)} /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Foto-URL (optioneel)"><input autoComplete="off" style={inputStyle} value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} placeholder="https://…" /></Field></div>
+        <div style={{ flex: 1 }}>
+          <Field label="Foto">
+            <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
+              <div style={{
+                width: 62, height: 62, borderRadius: 12, flexShrink: 0, overflow: "hidden",
+                background: C.paper, border: photoUrl ? `1px solid ${C.ceramicDark}` : `1.5px dashed ${C.inkSoft}`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                {photoUrl
+                  ? <img src={photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : <Camera size={21} color={C.inkSoft} strokeWidth={1.8} />}
+              </div>
+              <div style={{ fontSize: 12, color: C.inkSoft, lineHeight: 1.45, minWidth: 0 }}>
+                {!initial.id ? (
+                  // Een foto gaat in een bakje onder het recept-id, en dat
+                  // bestaat pas na het opslaan. Dat eerlijk zeggen is beter
+                  // dan een knop die niets doet (werkafspraak 9).
+                  <>Eerst opslaan, daarna kun je hier een foto toevoegen.</>
+                ) : photoUrl ? (
+                  <>Er staat een foto bij dit recept.<br />
+                    <button type="button" onClick={onFoto} style={linkKnop}>Vervangen of weghalen</button></>
+                ) : (
+                  <>Nog geen foto.<br />
+                    <button type="button" onClick={onFoto} style={linkKnop}>Toevoegen</button></>
+                )}
+              </div>
+            </div>
+          </Field>
+        </div>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}><Field label="Kooktijd (min)"><input autoComplete="off" type="number" style={inputStyle} value={cookTime} onChange={(e) => setCookTime(e.target.value)} /></Field></div>
@@ -9444,7 +9913,7 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
                   </span>
                   <button
                     onClick={() => onOpenRecipe(recipe.id, entry?.doublePortion, entry?.leftoverItemId, day.key, true)}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 4, background: C.sage, border: "none", borderRadius: 20, padding: "4px 12px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 600, fontFamily: FONT_BODY }}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 4, background: C.sage, border: "none", borderRadius: 20, padding: "4px 12px", cursor: "pointer", color: leesbareInkt(C.sage), fontSize: 12, fontWeight: 600, fontFamily: FONT_BODY }}
                   >
                     <Check size={12} /> Ja, afboeken
                   </button>
@@ -9463,7 +9932,7 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
                 const extraRecept = extra.recipeId ? findRecipe(extra.recipeId) : null;
                 return (
                   <div key={extra.id} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, paddingLeft: 56 }}>
-                    <span style={{ color: C.ceramicDark, fontSize: 13 }}>┗</span>
+                    <span style={{ color: C.inkSoft, fontSize: 13 }}>┗</span>
                     <span style={{ fontSize: 15 }}>{EXTRA_ICONEN[extra.label] || "✨"}</span>
                     <span
                       style={{ flex: 1, minWidth: 0, cursor: extraRecept ? "pointer" : "default" }}
@@ -9779,7 +10248,7 @@ function CookDislikeRow({ name, preferences, onUpdate }) {
           <div style={{ display: "flex", gap: 6 }}>
             <input style={{ ...inputStyle, flex: 1, fontSize: 13, padding: "7px 10px" }} placeholder="Bijv. paddenstoelen" value={newItem} onChange={(e) => setNewItem(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addItem()} />
             <button aria-label="Toevoegen" onClick={addItem} disabled={!newItem.trim()} style={{ background: C.blueBtn, border: "none", borderRadius: 10, padding: "0 12px", cursor: newItem.trim() ? "pointer" : "default", opacity: newItem.trim() ? 1 : 0.5, display: "flex", alignItems: "center" }}>
-              <Plus size={14} color="#fff" />
+              <Plus size={14} color={C.blueBtnInk} />
             </button>
           </div>
         </div>
@@ -9892,7 +10361,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
               <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: "10px 12px", marginTop: 8 }}>
                 <span style={{ fontFamily: FONT_MONO, fontSize: 16, letterSpacing: 1, flex: 1 }}>{household.invite_code}</span>
                 <button aria-label="Code kopiëren" onClick={copyCode} style={{ background: C.ceramic, border: "none", borderRadius: 10, padding: 8, cursor: "pointer", display: "flex" }}>
-                  <Copy size={15} color={C.blueDeep} />
+                  <Copy size={15} color={C.blue} />
                 </button>
               </div>
             </details>
@@ -9906,7 +10375,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
           <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}`, marginBottom: 16 }}>
             {members.map((m, idx) => (
               <div key={m.userId || idx} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderBottom: idx < members.length - 1 ? `1px solid ${C.ceramic}` : "none" }}>
-                <div style={{ width: 26, height: 26, borderRadius: "50%", background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: C.blueDeep, flexShrink: 0 }}>
+                <div style={{ width: 26, height: 26, borderRadius: "50%", background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: C.blue, flexShrink: 0 }}>
                   {(m.displayName || m.email || "?").charAt(0).toUpperCase()}
                 </div>
                 <span style={{ fontSize: 13, color: C.ink, flex: 1 }}>{m.displayName || m.email}</span>
@@ -9945,7 +10414,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
         <div style={{ padding: "12px", borderBottom: `1px solid ${C.ceramic}` }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: C.ink }}>
-              <Moon size={15} color={C.blueDeep} /> Donkere modus
+              <Moon size={15} color={C.blue} /> Donkere modus
             </span>
             <button
               onClick={onToggleDarkMode}
@@ -10094,14 +10563,14 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
           onClick={onOpenMagnet}
           style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 12px", background: "none", border: "none", borderBottom: `1px solid ${C.ceramic}`, cursor: "pointer", textAlign: "left" }}
         >
-          <Printer size={16} color={C.blueDeep} />
+          <Printer size={16} color={C.blue} />
           <span style={{ fontSize: 14, color: C.ink }}>Koelkastmagneet printen</span>
         </button>
         <button
           onClick={onOpenTabletMode}
           style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 12px", background: "none", border: "none", borderBottom: `1px solid ${C.ceramic}`, cursor: "pointer", textAlign: "left" }}
         >
-          <ScanLine size={16} color={C.blueDeep} />
+          <ScanLine size={16} color={C.blue} />
           <span style={{ display: "flex", flexDirection: "column" }}>
             <span style={{ fontSize: 14, color: C.ink }}>Scanstation starten</span>
             <span style={{ fontSize: 11, color: C.inkSoft }}>Zet een tablet in de keuken en scan barcodes om je voorraad bij te werken</span>
@@ -10111,7 +10580,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
           onClick={onOpenControle}
           style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 12px", background: "none", border: "none", borderBottom: `1px solid ${C.ceramic}`, cursor: "pointer", textAlign: "left" }}
         >
-          <CheckCircle2 size={16} color={C.blueDeep} />
+          <CheckCircle2 size={16} color={C.blue} />
           <span style={{ display: "flex", flexDirection: "column" }}>
             <span style={{ fontSize: 13.5, color: C.ink }}>Gegevens controleren</span>
             <span style={{ fontSize: 11, color: C.inkSoft }}>
@@ -10123,7 +10592,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
           onClick={onShowWelcome}
           style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 12px", background: "none", border: "none", borderBottom: `1px solid ${C.ceramic}`, cursor: "pointer", textAlign: "left" }}
         >
-          <Sparkles size={16} color={C.blueDeep} />
+          <Sparkles size={16} color={C.blue} />
           <span style={{ display: "flex", flexDirection: "column" }}>
             <span style={{ fontSize: 14, color: C.ink }}>Uitleg opnieuw bekijken</span>
             <span style={{ fontSize: 11, color: C.inkSoft }}>Hoe Pollepel werkt, in drie schermen</span>
@@ -10133,7 +10602,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
           onClick={onOpenLogboek}
           style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 12px", background: "none", border: "none", borderBottom: `1px solid ${C.ceramic}`, cursor: "pointer", textAlign: "left" }}
         >
-          <AlertTriangle size={16} color={C.blueDeep} />
+          <AlertTriangle size={16} color={C.blue} />
           <span style={{ display: "flex", flexDirection: "column" }}>
             <span style={{ fontSize: 14, color: C.ink }}>Foutlogboek</span>
             <span style={{ fontSize: 11, color: C.inkSoft }}>Werkt er iets niet? Deel dit, dan zie ik wat er misging</span>
@@ -10144,7 +10613,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
           onClick={onExportBackup}
           style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 12px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}
         >
-          <Download size={16} color={C.blueDeep} />
+          <Download size={16} color={C.blue} />
           <span style={{ fontSize: 14, color: C.ink }}>Backup downloaden</span>
         </button>
       </div>
@@ -10162,7 +10631,7 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
           onClick={() => setDelenOpen(true)}
           style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 12px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}
         >
-          <BarChart3 size={16} color={C.blueDeep} />
+          <BarChart3 size={16} color={C.blue} />
           <span style={{ display: "flex", flexDirection: "column", flex: 1 }}>
             <span style={{ fontSize: 14, color: C.ink }}>Geanonimiseerd meetellen</span>
             <span style={{ fontSize: 11, color: C.inkSoft }}>
@@ -10617,9 +11086,9 @@ function ShelfPhotoModal({ scanning, error, results, onScan, onToggleInclude, on
               <div key={r.tempId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderBottom: idx < results.length - 1 ? `1px solid ${C.ceramic}` : "none" }}>
                 <button
                   onClick={() => onToggleInclude(r.tempId)}
-                  style={{ width: 20, height: 20, borderRadius: 4, border: `1.5px solid ${r.include ? C.sage : C.borderTint}`, background: r.include ? C.sage : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+                  style={{ width: 20, height: 20, borderRadius: 4, border: `1.5px solid ${r.include ? C.sage : C.inkSoft}`, background: r.include ? C.sage : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
                 >
-                  {r.include && <Check size={13} color="#fff" />}
+                  {r.include && <Check size={13} color={leesbareInkt(C.sage)} />}
                 </button>
                 <div style={{ flex: 1, opacity: r.include ? 1 : 0.45 }}>
                   <div style={{ fontSize: 13, color: C.ink }}>{r.name}</div>
@@ -10751,9 +11220,9 @@ function ListPhotoModal({
                 <button
                   onClick={() => onWijzig(r.tempId, { include: !r.include })}
                   aria-label={r.include ? "Niet meenemen" : "Wel meenemen"}
-                  style={{ width: 20, height: 20, borderRadius: 4, border: `1.5px solid ${r.include ? C.sage : C.borderTint}`, background: r.include ? C.sage : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+                  style={{ width: 20, height: 20, borderRadius: 4, border: `1.5px solid ${r.include ? C.sage : C.inkSoft}`, background: r.include ? C.sage : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
                 >
-                  {r.include && <Check size={13} color="#fff" />}
+                  {r.include && <Check size={13} color={leesbareInkt(C.sage)} />}
                 </button>
                 <div style={{ flex: 1, minWidth: 0, opacity: r.include ? 1 : 0.45 }}>
                   <div style={{ fontSize: 13, color: C.ink }}>{r.name}</div>
@@ -11023,10 +11492,10 @@ function TabletModeView({ inventory, onConsume, onRestock, onCreate, onClose }) 
               <button onClick={() => setAmount((a) => a + 1)} style={stepperBtn}>+</button>
             </div>
             <div style={{ display: "flex", gap: 16 }}>
-              <button onClick={confirmRestock} style={{ flex: 1, padding: "22px 10px", borderRadius: 20, border: "none", background: C.sage, color: "#fff", fontSize: 17, fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+              <button onClick={confirmRestock} style={{ flex: 1, padding: "22px 10px", borderRadius: 20, border: "none", background: C.sage, color: leesbareInkt(C.sage), fontSize: 17, fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                 <ArrowUpCircle size={30} /> Bijvullen
               </button>
-              <button onClick={confirmConsume} style={{ flex: 1, padding: "22px 10px", borderRadius: 20, border: "none", background: C.brick, color: "#fff", fontSize: 17, fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+              <button onClick={confirmConsume} style={{ flex: 1, padding: "22px 10px", borderRadius: 20, border: "none", background: C.brick, color: leesbareInkt(C.brick), fontSize: 17, fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                 <ArrowDownCircle size={30} /> Afboeken
               </button>
             </div>
@@ -11052,7 +11521,7 @@ function TabletModeView({ inventory, onConsume, onRestock, onCreate, onClose }) 
               <button onClick={() => setAmount((a) => a + 1)} style={{ ...stepperBtn, width: 46, height: 46, fontSize: 22 }}>+</button>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={confirmCreate} disabled={!newName.trim()} style={{ flex: 1, padding: "16px", borderRadius: 12, border: "none", background: newName.trim() ? C.mustard : "rgba(255,255,255,0.2)", color: "#fff", fontSize: 15, fontWeight: 700, cursor: newName.trim() ? "pointer" : "default" }}>
+              <button onClick={confirmCreate} disabled={!newName.trim()} style={{ flex: 1, padding: "16px", borderRadius: 12, border: "none", background: newName.trim() ? C.mustard : "rgba(255,255,255,0.2)", color: newName.trim() ? leesbareInkt(C.mustard) : "#fff", fontSize: 15, fontWeight: 700, cursor: newName.trim() ? "pointer" : "default" }}>
                 Toevoegen
               </button>
               <button onClick={resetToScanning} style={{ padding: "16px 22px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.4)", background: "none", color: "#fff", fontSize: 15, cursor: "pointer" }}>
@@ -11091,7 +11560,7 @@ function FridgeMagnetView({ household, onClose }) {
         border: `6px solid ${C.blue}`, boxShadow: "0 20px 50px rgba(0,0,0,0.3)",
       }}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}><LogoMark size={44} /></div>
-        <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, color: C.blueDeep }}>Pollepel</div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 22, color: C.blue }}>Pollepel</div>
         {household?.name && <div style={{ fontSize: 13, color: C.inkSoft, marginBottom: 14 }}>{household.name}</div>}
         <img src={qrSrc} alt="QR-code naar Pollepel" style={{ width: "100%", maxWidth: 220, margin: "10px auto", display: "block", borderRadius: 12 }} />
         <p style={{ fontSize: 12, color: C.inkSoft, margin: "10px 0 0" }}>Scan voor het kookboek, de voorraad &amp; de boodschappenlijst</p>
@@ -11981,7 +12450,7 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
           <div style={{ ...TYPE.label, color: C.inkSoft, marginTop: 6 }}>Niets te halen</div>
         </div>
         <div style={{ textAlign: "center", padding: "30px 10px", color: C.inkSoft }}>
-          <ShoppingCart size={28} color={C.ceramicDark} style={{ marginBottom: 8 }} />
+          <ShoppingCart size={28} color={C.inkSoft} style={{ marginBottom: 8 }} />
           <p style={{ fontSize: 13 }}>Boodschappenlijst is leeg. Kook een gerecht of voeg zelf iets toe — die verschijnen hier automatisch als voorraad onder het minimum komt.</p>
         </div>
         {adding ? (
@@ -12056,10 +12525,10 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
               {items.map((item, idx) => (
                 <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: idx < items.length - 1 ? `1px solid ${C.ceramic}` : "none" }}>
                   <button onClick={() => onToggle(item.id)} style={{
-                    width: 20, height: 20, borderRadius: 4, border: `1.5px solid ${item.checked ? C.sage : C.ceramicDark}`,
-                    background: item.checked ? C.sage : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0,
+                    width: 20, height: 20, borderRadius: 4, border: `1.5px solid ${item.checked ? C.sage : C.inkSoft}`,
+                    background: item.checked ? C.sage : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0,
                   }}>
-                    {item.checked && <Check size={13} color="#fff" />}
+                    {item.checked && <Check size={13} color={leesbareInkt(C.sage)} />}
                   </button>
                   <div style={{ flex: 1, minWidth: 0, opacity: item.checked ? 0.75 : 1 }}>
                     <div style={{ fontSize: 14, color: C.ink, textDecoration: item.checked ? "line-through" : "none" }}>
@@ -12643,7 +13112,7 @@ function ScanModal({ inventory, onClose, onConsume, onRestock, onCreate }) {
             <video ref={videoRef} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             <div style={{ position: "absolute", inset: "30% 8%", border: `2px solid ${C.mustard}`, borderRadius: 12, boxShadow: "0 0 0 999px rgba(0,0,0,0.28)" }} />
             {flash && (
-              <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: C.sage, color: "#fff", padding: "10px 12px", fontSize: 14, fontWeight: 600, textAlign: "center" }}>
+              <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: C.sage, color: leesbareInkt(C.sage), padding: "10px 12px", fontSize: 14, fontWeight: 600, textAlign: "center" }}>
                 <CheckCircle2 size={16} style={{ verticalAlign: -3, marginRight: 6 }} />{flash}
               </div>
             )}
