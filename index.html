@@ -358,9 +358,12 @@
 
       // Eén functie voor beide receptlijsten: anders zou de community-lijst
       // later wél of juist niet meegaan met een wijziging hier.
-      async function fotoAdressen(rijen) {
+      async function fotoAdressen(rijen, alleenGedeelde = false) {
         const paden = [...new Set(
           (rijen || [])
+            // Geen adres aanvragen voor een foto die we toch niet laten zien:
+            // dat is een verzoek dat de server afwijst en dat niemand nodig had.
+            .filter((r) => !alleenGedeelde || r.household_id === householdId || fotoMagNaarCommunity(r))
             .map((r) => r.photo_url)
             .filter((v) => v && !isExternAdres(v))
         )];
@@ -378,6 +381,22 @@
           return {};
         }
       }
+
+      // Mag deze foto bij een gedeeld recept aan andere huishoudens getoond
+      // worden? Twee voorwaarden, en ze moeten allebei waar zijn:
+      //
+      //   1. Het is een foto in ons eigen bakje, geen adres van een site.
+      //      Een foto van een receptensite doorgeven aan andere huishoudens is
+      //      iets anders dan hem in je eigen kookboek als link laten staan.
+      //   2. De maker heeft bevestigd dat hij de foto zelf gemaakt heeft en dat
+      //      wij hem binnen Pollepel mogen tonen.
+      //
+      // Dit is hier alleen de nette weergave. De echte grens staat in de
+      // leesregel op het opslagbakje: zonder bevestiging geeft de server geen
+      // adres uit, wat de app van een ander huishouden ook vraagt. Deze
+      // controle voorkomt alleen dat we om iets vragen dat toch geweigerd wordt.
+      const fotoMagNaarCommunity = (rij) =>
+        !!rij.photo_url && !isExternAdres(rij.photo_url) && !!rij.photo_own_confirmed_at;
 
       const fotoAdres = (waarde, kaart) =>
         !waarde ? "" : (isExternAdres(waarde) ? waarde : (kaart[waarde] || ""));
@@ -427,6 +446,7 @@
               // browser hem vandaan haalt. Bij een eigen foto verschillen die.
               photoPath: r.photo_url || "",
               photoUrl: fotoAdres(r.photo_url, adressen),
+              photoOwnConfirmed: r.photo_own_confirmed_at || null,
               cookTime: r.cook_time,
               servings: r.servings,
               favorite: r.favorite,
@@ -492,7 +512,13 @@
             // photoPath staat erbij zodat een foto met één regel bijgewerkt
             // wordt in plaats van via update(), die ook alle ingrediënten en
             // stappen opnieuw wegschrijft (werkafspraak 13).
-            const map = { favorite: "favorite", community: "community", photoPath: "photo_url" };
+            const map = {
+              favorite: "favorite", community: "community", photoPath: "photo_url",
+              // Een tijdstip of null. De database maakt dit vanzelf leeg zodra
+              // de foto verandert, via een trigger — dan hoeft geen enkele
+              // schrijfroute daar zelf aan te denken.
+              photoOwnConfirmed: "photo_own_confirmed_at",
+            };
             const dbFields = {};
             Object.keys(fields).forEach((k) => { if (map[k]) dbFields[map[k]] = fields[k]; });
             const { error } = await supabase.from("recipes").update(dbFields).eq("id", id);
@@ -519,11 +545,22 @@
             const [{ data: ings }, { data: steps }, adressen] = await Promise.all([
               supabase.from("recipe_ingredients").select("*").in("recipe_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]).order("sort_order"),
               supabase.from("recipe_steps").select("*").in("recipe_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]).order("step_number"),
-              fotoAdressen(recs),
+              fotoAdressen(recs, true),
             ]);
             return recs.map((r) => ({
               id: r.id, name: r.name, emoji: r.emoji,
-              photoPath: r.photo_url || "", photoUrl: fotoAdres(r.photo_url, adressen), cookTime: r.cook_time, servings: r.servings,
+              // Bij een recept van een ánder huishouden reist de foto alleen mee
+              // als die van de maker zelf is (een pad in ons bakje, geen adres
+              // van een site) én als hij heeft bevestigd dat we hem mogen tonen.
+              // Je eigen gedeelde recepten laten we onveranderd zien: in je
+              // eigen kookboek is een adres van een receptensite gewoon een link
+              // naar hun site.
+              photoPath: r.household_id === householdId ? (r.photo_url || "") : (fotoMagNaarCommunity(r) ? r.photo_url : ""),
+              photoUrl: r.household_id === householdId
+                ? fotoAdres(r.photo_url, adressen)
+                : (fotoMagNaarCommunity(r) ? fotoAdres(r.photo_url, adressen) : ""),
+              photoOwnConfirmed: r.photo_own_confirmed_at || null,
+              cookTime: r.cook_time, servings: r.servings,
               favorite: false, community: true, notes: r.notes || "", diets: r.diets || [],
               ingredients: (ings || []).filter((i) => i.recipe_id === r.id).map((i) => ({ name: i.name, amount: Number(i.amount), unit: i.unit, inventoryItemId: i.inventory_item_id || null })),
               steps: (steps || []).filter((s) => s.recipe_id === r.id).map((s) => s.content),

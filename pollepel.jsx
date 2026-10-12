@@ -302,7 +302,7 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v87 · 12 oktober 2026";
+const APP_VERSIE = "v88 · 12 oktober 2026";
 
 // Versie van de toestemmingstekst. Verandert de tekst wezenlijk, dan gaat dit
 // omhoog en moet er opnieuw gevraagd worden — oude toestemming dekt een nieuwe
@@ -2499,6 +2499,51 @@ function FotoBronBlad({ recipe, heeftFoto, bezig, onBestand, onAdres, onWeg, onC
           )}
         </>
       )}
+    </Modal>
+  );
+}
+
+// Wat je te zien krijgt als je een recept mét een eigen foto gaat delen.
+//
+// Eén keer per foto. Wordt de foto vervangen, dan vervalt de bevestiging —
+// dat regelt de database, niet dit scherm.
+function DelenBlad({ recipe, onMetFoto, onZonderFoto, onClose }) {
+  const regel = { fontSize: 13, color: C.ink, lineHeight: 1.55, margin: "0 0 9px" };
+  return (
+    <Modal title="Delen met de community" onClose={onClose}>
+      <div style={{ display: "flex", gap: 13, alignItems: "flex-start", marginBottom: 14 }}>
+        <TileThumb recipe={recipe} size="kop" />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ ...TYPE.kop, color: C.ink }}>{recipe.name}</div>
+          <div style={{ fontSize: 12, color: C.inkSoft, marginTop: 2 }}>
+            Andere huishoudens kunnen dit recept dan bekijken en overnemen.
+          </div>
+        </div>
+      </div>
+
+      <div style={{ background: C.noteBg, borderRadius: 12, padding: "13px 14px", marginBottom: 14 }}>
+        <p style={{ ...regel, fontWeight: 600 }}>Over je foto</p>
+        <p style={regel}>
+          De foto blijft van jou. Je geeft alleen toestemming om hem binnen Pollepel
+          te laten zien bij dit recept — niet meer dan dat.
+        </p>
+        <p style={regel}>
+          Stop je met delen, dan kan niemand buiten je huishouden hem nog zien.
+          Dat is geen belofte maar een instelling: zonder gedeeld recept geeft de
+          server het plaatje niet meer vrij.
+        </p>
+        <p style={{ ...regel, margin: 0 }}>
+          Deel alleen een foto die je zelf gemaakt hebt. Een foto van een
+          receptensite of van iemand anders hoort hier niet.
+        </p>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <PrimaryButton full onClick={onMetFoto}>
+          <Check size={16} /> Deze foto is van mij — delen
+        </PrimaryButton>
+        <GhostButton full onClick={onZonderFoto}>Delen zonder de foto</GhostButton>
+      </div>
     </Modal>
   );
 }
@@ -5261,6 +5306,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   // omdat de fotofuncties verderop deze staat gebruiken (werkafspraak 10).
   const [fotoVoorRecept, setFotoVoorRecept] = useState(null);
   const [fotoBezig, setFotoBezig] = useState(false);
+  const [delenRecept, setDelenRecept] = useState(null);
 
   const activeDietTags = useMemo(() => {
     const all = new Set();
@@ -5362,16 +5408,38 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     else persist("recipes", next, setRecipes);
   };
 
+  // Delen gaat in twee stappen zodra er een eigen foto bij zit. Een foto die je
+  // zelf gemaakt hebt blijft van jou; wat je geeft is toestemming om hem binnen
+  // Pollepel te tonen, en die toestemming moet gevraagd en vastgelegd worden.
+  // Een foto van een receptensite gaat nooit mee: in je eigen kookboek is dat
+  // een link naar hun site, doorgeven aan andere huishoudens is iets anders.
   const toggleCommunity = async (id) => {
     const recipe = recipes.find((r) => r.id === id);
     if (!recipe) return;
-    const nowShared = !recipe.community;
-    const next = recipes.map((r) => (r.id === id ? { ...r, community: nowShared } : r));
+    // Intrekken kan altijd meteen, zonder vragen. Dat hoort zo: toestemming
+    // die je niet in één tik kunt intrekken is geen toestemming.
+    if (recipe.community) { await deelRecept(id, false, false); return; }
+    const eigenFoto = recipe.photoPath && !/^https?:\/\//i.test(recipe.photoPath);
+    if (eigenFoto && !recipe.photoOwnConfirmed) { setDelenRecept(id); return; }
+    await deelRecept(id, true, false);
+  };
+
+  const deelRecept = async (id, nowShared, metFoto) => {
+    const recipe = recipes.find((r) => r.id === id);
+    if (!recipe) return;
+    const bevestiging = nowShared && metFoto ? new Date().toISOString() : null;
+    const next = recipes.map((r) => (r.id === id
+      ? { ...r, community: nowShared, ...(bevestiging ? { photoOwnConfirmed: bevestiging } : {}) }
+      : r));
     setRecipes(next);
+    setDelenRecept(null);
 
     if (hasDataAPI) {
       try {
-        await window.dataAPI.recipes.patch(id, { community: nowShared });
+        await window.dataAPI.recipes.patch(id, {
+          community: nowShared,
+          ...(bevestiging ? { photoOwnConfirmed: bevestiging } : {}),
+        });
         loadCommunityRecipes();
       } catch (e) {
         showToast("Delen is lokaal gelukt, maar kon niet worden opgeslagen.");
@@ -5389,9 +5457,18 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       }
     }
 
-    showToast(nowShared
-      ? `${recipe.name} is gedeeld met de community.`
-      : `${recipe.name} is niet langer gedeeld.`);
+    // Niet alleen zeggen dát het gedeeld is, maar ook wat er met de foto
+    // gebeurt — anders ontdekt niemand ooit dat die is achtergebleven.
+    const externeFoto = recipe.photoPath && /^https?:\/\//i.test(recipe.photoPath);
+    showToast(!nowShared
+      ? `${recipe.name} is niet langer gedeeld.`
+      : externeFoto
+        ? `${recipe.name} is gedeeld. De foto blijft achter: die staat op een andere site.`
+        : metFoto
+          ? `${recipe.name} is gedeeld, met je foto erbij.`
+          : recipe.photoPath
+            ? `${recipe.name} is gedeeld, zonder de foto.`
+            : `${recipe.name} is gedeeld met de community.`);
   };
 
   // ---------- Receptfoto's ----------
@@ -7590,6 +7667,19 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           onClose={() => setSettingsOpen(false)}
         />
       )}
+
+      {delenRecept && (() => {
+        const dr = recipes.find((r) => r.id === delenRecept);
+        if (!dr) return null;
+        return (
+          <DelenBlad
+            recipe={dr}
+            onMetFoto={() => deelRecept(dr.id, true, true)}
+            onZonderFoto={() => deelRecept(dr.id, true, false)}
+            onClose={() => setDelenRecept(null)}
+          />
+        );
+      })()}
 
       {fotoVoorRecept && (() => {
         const fr = recipes.find((r) => r.id === fotoVoorRecept);
@@ -10966,6 +11056,25 @@ function PrivacyModal({ onClose }) {
         <li>Geen toegang tot je gegevens door andere huishoudens</li>
         <li>Niets over jou persoonlijk wordt verkocht of weggegeven</li>
       </ul>
+
+      <h3 style={kop}>Je foto's en wat je deelt</h3>
+      <p style={tekst}>
+        Een foto die je bij een recept zet, staat afgeschermd opgeslagen. Alleen
+        jouw huishouden kan erbij, en de app vraagt er telkens een tijdelijk adres
+        voor op dat na een paar uur vervalt.
+      </p>
+      <p style={tekst}>
+        Deel je een recept met de community, dan kun je kiezen of je foto meegaat.
+        Die blijft van jou: je geeft alleen toestemming om hem binnen Pollepel bij
+        dat recept te tonen. Stop je met delen, dan kan niemand buiten je
+        huishouden hem nog zien — dat is afgedwongen door de server, niet door een
+        afspraak.
+      </p>
+      <p style={tekst}>
+        Een foto die je van een website hebt gehaald gaat nooit mee naar andere
+        huishoudens. In je eigen kookboek blijft hij staan als verwijzing naar die
+        site; doorgeven aan anderen is iets anders en dat doen we niet.
+      </p>
 
       <h3 style={kop}>Geanonimiseerd meetellen</h3>
       <p style={tekst}>

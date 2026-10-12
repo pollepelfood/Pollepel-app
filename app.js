@@ -332,7 +332,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v87 \xB7 12 oktober 2026";
+const APP_VERSIE = "v88 \xB7 12 oktober 2026";
 const TOESTEMMING_VERSIE = 1;
 const TYPE = {
   scherm: { fontFamily: "'Fraunces', serif", fontSize: 31, lineHeight: 1.06, letterSpacing: "-0.02em", fontWeight: 600 },
@@ -2851,6 +2851,31 @@ function FotoBronBlad({ recipe, heeftFoto, bezig, onBestand, onAdres, onWeg, onC
         /* @__PURE__ */ jsx(Trash2, { size: 14 }),
         " Foto weghalen"
       ] }) })
+    ] })
+  ] });
+}
+function DelenBlad({ recipe, onMetFoto, onZonderFoto, onClose }) {
+  const regel = { fontSize: 13, color: C.ink, lineHeight: 1.55, margin: "0 0 9px" };
+  return /* @__PURE__ */ jsxs(Modal, { title: "Delen met de community", onClose, children: [
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 13, alignItems: "flex-start", marginBottom: 14 }, children: [
+      /* @__PURE__ */ jsx(TileThumb, { recipe, size: "kop" }),
+      /* @__PURE__ */ jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
+        /* @__PURE__ */ jsx("div", { style: { ...TYPE.kop, color: C.ink }, children: recipe.name }),
+        /* @__PURE__ */ jsx("div", { style: { fontSize: 12, color: C.inkSoft, marginTop: 2 }, children: "Andere huishoudens kunnen dit recept dan bekijken en overnemen." })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { style: { background: C.noteBg, borderRadius: 12, padding: "13px 14px", marginBottom: 14 }, children: [
+      /* @__PURE__ */ jsx("p", { style: { ...regel, fontWeight: 600 }, children: "Over je foto" }),
+      /* @__PURE__ */ jsx("p", { style: regel, children: "De foto blijft van jou. Je geeft alleen toestemming om hem binnen Pollepel te laten zien bij dit recept \u2014 niet meer dan dat." }),
+      /* @__PURE__ */ jsx("p", { style: regel, children: "Stop je met delen, dan kan niemand buiten je huishouden hem nog zien. Dat is geen belofte maar een instelling: zonder gedeeld recept geeft de server het plaatje niet meer vrij." }),
+      /* @__PURE__ */ jsx("p", { style: { ...regel, margin: 0 }, children: "Deel alleen een foto die je zelf gemaakt hebt. Een foto van een receptensite of van iemand anders hoort hier niet." })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: [
+      /* @__PURE__ */ jsxs(PrimaryButton, { full: true, onClick: onMetFoto, children: [
+        /* @__PURE__ */ jsx(Check, { size: 16 }),
+        " Deze foto is van mij \u2014 delen"
+      ] }),
+      /* @__PURE__ */ jsx(GhostButton, { full: true, onClick: onZonderFoto, children: "Delen zonder de foto" })
     ] })
   ] });
 }
@@ -5387,6 +5412,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   const [dietOnly, setDietOnly] = useState(false);
   const [fotoVoorRecept, setFotoVoorRecept] = useState(null);
   const [fotoBezig, setFotoBezig] = useState(false);
+  const [delenRecept, setDelenRecept] = useState(null);
   const activeDietTags = useMemo(() => {
     const all = /* @__PURE__ */ new Set();
     (preferences.diets || []).forEach((d) => d.tags.forEach((t) => all.add(t)));
@@ -5449,12 +5475,30 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   const toggleCommunity = async (id) => {
     const recipe = recipes.find((r) => r.id === id);
     if (!recipe) return;
-    const nowShared = !recipe.community;
-    const next = recipes.map((r) => r.id === id ? { ...r, community: nowShared } : r);
+    if (recipe.community) {
+      await deelRecept(id, false, false);
+      return;
+    }
+    const eigenFoto = recipe.photoPath && !/^https?:\/\//i.test(recipe.photoPath);
+    if (eigenFoto && !recipe.photoOwnConfirmed) {
+      setDelenRecept(id);
+      return;
+    }
+    await deelRecept(id, true, false);
+  };
+  const deelRecept = async (id, nowShared, metFoto) => {
+    const recipe = recipes.find((r) => r.id === id);
+    if (!recipe) return;
+    const bevestiging = nowShared && metFoto ? (/* @__PURE__ */ new Date()).toISOString() : null;
+    const next = recipes.map((r) => r.id === id ? { ...r, community: nowShared, ...bevestiging ? { photoOwnConfirmed: bevestiging } : {} } : r);
     setRecipes(next);
+    setDelenRecept(null);
     if (hasDataAPI) {
       try {
-        await window.dataAPI.recipes.patch(id, { community: nowShared });
+        await window.dataAPI.recipes.patch(id, {
+          community: nowShared,
+          ...bevestiging ? { photoOwnConfirmed: bevestiging } : {}
+        });
         loadCommunityRecipes();
       } catch (e) {
         showToast("Delen is lokaal gelukt, maar kon niet worden opgeslagen.");
@@ -5471,7 +5515,8 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
         }
       }
     }
-    showToast(nowShared ? `${recipe.name} is gedeeld met de community.` : `${recipe.name} is niet langer gedeeld.`);
+    const externeFoto = recipe.photoPath && /^https?:\/\//i.test(recipe.photoPath);
+    showToast(!nowShared ? `${recipe.name} is niet langer gedeeld.` : externeFoto ? `${recipe.name} is gedeeld. De foto blijft achter: die staat op een andere site.` : metFoto ? `${recipe.name} is gedeeld, met je foto erbij.` : recipe.photoPath ? `${recipe.name} is gedeeld, zonder de foto.` : `${recipe.name} is gedeeld met de community.`);
   };
   const zetFotoOpRecept = (id, pad, adres) => {
     const next = recipes.map((r) => r.id === id ? { ...r, photoPath: pad || "", photoUrl: adres || "" } : r);
@@ -7309,6 +7354,19 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingredi\xEBntenlijst na en vraag
         onClose: () => setSettingsOpen(false)
       }
     ),
+    delenRecept && (() => {
+      const dr = recipes.find((r) => r.id === delenRecept);
+      if (!dr) return null;
+      return /* @__PURE__ */ jsx(
+        DelenBlad,
+        {
+          recipe: dr,
+          onMetFoto: () => deelRecept(dr.id, true, true),
+          onZonderFoto: () => deelRecept(dr.id, true, false),
+          onClose: () => setDelenRecept(null)
+        }
+      );
+    })(),
     fotoVoorRecept && (() => {
       const fr = recipes.find((r) => r.id === fotoVoorRecept);
       if (!fr) return null;
@@ -10500,6 +10558,10 @@ function PrivacyModal({ onClose }) {
       /* @__PURE__ */ jsx("li", { children: "Geen toegang tot je gegevens door andere huishoudens" }),
       /* @__PURE__ */ jsx("li", { children: "Niets over jou persoonlijk wordt verkocht of weggegeven" })
     ] }),
+    /* @__PURE__ */ jsx("h3", { style: kop, children: "Je foto's en wat je deelt" }),
+    /* @__PURE__ */ jsx("p", { style: tekst, children: "Een foto die je bij een recept zet, staat afgeschermd opgeslagen. Alleen jouw huishouden kan erbij, en de app vraagt er telkens een tijdelijk adres voor op dat na een paar uur vervalt." }),
+    /* @__PURE__ */ jsx("p", { style: tekst, children: "Deel je een recept met de community, dan kun je kiezen of je foto meegaat. Die blijft van jou: je geeft alleen toestemming om hem binnen Pollepel bij dat recept te tonen. Stop je met delen, dan kan niemand buiten je huishouden hem nog zien \u2014 dat is afgedwongen door de server, niet door een afspraak." }),
+    /* @__PURE__ */ jsx("p", { style: tekst, children: "Een foto die je van een website hebt gehaald gaat nooit mee naar andere huishoudens. In je eigen kookboek blijft hij staan als verwijzing naar die site; doorgeven aan anderen is iets anders en dat doen we niet." }),
     /* @__PURE__ */ jsx("h3", { style: kop, children: "Geanonimiseerd meetellen" }),
     /* @__PURE__ */ jsx("p", { style: tekst, children: "In Instellingen staat een schakelaar waarmee je kunt laten meetellen wat er in jullie keuken gebeurt: wat er gekookt wordt, welke verpakkingsmaten mensen werkelijk meenemen, en wat er over de datum gaat. Van die opgetelde cijfers \\u2014 van duizenden huishoudens bij elkaar \\u2014 kunnen supermarkten en fabrikanten iets leren, en daarvoor kunnen wij geld vragen. Zo kan deze app blijven bestaan." }),
     /* @__PURE__ */ jsxs("p", { style: tekst, children: [
