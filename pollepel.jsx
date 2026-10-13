@@ -345,7 +345,7 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v91 · 13 oktober 2026";
+const APP_VERSIE = "v92 · 13 oktober 2026";
 
 // Versie van de toestemmingstekst. Verandert de tekst wezenlijk, dan gaat dit
 // omhoog en moet er opnieuw gevraagd worden — oude toestemming dekt een nieuwe
@@ -1592,6 +1592,22 @@ function dagHeeftInhoud(entry) {
     (Array.isArray(d.attendees) && d.attendees.length) ||
     d.doublePortion || d.cookedAt || d.producedLeftoverId || d.cookSkipped
   );
+}
+
+// Moet je voor deze avond nog ingrediënten in huis hebben?
+//
+// Nee bij een kliekje: dat eten bestaat al, in een bakje in de koelkast of
+// de vriezer. De ingrediënten zijn gekocht, afgeboekt en opgegeten op de dag
+// dat je het kookte. Nee ook bij een avond die je al hebt afgeboekt.
+//
+// Een kliekjesdag heeft trouwens altijd óók een recipeId — het verwijst naar
+// het gerecht waar het restje van komt, en daar komt de naam en de foto
+// vandaan. Op `recipeId` alleen toetsen is dus precies de fout die hieronder
+// op vier plekken zat: de app rekende de hele boodschappenlijst voor een pan
+// stamppot die al in de vriezer stond.
+function dagVraagtIngredienten(entry) {
+  const d = (entry && typeof entry === "string") ? { recipeId: entry } : entry;
+  return !!(d && d.recipeId && !d.leftoverItemId && !d.cookedAt);
 }
 
 function addToStock(item, erbij) {
@@ -3978,6 +3994,21 @@ function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, invento
 
   const mist = readiness ? readiness.missing.length : 0;
 
+  // Een kliekje heeft geen boodschappen nodig, maar wel een regel die zegt
+  // waar het staat. Zonder dit stond er "alles in huis" — waar, maar nietszeggend
+  // als het eten in een bakje in de vriezer ligt en je wil weten hoeveel.
+  const restje = entry && entry.leftoverItemId
+    ? ((inventory || []).find((i) => i.id === entry.leftoverItemId) || "weg")
+    : null;
+  const kliekjeRegel = !restje ? null
+    : restje === "weg" ? { tekst: "kliekje staat niet meer in je voorraad", kleur: C.brick }
+    : {
+        tekst: `uit de ${/^vriezer\s*:/i.test(restje.name || "") ? "vriezer" : "koelkast"} · `
+          + `${netteHoeveelheid(Number(restje.current || 0), restje.unit)} `
+          + `${Number(restje.current) === 1 ? "portie" : "porties"}`,
+        kleur: C.sage,
+      };
+
   if (alGekookt) {
     // Is er al gevraagd of er iets over was? Zolang dat niet zo is, bieden we
     // het hier aan. Dit is het moment waarop je het wél weet: je hebt gegeten.
@@ -4040,12 +4071,16 @@ function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, invento
       <span style={{ fontSize: 26, flexShrink: 0 }}>{recipe.emoji || "🍽️"}</span>
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: "block", fontSize: 11, color: C.inkSoft, textTransform: "uppercase", letterSpacing: "0.04em" }}>Vanavond</span>
-        <span style={{ display: "block", fontSize: 15, color: C.ink, fontWeight: 600, lineHeight: 1.25 }}>{recipe.name}</span>
-        <span style={{ display: "block", fontSize: 12, color: mist ? C.brick : C.sage, marginTop: 2 }}>
-          {cookNaam ? `${cookNaam} kookt · ` : ""}
-          {mist === 0
-            ? "alles in huis"
-            : `nog ${mist} ${mist === 1 ? "ingrediënt" : "ingrediënten"} nodig`}
+        <span style={{ display: "block", fontSize: 15, color: C.ink, fontWeight: 600, lineHeight: 1.25 }}>
+          {kliekjeRegel ? "🍱 " : ""}{recipe.name}
+        </span>
+        <span style={{ display: "block", fontSize: 12, color: kliekjeRegel ? kliekjeRegel.kleur : (mist ? C.brick : C.sage), marginTop: 2 }}>
+          {kliekjeRegel ? "" : (cookNaam ? `${cookNaam} kookt · ` : "")}
+          {kliekjeRegel
+            ? kliekjeRegel.tekst
+            : mist === 0
+              ? "alles in huis"
+              : `nog ${mist} ${mist === 1 ? "ingrediënt" : "ingrediënten"} nodig`}
         </span>
       </span>
       <ChevronRight size={18} color={C.inkSoft} style={{ flexShrink: 0 }} />
@@ -5476,6 +5511,13 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       e.recipeId === vanavondRecept.id &&
       dateKey(new Date(e.date)) === dateKey(new Date()))
   ));
+
+  // Geen maakbaarheid bij een kliekje. Zie dagVraagtIngredienten: anders stond
+  // er "nog 4 ingrediënten nodig" boven een pan stamppot die al in de vriezer
+  // lag. Het recept hoort er wel bij — de naam en de foto komen eruit.
+  const vanavondMaakbaarheid = vanavondRecept && dagVraagtIngredienten(vanavondEntry)
+    ? recipeReadiness(vanavondRecept, inventory)
+    : null;
 
   // Kiest iets wat je met je voorraad kunt maken; is niets compleet, dan wat er
   // het dichtst bij zit — met vermelding van wat er nog moet komen.
@@ -6938,10 +6980,10 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     const gevuld = periods
       .map((p, i) => ({
         index: i, periode: p,
-        aantal: p.dagen.filter((d) => {
-          const e = weekmenu[dateKey(d)];
-          return e && e.recipeId;
-        }).length,
+        // Tellen wat boodschappen vraagt, niet wat er gepland staat. Een week
+        // met alleen kliekjes leverde anders de keuze op om een lijst te maken
+        // die daarna leeg bleef.
+        aantal: p.dagen.filter((d) => dagVraagtIngredienten(weekmenu[dateKey(d)])).length,
       }))
       .filter((x) => x.aantal > 0);
 
@@ -6963,10 +7005,8 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
 
     const plannedEntries = dagen
       .map((d) => dayEntry(d.key))
-      // Kliekjes overslaan: die heb je al gekookt, de boodschappen zijn gedaan.
-      // Een avond die je al hebt afgeboekt net zo goed — anders koop je
-      // ingrediënten voor een maaltijd die je al op hebt.
-      .filter((e) => e && e.recipeId && !e.leftoverItemId && !e.cookedAt)
+      // Kliekjes en al afgeboekte avonden overslaan: zie dagVraagtIngredienten.
+      .filter(dagVraagtIngredienten)
       .concat(extraEntries)
       .map((e) => {
         const recipe = recipes.find((r) => r.id === e.recipeId);
@@ -7552,15 +7592,15 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
       <div style={{ padding: 14 }}>
         {tab === "kookboek" && !openRecipe && !cookingSessions.length && (
           <VanavondStrook
-            entry={weekmenu[dateKey(new Date())]}
+            entry={vanavondEntry}
             recipe={vanavondRecept}
-            readiness={vanavondRecept ? recipeReadiness(vanavondRecept, inventory) : null}
-            cookNaam={(weekmenu[dateKey(new Date())] || {}).cook}
+            readiness={vanavondMaakbaarheid}
+            cookNaam={(vanavondEntry || {}).cook}
             alGekookt={vanavondAlGekookt}
             inventory={inventory}
             onKliekjeVraag={() => setKliekjeVraagDag(dateKey(new Date()))}
             onFoto={vanavondRecept && recipes.some((r) => r.id === vanavondRecept.id) ? () => setFotoVoorRecept(vanavondRecept.id) : null}
-            onOpen={(id) => openRecipeVanuit(id, { dag: dateKey(new Date()), dubbel: (weekmenu[dateKey(new Date())] || {}).doublePortion })}
+            onOpen={(id) => openRecipeVanuit(id, { dag: dateKey(new Date()), leftoverId: (vanavondEntry || {}).leftoverItemId || null, dubbel: (vanavondEntry || {}).doublePortion })}
             onVerrasMe={verrasMeVanavond}
             onNaarWeekmenu={() => setTab("weekmenu")}
           />
@@ -9048,6 +9088,12 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
 
   const readiness = recipeReadiness(recipe, inventory, scale);
 
+  // Open je dit recept omdat er een kliekje van in de vriezer ligt, dan hoef
+  // je niets te halen. De maakbaarheid blijft wel gewoon berekend: verderop
+  // staat "Dit kan ik maken van wat ik heb", en daar is hij juist bedoeld.
+  // Alleen de pil en het boodschappenbriefje gaan eruit.
+  const toonMaakbaarheid = !leftoverItem;
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -9132,7 +9178,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
 
       <div style={{ display: "flex", gap: 8, marginTop: 9, flexWrap: "wrap" }}>
         <Pill><Clock size={11} /> {recipe.cookTime} min</Pill>
-        {readiness.relevant > 0 && (
+        {toonMaakbaarheid && readiness.relevant > 0 && (
           readiness.complete
             ? <Pill tone="ok"><Check size={10} /> Alles in huis</Pill>
             : <Pill tone="warn">Nog {readiness.missing.length} nodig</Pill>
@@ -9180,7 +9226,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         </div>
       )}
 
-      {readiness.missing.length > 0 && (
+      {toonMaakbaarheid && readiness.missing.length > 0 && (
         <div style={{ background: C.warnBg, border: `1px solid ${C.mustardDeep}`, borderRadius: 12, padding: "10px 12px", marginBottom: 14 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: C.ink, marginBottom: 4 }}>
             Hiervoor heb je nog nodig:
@@ -12108,7 +12154,7 @@ function boodschapIndeling({ list = [], inventory = [], consumptionLog = [],
   const start = new Date(nu); start.setHours(0, 0, 0, 0);
   for (let d = new Date(start); d < tot; d.setDate(d.getDate() + 1)) {
     const dagInfo = leesDag(weekmenu, dateKey(d));
-    if (!dagInfo || !dagInfo.recipeId) continue;
+    if (!dagVraagtIngredienten(dagInfo)) continue;
     const recept = recipes.find((r) => r.id === dagInfo.recipeId);
     if (!recept) continue;
     const dagNaam = DAG_LANG[d.getDay()];
