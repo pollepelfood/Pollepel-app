@@ -345,7 +345,7 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v89 · 13 oktober 2026";
+const APP_VERSIE = "v91 · 13 oktober 2026";
 
 // Versie van de toestemmingstekst. Verandert de tekst wezenlijk, dan gaat dit
 // omhoog en moet er opnieuw gevraagd worden — oude toestemming dekt een nieuwe
@@ -2587,6 +2587,59 @@ function DelenBlad({ recipe, onMetFoto, onZonderFoto, onClose }) {
         </PrimaryButton>
         <GhostButton full onClick={onZonderFoto}>Delen zonder de foto</GhostButton>
       </div>
+    </Modal>
+  );
+}
+
+// Wat opengaat als je op de reden tikt. Daar wil je het mee oneens kunnen zijn,
+// en dan moet die mening blijven staan — vandaar dat de keuze op het
+// voorraadproduct wordt bewaard en niet op de boodschappenregel: die verdwijnt
+// zodra je hem afvinkt.
+function RondeKeuzeBlad({ naam, keuze, onKies, onClose }) {
+  const regel = (waarde, kop, onder) => {
+    const aan = keuze === waarde;
+    return (
+      <button
+        type="button"
+        onClick={() => onKies(waarde)}
+        aria-pressed={aan}
+        style={{
+          display: "flex", alignItems: "center", gap: 11, width: "100%", textAlign: "left",
+          padding: "12px", minHeight: 50, borderRadius: 12, marginBottom: 8, cursor: "pointer",
+          fontFamily: FONT_BODY,
+          background: aan ? C.ceramic : C.cardBg,
+          border: `1px solid ${aan ? C.blue : C.ceramicDark}`,
+        }}
+      >
+        <span style={{
+          width: 19, height: 19, borderRadius: "50%", flexShrink: 0,
+          border: `1.5px solid ${aan ? C.blue : C.inkSoft}`,
+          background: aan ? C.blueBtn : "transparent",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          {aan && <Check size={11} color={C.blueBtnInk} strokeWidth={3.5} />}
+        </span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: "block", fontSize: 13.5, fontWeight: 600, color: C.ink }}>{kop}</span>
+          <span style={{ display: "block", fontSize: 11.5, color: C.inkSoft, marginTop: 1 }}>{onder}</span>
+        </span>
+      </button>
+    );
+  };
+
+  return (
+    <Modal title={naam} onClose={onClose}>
+      <p style={{ fontSize: 12.5, color: C.inkSoft, margin: "0 0 13px", lineHeight: 1.5 }}>
+        In welke ronde hoort dit product? Je keuze geldt ook de volgende keer dat
+        het op je lijst komt.
+      </p>
+      {regel(true, "Altijd meteen mee", "Brood, melk \u2014 dingen die niet kunnen wachten")}
+      {regel(null, "Laat de app beslissen", "Op wat je nog hebt, wat je gebruikt en wat er gepland staat")}
+      {regel(false, "Kan altijd wachten", "Iets dat lang goed blijft, wat de categorie ook zegt")}
+      <p style={{ fontSize: 11, color: C.inkSoft, margin: "4px 0 0", lineHeight: 1.45 }}>
+        Een gepland gerecht gaat altijd voor: staat dit vanavond op het menu, dan
+        komt het toch bovenaan.
+      </p>
     </Modal>
   );
 }
@@ -5347,6 +5400,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
 
   // Welk recept heeft het fotoblad open, en is er iets onderweg? Staat hier
   // omdat de fotofuncties verderop deze staat gebruiken (werkafspraak 10).
+  const [rondeKeuze, setRondeKeuze] = useState(null);
   const [fotoVoorRecept, setFotoVoorRecept] = useState(null);
   const [fotoBezig, setFotoBezig] = useState(false);
   const [delenRecept, setDelenRecept] = useState(null);
@@ -6019,6 +6073,36 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     () => (loading ? [] : controleerGegevens({ inventory, weekmenu, recipes, shoppingList, categories: CATEGORIES })),
     [loading, inventory, weekmenu, recipes, shoppingList]
   );
+
+  // De streep door de boodschappenlijst. Staat hier om dezelfde reden als
+  // bevindingen hierboven: hij leest shoppingList, inventory, consumptionLog,
+  // weekmenu en recipes, en die moeten eerst bestaan (werkafspraak 10).
+  const winkelrondes = useMemo(
+    () => winkelRondes(shoppingDay, preferences.shoppingDaysExtra),
+    [shoppingDay, preferences.shoppingDaysExtra]
+  );
+  const boodschapStreep = useMemo(
+    () => (loading ? [] : boodschapIndeling({
+      list: shoppingList, inventory, consumptionLog, weekmenu, recipes, rondes: winkelrondes,
+    })),
+    [loading, shoppingList, inventory, consumptionLog, weekmenu, recipes, winkelrondes]
+  );
+
+  const zetRondeKeuze = async (itemId, waarde) => {
+    const next = inventory.map((i) => (i.id === itemId ? { ...i, alwaysNow: waarde } : i));
+    if (hasDataAPI) {
+      setInventory(next);
+      try {
+        await window.dataAPI.inventory.setRonde(itemId, waarde);
+      } catch (e) {
+        console.error("Rondekeuze opslaan mislukte:", e);
+        showToast("De keuze is lokaal gelukt, maar kon niet worden opgeslagen.");
+      }
+    } else {
+      persist("inventory", next, setInventory);
+    }
+    setRondeKeuze(null);
+  };
 
   const herstelBevinding = (b) => {
     if (!b.herstel || !b.itemId) return;
@@ -7586,6 +7670,9 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             list={shoppingList}
             categories={orderedCategories}
             inventory={inventory}
+            indeling={boodschapStreep}
+            rondes={winkelrondes}
+            onKiesRonde={(invId, naam, keuze) => setRondeKeuze({ invId, naam, keuze })}
             onToggle={toggleChecked}
             onRemove={removeShoppingItem}
             onAddManual={addManualItem}
@@ -7711,6 +7798,15 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           onUpdateCookDislikes={updateCookDislikes}
           onTogglePremium={togglePremiumFeature}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
+      {rondeKeuze && (
+        <RondeKeuzeBlad
+          naam={rondeKeuze.naam}
+          keuze={rondeKeuze.keuze}
+          onKies={(waarde) => zetRondeKeuze(rondeKeuze.invId, waarde)}
+          onClose={() => setRondeKeuze(null)}
         />
       )}
 
@@ -11947,6 +12043,114 @@ function getSeasonalRecipeSuggestions(recipes) {
     .sort((a, b) => b.matches.length - a.matches.length);
 }
 
+// Hoeveel dagen gaat dit nog mee, op basis van wat je er de afgelopen maand
+// van hebt gebruikt? null betekent: te weinig geschiedenis om iets te zeggen.
+//
+// Staat los van getDepletionForecast omdat die er een top vijf van maakt voor
+// één scherm; de boodschappenlijst heeft het per product nodig. Zelfde
+// rekenwijze op één plek, zodat ze niet uit elkaar kunnen lopen.
+function dagenTotOp(item, consumptionLog, nu = Date.now()) {
+  if (!consumptionLog || !consumptionLog.length) return null;
+  const cutoff = nu - 30 * 86400000;
+  const entries = consumptionLog.filter((e) =>
+    new Date(e.date || e.loggedAt).getTime() > cutoff
+    && namesMatch(e.name, item.name) && e.unit === item.unit);
+  if (entries.length < 2) return null; // te weinig om een snelheid op te baseren
+  const totaal = entries.reduce((som, e) => som + Number(e.amount || 0), 0);
+  if (totaal <= 0) return null;
+  const vroegste = Math.min(...entries.map((e) => new Date(e.date || e.loggedAt).getTime()));
+  const dagenSpan = Math.max(1, (nu - vroegste) / 86400000);
+  const perDag = totaal / dagenSpan;
+  if (perDag <= 0) return null;
+  return Math.round(Number(item.current || 0) / perDag);
+}
+
+// Hoe vaak is dit de afgelopen maand gebruikt? Het verschil tussen "op en je
+// gebruikt het" en "op en het staat er al een jaar" — zonder dat onderscheid
+// staat alles wat op is bovenaan en zegt de streep niets meer.
+function keerGebruikt(naam, eenheid, consumptionLog, nu = Date.now()) {
+  if (!consumptionLog) return 0;
+  const cutoff = nu - 30 * 86400000;
+  // Ook op eenheid filteren. Zonder dat telde "Snoeptomaatjes (cherrytomaat)"
+  // in gram ook de kilo's "Tomaat snoeptomaat" mee, en dan klopt het getal in
+  // de reden niet — terwijl juist die reden het enige is waarmee je kunt zien
+  // of de app het goed heeft.
+  return consumptionLog.filter((e) =>
+    new Date(e.date || e.loggedAt).getTime() > cutoff
+    && namesMatch(e.name, naam)
+    && (!eenheid || e.unit === eenheid)).length;
+}
+
+// Bepaalt per boodschap of hij in de eerstvolgende ronde mee moet, met de reden
+// erbij. Die reden is geen versiering: zonder kun je niet zien wanneer de app
+// het mis heeft, en dan kun je het ook niet verbeteren.
+//
+// De volgorde waarin er gekeken wordt:
+//   1. Je hebt bij dit product zelf "altijd meteen mee" gezet.
+//   2. Er staat een gerecht gepland dat het nodig heeft vóór de ronde daarna.
+//      Dit gaat bewust vóór "kan altijd wachten": dat je iets meestal kunt
+//      uitstellen zegt niets over de avond waarop het op tafel moet.
+//   3. Je hebt bij dit product zelf "kan altijd wachten" gezet.
+//   4. Je hebt het zelf op de lijst gezet. Dan is het niet aan ons om te
+//      besluiten dat het kan wachten.
+//   5. Je bent er doorheen én je hebt het deze maand gebruikt.
+//   6. Het verbruik zegt dat het op raakt voordat je weer gaat.
+// Al het andere kan wachten, en dat is geen gok: je hebt het nog, en niets
+// heeft het nodig.
+function boodschapIndeling({ list = [], inventory = [], consumptionLog = [],
+                             weekmenu = {}, recipes = [], rondes, nu = Date.now() }) {
+  // Zonder tweede ronde is er geen streep en staat alles gewoon op de lijst.
+  if (!rondes || !rondes.daarna) return list.map((i) => ({ item: i, invId: null, keuze: null, nu: true, reden: "" }));
+
+  // Welke gerechten staan er gepland tussen vandaag en de ronde daarna?
+  const tot = rondes.daarna;
+  const geplandeIngredienten = [];
+  const start = new Date(nu); start.setHours(0, 0, 0, 0);
+  for (let d = new Date(start); d < tot; d.setDate(d.getDate() + 1)) {
+    const dagInfo = leesDag(weekmenu, dateKey(d));
+    if (!dagInfo || !dagInfo.recipeId) continue;
+    const recept = recipes.find((r) => r.id === dagInfo.recipeId);
+    if (!recept) continue;
+    const dagNaam = DAG_LANG[d.getDay()];
+    (recept.ingredients || []).forEach((ing) => geplandeIngredienten.push({ naam: ing.name, dagNaam }));
+  }
+
+  return list.map((i) => {
+    // findInventoryMatch en niet zelf zoeken: namesMatch is losjes, en er staan
+    // producten in de voorraad die op elkaar lijken. Zelf de eerste treffer
+    // pakken gaf "Snoeptomaatjes (cherrytomaat)" de voorraad van
+    // "Snoeptomaten", en "Peterselie" die van "Platte peterselie" — allebei
+    // een product dat op is met de melding dat je er nog genoeg van hebt.
+    const inv = findInventoryMatch(inventory, { name: i.name, unit: i.unit });
+
+    // Heb je er zelf iets van gevonden, dan telt dat eerst. Maar een gepland
+    // gerecht gaat vóór "kan altijd wachten": dat je iets meestal kunt
+    // uitstellen zegt niets over de avond waarop je het nodig hebt.
+    const eigenKeuze = inv && inv.alwaysNow !== null && inv.alwaysNow !== undefined ? !!inv.alwaysNow : null;
+    if (eigenKeuze === true) return { item: i, invId: inv.id, keuze: true, nu: true, reden: "altijd meteen mee" };
+
+    const gepland = geplandeIngredienten.find((g) => namesMatch(g.naam, i.name));
+    if (gepland) return { item: i, invId: inv ? inv.id : null, keuze: eigenKeuze, nu: true, reden: `voor ${gepland.dagNaam}` };
+
+    if (eigenKeuze === false) return { item: i, invId: inv.id, keuze: false, nu: false, reden: "kan altijd wachten" };
+
+    if (i.auto === false && !inv) return { item: i, invId: null, keuze: null, nu: true, reden: "zelf toegevoegd" };
+
+    // Tellen op de naam en eenheid van het gevonden voorraadproduct, niet op
+    // wat er toevallig op de boodschappenregel staat.
+    const keer = keerGebruikt(inv ? inv.name : i.name, inv ? inv.unit : i.unit, consumptionLog, nu);
+    const op = inv && Number(inv.current || 0) === 0;
+    if (op && keer > 0) return { item: i, invId: inv.id, keuze: null, nu: true, reden: `op \u00b7 ${keer}\u00d7 deze maand` };
+
+    const dagen = inv ? dagenTotOp(inv, consumptionLog, nu) : null;
+    if (dagen != null && dagen <= rondes.gat) return { item: i, invId: inv.id, keuze: null, nu: true, reden: "raakt op" };
+
+    if (op) return { item: i, invId: inv.id, keuze: null, nu: false, reden: "niet gebruikt" };
+    if (inv) return { item: i, invId: inv.id, keuze: null, nu: false, reden: `nog ${netteHoeveelheid(Number(inv.current || 0), inv.unit)} ${inv.unit}` };
+    return { item: i, invId: null, keuze: null, nu: false, reden: "" };
+  });
+}
+
 function getDepletionForecast(inventory, consumptionLog) {
   if (!consumptionLog || !consumptionLog.length) return [];
   const cutoff = Date.now() - 30 * 86400000; // laatste 30 dagen
@@ -12544,7 +12748,18 @@ const stepVlak = {
   get background() { return C.cardBg; },
 };
 
-function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove, onAddManual, onProcess, onChangeAmount, onSetAmount, onHerzie }) {
+function BoodschappenView({ list, categories, inventory = [], indeling = null, rondes = null, onKiesRonde = null, onToggle, onRemove, onAddManual, onProcess, onChangeAmount, onSetAmount, onHerzie }) {
+  // De streep: wat moet er deze ronde mee, en wat kan wachten tot de ronde
+  // daarna. Zonder tweede winkeldag is indeling leeg en verandert er niets.
+  const [alleenNu, setAlleenNu] = useState(false);
+  const streep = useMemo(() => {
+    const m = new Map();
+    (indeling || []).forEach((r) => m.set(r.item.id, r));
+    return m;
+  }, [indeling]);
+  const heeftStreep = !!(rondes && rondes.daarna && indeling && indeling.length);
+  const kanWachten = heeftStreep ? (indeling || []).filter((r) => !r.nu && !r.item.checked).length : 0;
+  const voorNu = heeftStreep ? (indeling || []).filter((r) => r.nu && !r.item.checked).length : 0;
   const [editAmountId, setEditAmountId] = useState(null);
   const [editAmountValue, setEditAmountValue] = useState("");
   const cats = categories && categories.length ? categories : CATEGORIES;
@@ -12567,7 +12782,12 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
     cats.forEach((c) => (map[c] = []));
     // Oude categorienamen uit eerdere versies vertalen we hier, anders krijg je
     // twee kopjes die hetzelfde betekenen.
-    list.forEach((item) => {
+    // Met "alleen deze ronde" aan verdwijnen de producten die kunnen wachten.
+    // Afgevinkte blijven staan: die heb je al in je karretje liggen.
+    const zichtbaar = (alleenNu && heeftStreep)
+      ? list.filter((i) => i.checked || (streep.get(i.id) || { nu: true }).nu)
+      : list;
+    zichtbaar.forEach((item) => {
       const cat = normalizeCategory(item.category);
       (map[cat] || (map[cat] = [])).push(item);
     });
@@ -12576,7 +12796,7 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
       map[c] = [...map[c]].sort((a, b) => (a.checked === b.checked ? 0 : a.checked ? 1 : -1));
     });
     return map;
-  }, [list, cats]);
+  }, [list, cats, alleenNu, heeftStreep, streep]);
 
   // Categorieën met nog iets te doen eerst; volledig afgevinkte categorieën schuiven naar het einde
   // en worden ingeklapt, zodat je tijdens het winkelen altijd bovenaan verder kunt.
@@ -12684,8 +12904,10 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
           <div style={{ ...TYPE.scherm, color: C.ink }}>Boodschappen</div>
           <div style={{ ...TYPE.label, color: C.inkSoft, marginTop: 6 }}>
             {nogTeHalen === 0
-              ? `Alles afgevinkt · ${list.length} ${list.length === 1 ? "product" : "producten"}`
-              : `Nog ${nogTeHalen} van ${list.length}`}
+              ? `Alles afgevinkt \u00b7 ${list.length} ${list.length === 1 ? "product" : "producten"}`
+              : heeftStreep
+                ? `Nog ${nogTeHalen} \u00b7 ${voorNu} voor deze ronde`
+                : `Nog ${nogTeHalen} van ${list.length}`}
           </div>
         </div>
         <div style={{ display: "flex", gap: 7, flexShrink: 0, paddingTop: 4 }}>
@@ -12698,6 +12920,29 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
         </div>
       </div>
       {shareMsg && <p style={{ fontSize: 12, color: C.inkSoft, marginTop: -8, marginBottom: 10 }}>{shareMsg}</p>}
+
+      {/* De knop verbergt alleen; hij gooit niets weg en verandert niets aan de
+          lijst. Daarom staat hij uit bij het openen: iets dat vanzelf
+          verdwenen is zoek je, iets dat je zelf wegklapt niet. */}
+      {heeftStreep && kanWachten > 0 && (
+        <button
+          onClick={() => setAlleenNu((v) => !v)}
+          aria-pressed={alleenNu}
+          style={{
+            display: "flex", alignItems: "center", gap: 7, width: "100%", minHeight: 40,
+            marginBottom: 12, padding: "8px 12px", borderRadius: 12, cursor: "pointer",
+            fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, textAlign: "left",
+            background: alleenNu ? C.ceramic : "transparent",
+            border: `1px solid ${alleenNu ? C.blue : C.ceramicDark}`,
+            color: alleenNu ? C.blue : C.inkSoft,
+          }}
+        >
+          <Clock size={14} color={alleenNu ? C.blue : C.inkSoft} />
+          {alleenNu
+            ? `Alleen deze ronde \u00b7 ${kanWachten} verborgen`
+            : `${kanWachten} ${kanWachten === 1 ? "product kan" : "producten kunnen"} wachten tot ${DAG_LANG[rondes.daarna.getDay()]}`}
+        </button>
+      )}
       {orderedCatsForDisplay.map((cat) => {
         const items = byCategory[cat];
         if (!items || !items.length) return null;
@@ -12730,7 +12975,16 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
           <div key={cat} style={{ marginBottom: 14 }}>
             <div style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: 0.5, color: C.blueSoft, marginBottom: 6, textTransform: "uppercase" }}>{cat}</div>
             <div style={{ background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}` }}>
-              {items.map((item, idx) => (
+              {items.map((item, idx) => {
+                const regel = streep.get(item.id);
+                // Hier stond eerst opacity 0.62 op de hele regel om te laten
+                // zien dat iets kan wachten. Doorgerekend: de productnaam zakte
+                // daarmee naar 4,38:1 en de reden eronder naar 2,64:1. Een
+                // visueel nuanceverschil mag geen leesbaarheid kosten
+                // (werkafspraak 19). Het onderscheid zit nu in het redenlabel —
+                // warm als het mee moet, neutraal als het kan wachten — en in
+                // de knop waarmee je de lijst tot deze ronde terugbrengt.
+                return (
                 <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: idx < items.length - 1 ? `1px solid ${C.ceramic}` : "none" }}>
                   <button onClick={() => onToggle(item.id)} style={{
                     width: 20, height: 20, borderRadius: 4, border: `1.5px solid ${item.checked ? C.sage : C.inkSoft}`,
@@ -12747,6 +13001,48 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
                   </span>
                 )}
               </div>
+                    {/* De reden waarom dit product boven of onder de streep
+                        valt. Dat is geen versiering: zonder die regel kun je
+                        niet zien wanneer de app het mis heeft, en dan kun je
+                        het ook niet verbeteren. */}
+                    {heeftStreep && regel && regel.reden && !item.checked && (
+                      <div style={{ marginTop: 3 }}>
+                        <button
+                          type="button"
+                          disabled={!regel.invId || !onKiesRonde}
+                          onClick={() => onKiesRonde(regel.invId, item.name, regel.keuze)}
+                          title={regel.invId ? "Zelf bepalen in welke ronde dit hoort" : undefined}
+                          style={{
+                          display: "inline-flex", alignItems: "center", gap: 5,
+                          // 32 en niet 24: dit is een knop die je met een duim
+                          // raakt terwijl je met een karretje loopt. De app
+                          // houdt elders 44 aan; dat kan hier niet zonder de
+                          // regel op te blazen, dus dit is een afweging en geen
+                          // vergissing. Het is de enige knop in de app die
+                          // eronder blijft.
+                          fontSize: 10.5, borderRadius: 20, padding: "6px 10px", minHeight: 32,
+                          fontFamily: FONT_BODY, border: "none",
+                          cursor: regel.invId && onKiesRonde ? "pointer" : "default",
+                          background: regel.nu ? C.warnBg : C.ceramic,
+                          color: regel.nu ? C.brick : C.inkSoft,
+                        }}>
+                          {/* Het stipje is er omdat kleur alleen de betekenis
+                              niet mag dragen. Doorgerekend: het warme vlak en
+                              het neutrale vlak liggen in het lichte thema op
+                              1,02:1, en steenrood en zachte inkt op 1,05:1 —
+                              qua helderheid dus vrijwel gelijk. Je ziet het
+                              verschil aan de kleur, tenzij je dat niet ziet.
+                              Een vorm werkt altijd. */}
+                          {regel.nu && (
+                            <span aria-hidden="true" style={{
+                              width: 5, height: 5, borderRadius: "50%",
+                              background: C.brick, flexShrink: 0,
+                            }} />
+                          )}
+                          {regel.reden}
+                        </button>
+                      </div>
+                    )}
 
                     {/* Afgevinkt? Dan staat hier wat er daadwerkelijk in je
                         voorraad is bijgeschreven, in de eenheid van dat
@@ -12815,7 +13111,8 @@ function BoodschappenView({ list, categories, inventory = [], onToggle, onRemove
                     <X size={15} color={C.inkSoft} />
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         );

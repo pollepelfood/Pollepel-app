@@ -1060,6 +1060,9 @@
               containers: i.containers || [],
               aliases: i.aliases || [],
               packSizes: i.pack_sizes || [],
+              // Geen `|| false`: leeg betekent "de app beslist" en is iets
+              // anders dan "kan wachten". Die drie standen moeten heel blijven.
+              alwaysNow: i.always_now === null || i.always_now === undefined ? null : !!i.always_now,
             }));
           },
           async create(item) {
@@ -1087,6 +1090,15 @@
           },
           async remove(id) {
             await supabase.from("inventory_items").delete().eq("id", id);
+          },
+          // Eén kolom bijwerken, niet het hele product. Een tik op de reden
+          // mag niet de naam, de maten en de bakjes opnieuw wegschrijven
+          // (werkafspraak 13).
+          async setRonde(id, waarde) {
+            const { error } = await supabase.from("inventory_items")
+              .update({ always_now: waarde === null ? null : !!waarde })
+              .eq("id", id);
+            if (error) throw error;
           },
         },
 
