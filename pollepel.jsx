@@ -63,6 +63,49 @@ function startOfDay(d) {
 
 // Eerste dag van de periode waar een datum in valt.
 // Valt de datum op de boodschappendag zelf, dan begint die dag de nieuwe periode.
+// Alle dagen waarop dit huishouden boodschappen doet: de hoofddag plus de
+// extra rondes. De hoofddag blijft apart bestaan omdat het weekmenu daarop
+// ankert; deze functie is er alleen voor de boodschappenlijst.
+function winkelDagen(shoppingDay, extra) {
+  const hoofd = Number(shoppingDay == null ? 6 : shoppingDay);
+  const set = new Set([hoofd]);
+  (extra || []).forEach((d) => {
+    // Niet zomaar Number(d): Number(null) en Number("") zijn allebei 0, en dan
+    // wordt een lege waarde uit de database stilletjes zondag. Een lijst met
+    // een gaatje erin zou zo een winkeldag verzinnen die niemand heeft gekozen.
+    const n = typeof d === "number" ? d
+      : (typeof d === "string" && d.trim() !== "" ? Number(d) : NaN);
+    if (Number.isInteger(n) && n >= 0 && n <= 6) set.add(n);
+  });
+  return [...set].sort((a, b) => a - b);
+}
+
+// De eerstvolgende ronde vanaf vandaag, en de ronde daarna.
+//
+// Vandaag telt mee: sta je op je winkeldag, dan is dat deze ronde en niet de
+// volgende week. En het gat dat telt is dat tussen die twee rondes — niet
+// tussen vandaag en de eerstvolgende. Wat je straks in de winkel koopt moet
+// het immers uithouden tot de keer dáárna.
+//
+// Eén winkeldag betekent: geen tweede ronde, dus geen streep door de lijst.
+function winkelRondes(shoppingDay, extra, vandaag = new Date()) {
+  const dagen = winkelDagen(shoppingDay, extra);
+  const basis = new Date(vandaag);
+  basis.setHours(0, 0, 0, 0);
+  const vandaagNr = basis.getDay();
+  const overDagen = dagen.map((d) => (d - vandaagNr + 7) % 7).sort((a, b) => a - b);
+
+  const datumOver = (n) => { const d = new Date(basis); d.setDate(basis.getDate() + n); return d; };
+  const volgende = datumOver(overDagen[0]);
+  if (dagen.length < 2) return { volgende, daarna: null, gat: 7, dagen };
+  return {
+    volgende,
+    daarna: datumOver(overDagen[1]),
+    gat: overDagen[1] - overDagen[0],
+    dagen,
+  };
+}
+
 function periodStart(datum, shoppingDay) {
   const d = startOfDay(datum);
   const verschil = (d.getDay() - Number(shoppingDay) + 7) % 7;
@@ -302,7 +345,7 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v88 · 12 oktober 2026";
+const APP_VERSIE = "v89 · 13 oktober 2026";
 
 // Versie van de toestemmingstekst. Verandert de tekst wezenlijk, dan gaat dit
 // omhoog en moet er opnieuw gevraagd worden — oude toestemming dekt een nieuwe
@@ -7649,7 +7692,10 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           onShowWelcome={() => { setSettingsOpen(false); updatePreferences({ welcomeSeen: false }); }}
           onExportBackup={exportBackup}
           onToggleDarkMode={toggleDarkMode}
-          onSetShoppingDay={(d) => { updatePreferences({ shoppingDay: d }); setPeriodIndex(0); }}
+          onSetWinkeldagen={(hoofd, extra) => {
+            updatePreferences({ shoppingDay: hoofd, shoppingDaysExtra: extra });
+            setPeriodIndex(0);
+          }}
           onSetContainerNumbering={(v) => updatePreferences({ containerNumbering: v })}
           onSetContainerCount={(v) => updatePreferences({ containerCount: v })}
           onOpenControle={() => { setSettingsOpen(false); setControleOpen(true); }}
@@ -10347,7 +10393,10 @@ function CookDislikeRow({ name, preferences, onUpdate }) {
   );
 }
 
-function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onShowWelcome, onExportBackup, onToggleDarkMode, onSetShoppingDay, onSetContainerNumbering, onSetContainerCount, onOpenControle, onOpenLogboek, aantalBevindingen = 0, heeftPremium = false, dataConsent = false, onSetDataConsent, onSetHouseholdFacts, huishoudFeiten = null, onMoveCategoryOrder, onUpdateCookDiets, onUpdateCookDislikes, onTogglePremium, onClose }) {
+function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onShowWelcome, onExportBackup, onToggleDarkMode, onSetWinkeldagen, onSetContainerNumbering, onSetContainerCount, onOpenControle, onOpenLogboek, aantalBevindingen = 0, heeftPremium = false, dataConsent = false, onSetDataConsent, onSetHouseholdFacts, huishoudFeiten = null, onMoveCategoryOrder, onUpdateCookDiets, onUpdateCookDislikes, onTogglePremium, onClose }) {
+  const hoofdDag = preferences.shoppingDay == null ? 6 : Number(preferences.shoppingDay);
+  const extraDagen = winkelDagen(hoofdDag, preferences.shoppingDaysExtra).filter((d) => d !== hoofdDag);
+  const [hoofddagOpen, setHoofddagOpen] = useState(false);
   const [name, setName] = useState(household?.name || "");
   const [savingName, setSavingName] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -10556,22 +10605,72 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
             </div>
           )}
         </div>
+        {/* Eén rij met de week erin, in plaats van een keuzelijst met één dag.
+            De hoofddag is gevuld: daar begint je weekmenu, en die kan dus niet
+            zomaar uit. De extra dagen zijn gewone rondes — die bepalen alleen
+            de streep door je boodschappenlijst. */}
         <div style={{ padding: "12px", borderBottom: `1px solid ${C.ceramic}` }}>
-          <div style={{ fontSize: 14, color: C.ink, marginBottom: 2 }}>Boodschappendag</div>
-          <div style={{ fontSize: 11, color: C.inkSoft, marginBottom: 8 }}>
-            Je weekmenu begint op deze dag, want je plant tot je volgende keer boodschappen doet.
+          <div style={{ fontSize: 14, color: C.ink, marginBottom: 2 }}>Boodschappendagen</div>
+          <div style={{ fontSize: 11, color: C.inkSoft, marginBottom: 9 }}>
+            {extraDagen.length === 0
+              ? "Eén ronde per week. Tik een dag aan om er een tweede ronde bij te zetten."
+              : `${extraDagen.length + 1} rondes per week. Je boodschappenlijst krijgt een streep tussen wat nu moet en wat kan wachten.`}
           </div>
-          <select
-            style={inputStyle}
-            value={preferences.shoppingDay == null ? 6 : preferences.shoppingDay}
-            onChange={(e) => onSetShoppingDay(Number(e.target.value))}
-          >
-            {[1, 2, 3, 4, 5, 6, 0].map((d) => (
-              <option key={d} value={d}>
-                {DAG_LANG[d].charAt(0).toUpperCase() + DAG_LANG[d].slice(1)}
-              </option>
-            ))}
-          </select>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {[1, 2, 3, 4, 5, 6, 0].map((d) => {
+              const isHoofd = d === hoofdDag;
+              const isExtra = extraDagen.includes(d);
+              const aan = isHoofd || isExtra;
+              return (
+                <button
+                  key={d}
+                  onClick={() => {
+                    if (isHoofd) return; // de hoofddag zet je om via de regel eronder
+                    onSetWinkeldagen(hoofdDag, isExtra ? extraDagen.filter((x) => x !== d) : [...extraDagen, d]);
+                  }}
+                  aria-pressed={aan}
+                  aria-label={`${DAG_LANG[d]}${isHoofd ? " — hoofddag" : ""}`}
+                  title={isHoofd ? "Hoofddag: hier begint je weekmenu" : DAG_LANG[d]}
+                  style={{
+                    width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
+                    cursor: isHoofd ? "default" : "pointer", fontFamily: FONT_BODY,
+                    fontSize: 13, fontWeight: 600,
+                    background: isHoofd ? C.blueBtn : isExtra ? C.ceramic : "transparent",
+                    border: `1.5px solid ${aan ? C.blue : C.inkSoft}`,
+                    color: isHoofd ? C.blueBtnInk : isExtra ? C.blue : C.inkSoft,
+                  }}
+                >
+                  {DAG_KORT[d]}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 9, lineHeight: 1.5 }}>
+            Je weekmenu begint op {DAG_LANG[hoofdDag]}.{" "}
+            <button type="button" onClick={() => setHoofddagOpen((v) => !v)} style={linkKnop}>
+              {hoofddagOpen ? "Verbergen" : "Andere dag"}
+            </button>
+          </div>
+          {hoofddagOpen && (
+            <select
+              style={{ ...inputStyle, marginTop: 8 }}
+              value={hoofdDag}
+              onChange={(e) => {
+                const nieuw = Number(e.target.value);
+                // In één wijziging, niet in twee. Wordt een extra dag de
+                // hoofddag, dan moet hij tegelijk uit de extra lijst — anders
+                // staat hij er heel even twee keer in, en dat weigert de
+                // database (en terecht: het gat tussen twee rondes wordt 0).
+                onSetWinkeldagen(nieuw, extraDagen.filter((x) => x !== nieuw));
+              }}
+            >
+              {[1, 2, 3, 4, 5, 6, 0].map((d) => (
+                <option key={d} value={d}>
+                  {DAG_LANG[d].charAt(0).toUpperCase() + DAG_LANG[d].slice(1)}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 

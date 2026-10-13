@@ -86,6 +86,35 @@ function startOfDay(d) {
   uit.setHours(0, 0, 0, 0);
   return uit;
 }
+function winkelDagen(shoppingDay, extra) {
+  const hoofd = Number(shoppingDay == null ? 6 : shoppingDay);
+  const set = /* @__PURE__ */ new Set([hoofd]);
+  (extra || []).forEach((d) => {
+    const n = typeof d === "number" ? d : typeof d === "string" && d.trim() !== "" ? Number(d) : NaN;
+    if (Number.isInteger(n) && n >= 0 && n <= 6) set.add(n);
+  });
+  return [...set].sort((a, b) => a - b);
+}
+function winkelRondes(shoppingDay, extra, vandaag = /* @__PURE__ */ new Date()) {
+  const dagen = winkelDagen(shoppingDay, extra);
+  const basis = new Date(vandaag);
+  basis.setHours(0, 0, 0, 0);
+  const vandaagNr = basis.getDay();
+  const overDagen = dagen.map((d) => (d - vandaagNr + 7) % 7).sort((a, b) => a - b);
+  const datumOver = (n) => {
+    const d = new Date(basis);
+    d.setDate(basis.getDate() + n);
+    return d;
+  };
+  const volgende = datumOver(overDagen[0]);
+  if (dagen.length < 2) return { volgende, daarna: null, gat: 7, dagen };
+  return {
+    volgende,
+    daarna: datumOver(overDagen[1]),
+    gat: overDagen[1] - overDagen[0],
+    dagen
+  };
+}
 function periodStart(datum, shoppingDay) {
   const d = startOfDay(datum);
   const verschil = (d.getDay() - Number(shoppingDay) + 7) % 7;
@@ -332,7 +361,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v88 \xB7 12 oktober 2026";
+const APP_VERSIE = "v89 \xB7 13 oktober 2026";
 const TOESTEMMING_VERSIE = 1;
 const TYPE = {
   scherm: { fontFamily: "'Fraunces', serif", fontSize: 31, lineHeight: 1.06, letterSpacing: "-0.02em", fontWeight: 600 },
@@ -7327,8 +7356,8 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingredi\xEBntenlijst na en vraag
         },
         onExportBackup: exportBackup,
         onToggleDarkMode: toggleDarkMode,
-        onSetShoppingDay: (d) => {
-          updatePreferences({ shoppingDay: d });
+        onSetWinkeldagen: (hoofd, extra) => {
+          updatePreferences({ shoppingDay: hoofd, shoppingDaysExtra: extra });
           setPeriodIndex(0);
         },
         onSetContainerNumbering: (v) => updatePreferences({ containerNumbering: v }),
@@ -9911,7 +9940,10 @@ function CookDislikeRow({ name, preferences, onUpdate }) {
     ] })
   ] });
 }
-function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onShowWelcome, onExportBackup, onToggleDarkMode, onSetShoppingDay, onSetContainerNumbering, onSetContainerCount, onOpenControle, onOpenLogboek, aantalBevindingen = 0, heeftPremium = false, dataConsent = false, onSetDataConsent, onSetHouseholdFacts, huishoudFeiten = null, onMoveCategoryOrder, onUpdateCookDiets, onUpdateCookDislikes, onTogglePremium, onClose }) {
+function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onShowWelcome, onExportBackup, onToggleDarkMode, onSetWinkeldagen, onSetContainerNumbering, onSetContainerCount, onOpenControle, onOpenLogboek, aantalBevindingen = 0, heeftPremium = false, dataConsent = false, onSetDataConsent, onSetHouseholdFacts, huishoudFeiten = null, onMoveCategoryOrder, onUpdateCookDiets, onUpdateCookDislikes, onTogglePremium, onClose }) {
+  const hoofdDag = preferences.shoppingDay == null ? 6 : Number(preferences.shoppingDay);
+  const extraDagen = winkelDagen(hoofdDag, preferences.shoppingDaysExtra).filter((d) => d !== hoofdDag);
+  const [hoofddagOpen, setHoofddagOpen] = useState(false);
   const [name, setName] = useState(household?.name || "");
   const [savingName, setSavingName] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -10084,14 +10116,56 @@ ${link}`;
         ) }) })
       ] }),
       /* @__PURE__ */ jsxs("div", { style: { padding: "12px", borderBottom: `1px solid ${C.ceramic}` }, children: [
-        /* @__PURE__ */ jsx("div", { style: { fontSize: 14, color: C.ink, marginBottom: 2 }, children: "Boodschappendag" }),
-        /* @__PURE__ */ jsx("div", { style: { fontSize: 11, color: C.inkSoft, marginBottom: 8 }, children: "Je weekmenu begint op deze dag, want je plant tot je volgende keer boodschappen doet." }),
-        /* @__PURE__ */ jsx(
+        /* @__PURE__ */ jsx("div", { style: { fontSize: 14, color: C.ink, marginBottom: 2 }, children: "Boodschappendagen" }),
+        /* @__PURE__ */ jsx("div", { style: { fontSize: 11, color: C.inkSoft, marginBottom: 9 }, children: extraDagen.length === 0 ? "E\xE9n ronde per week. Tik een dag aan om er een tweede ronde bij te zetten." : `${extraDagen.length + 1} rondes per week. Je boodschappenlijst krijgt een streep tussen wat nu moet en wat kan wachten.` }),
+        /* @__PURE__ */ jsx("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" }, children: [1, 2, 3, 4, 5, 6, 0].map((d) => {
+          const isHoofd = d === hoofdDag;
+          const isExtra = extraDagen.includes(d);
+          const aan = isHoofd || isExtra;
+          return /* @__PURE__ */ jsx(
+            "button",
+            {
+              onClick: () => {
+                if (isHoofd) return;
+                onSetWinkeldagen(hoofdDag, isExtra ? extraDagen.filter((x) => x !== d) : [...extraDagen, d]);
+              },
+              "aria-pressed": aan,
+              "aria-label": `${DAG_LANG[d]}${isHoofd ? " \u2014 hoofddag" : ""}`,
+              title: isHoofd ? "Hoofddag: hier begint je weekmenu" : DAG_LANG[d],
+              style: {
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                flexShrink: 0,
+                cursor: isHoofd ? "default" : "pointer",
+                fontFamily: FONT_BODY,
+                fontSize: 13,
+                fontWeight: 600,
+                background: isHoofd ? C.blueBtn : isExtra ? C.ceramic : "transparent",
+                border: `1.5px solid ${aan ? C.blue : C.inkSoft}`,
+                color: isHoofd ? C.blueBtnInk : isExtra ? C.blue : C.inkSoft
+              },
+              children: DAG_KORT[d]
+            },
+            d
+          );
+        }) }),
+        /* @__PURE__ */ jsxs("div", { style: { fontSize: 11, color: C.inkSoft, marginTop: 9, lineHeight: 1.5 }, children: [
+          "Je weekmenu begint op ",
+          DAG_LANG[hoofdDag],
+          ".",
+          " ",
+          /* @__PURE__ */ jsx("button", { type: "button", onClick: () => setHoofddagOpen((v) => !v), style: linkKnop, children: hoofddagOpen ? "Verbergen" : "Andere dag" })
+        ] }),
+        hoofddagOpen && /* @__PURE__ */ jsx(
           "select",
           {
-            style: inputStyle,
-            value: preferences.shoppingDay == null ? 6 : preferences.shoppingDay,
-            onChange: (e) => onSetShoppingDay(Number(e.target.value)),
+            style: { ...inputStyle, marginTop: 8 },
+            value: hoofdDag,
+            onChange: (e) => {
+              const nieuw = Number(e.target.value);
+              onSetWinkeldagen(nieuw, extraDagen.filter((x) => x !== nieuw));
+            },
             children: [1, 2, 3, 4, 5, 6, 0].map((d) => /* @__PURE__ */ jsx("option", { value: d, children: DAG_LANG[d].charAt(0).toUpperCase() + DAG_LANG[d].slice(1) }, d))
           }
         )
