@@ -595,12 +595,19 @@
             return (data || []).map((e) => ({
               id: e.id, date: e.menu_date, recipeId: e.recipe_id,
               label: e.label || "Extra", servings: e.servings, sortOrder: e.sort_order,
+              // Een kliekje als extraatje. `kliekje` blijft staan, ook als de
+              // database leftover_item_id leegmaakt: daaraan blijft hij
+              // herkenbaar, en telt hij nooit mee voor de boodschappen.
+              kliekje: !!e.kliekje,
+              leftoverItemId: e.leftover_item_id || null,
+              eatenAt: e.eaten_at || null,
             }));
           },
-          async add({ date, recipeId, label, servings, sortOrder }) {
+          async add({ date, recipeId, label, servings, sortOrder, kliekje, leftoverItemId }) {
             const { data, error } = await supabase.from("weekmenu_extras").insert({
               household_id: householdId, menu_date: date, recipe_id: recipeId || null,
               label: label || "Extra", servings: servings || null, sort_order: sortOrder || 0,
+              kliekje: !!kliekje, leftover_item_id: kliekje ? (leftoverItemId || null) : null,
             }).select().single();
             if (error) throw error;
             return data.id;
@@ -610,6 +617,8 @@
             if ("label" in patch) dbPatch.label = patch.label;
             if ("servings" in patch) dbPatch.servings = patch.servings;
             if ("recipeId" in patch) dbPatch.recipe_id = patch.recipeId;
+            if ("eatenAt" in patch) dbPatch.eaten_at = patch.eatenAt || null;
+            if ("leftoverItemId" in patch) dbPatch.leftover_item_id = patch.leftoverItemId || null;
             const { error } = await supabase.from("weekmenu_extras").update(dbPatch).eq("id", id);
             if (error) throw error;
           },
@@ -1158,6 +1167,7 @@
                 offNight: !!d.off_night, doublePortion: !!d.double_portion,
                 leftoverItemId: d.leftover_item_id || null,
                 cookedAt: d.cooked_at || null,
+                eatenAt: d.eaten_at || null,
                 producedLeftoverId: d.produced_leftover_id || null,
                 cookSkipped: !!d.cook_skipped,
               };
@@ -1177,6 +1187,9 @@
               leftover_item_id: entry.leftoverItemId || null,
               ...(houdtGekooktBij ? {
                 cooked_at: entry.cookedAt || null,
+                // Altijd meeschrijven, ook als hij leeg is: een avond die een
+                // ander gerecht krijgt moet zijn "opgegeten" kwijtraken.
+                eaten_at: entry.eatenAt || null,
                 produced_leftover_id: entry.producedLeftoverId || null,
                 cook_skipped: !!entry.cookSkipped,
               } : {}),
@@ -1200,7 +1213,7 @@
               v.recipeId || v.offNight || v.leftoverItemId ||
               (v.cook && String(v.cook).trim()) ||
               (Array.isArray(v.attendees) && v.attendees.length) ||
-              v.doublePortion || v.cookedAt || v.producedLeftoverId || v.cookSkipped
+              v.doublePortion || v.cookedAt || v.producedLeftoverId || v.cookSkipped || v.eatenAt
             ));
             const rows = Object.entries(days)
               .filter(([, v]) => heeftInhoud(v))
@@ -1211,6 +1224,7 @@
                 leftover_item_id: v.leftoverItemId || null,
                 ...(houdtGekooktBij ? {
                   cooked_at: v.cookedAt || null,
+                  eaten_at: v.eatenAt || null,
                   produced_leftover_id: v.producedLeftoverId || null,
                   cook_skipped: !!v.cookSkipped,
                 } : {}),
