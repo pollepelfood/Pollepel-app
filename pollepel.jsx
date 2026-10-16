@@ -345,7 +345,7 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v94 · 15 oktober 2026";
+const APP_VERSIE = "v95 · 15 oktober 2026";
 
 // Versie van de toestemmingstekst. Verandert de tekst wezenlijk, dan gaat dit
 // omhoog en moet er opnieuw gevraagd worden — oude toestemming dekt een nieuwe
@@ -1687,6 +1687,137 @@ function kliekjeAfhandelen({ itemId, hoe, weekmenu, extras, vandaag = dateKey(ne
     (stempel ? uit.gestempeld : uit.vrij).push(r.sleutel);
   });
   return uit;
+}
+
+// Eén of meer kliekjes opeten, op één avond. Rekent alleen; schrijft niets weg.
+//
+// keuzes: [{ itemId, porties, bakjes }] — bakjes leeg = de eerste zoveel.
+//
+// Waarom alles in één keer: twee kliekjes na elkaar afboeken met losse
+// schrijfacties gaat mis. De tweede rekent met de voorraad en het weekmenu
+// van vóór de eerste, en zet die oude toestand terug.
+//
+// Volgorde per kliekje: eerst de avond (en de extraatjes) van waaruit je eet
+// afstempelen, dan bij het laatste bakje de andere avonden afhandelen, dan pas
+// de voorraad. Zie kliekjeAfhandelen voor waarom die volgorde ertoe doet.
+function kliekjesOpeten({ keuzes = [], dagSleutel = null, weekmenu = {}, extras = [], inventory = [], nu = new Date().toISOString(), vandaag = dateKey(new Date()) }) {
+  let inv = inventory.map((i) => ({ ...i }));
+  let wm = weekmenu;
+  let wmGewijzigd = false;
+  const extrasStempel = [];
+  const extrasWeg = [];
+  const vrij = [];
+  const vrijgegeven = [];
+  const resultaten = [];
+  // Extraatjes zoals ze er na de stempels van deze avond uitzien, zodat
+  // kliekjeAfhandelen ze niet nog eens meetelt.
+  const extrasNu = () => extras
+    .filter((e) => !extrasWeg.includes(e.id))
+    .map((e) => (extrasStempel.includes(e.id) ? { ...e, eatenAt: nu } : e));
+
+  keuzes.forEach(({ itemId, porties, bakjes }) => {
+    const item = inv.find((i) => i.id === itemId);
+    if (!item) return;
+    const gebruikt = Math.min(Math.max(0, Number(porties) || 0), Number(item.current) || 0);
+    if (gebruikt <= 0) return;
+    const rest = round2(Math.max(0, Number(item.current || 0) - gebruikt));
+
+    if (dagSleutel) {
+      const dag = leesDag(wm, dagSleutel);
+      if (dag && dag.leftoverItemId === itemId && !dag.eatenAt) {
+        wm = { ...wm, [dagSleutel]: { ...dag, eatenAt: nu } };
+        wmGewijzigd = true;
+      }
+      extras.forEach((e) => {
+        if (e.date === dagSleutel && e.kliekje && e.leftoverItemId === itemId && !e.eatenAt && !extrasStempel.includes(e.id)) {
+          extrasStempel.push(e.id);
+        }
+      });
+    }
+    if (rest <= 0) {
+      const r = kliekjeAfhandelen({ itemId, hoe: "opgegeten", weekmenu: wm, extras: extrasNu(), nu, vandaag });
+      if (r.gestempeld.length || r.vrij.length) { wm = r.weekmenu; wmGewijzigd = true; }
+      extrasStempel.push(...r.extrasStempel);
+      extrasWeg.push(...r.extrasWeg);
+      vrij.push(...r.vrij);
+    }
+
+    const had = item.containers || [];
+    const vrijNu = bakjes && bakjes.length ? bakjes.map(Number) : had.slice(0, gebruikt);
+    vrijgegeven.push(...vrijNu);
+    inv = rest > 0
+      ? inv.map((i) => (i.id === itemId ? { ...i, current: rest, containers: had.filter((n) => !vrijNu.includes(Number(n))) } : i))
+      : inv.filter((i) => i.id !== itemId);
+    resultaten.push({ itemId, recipeId: item.sourceRecipeId || null, gebruikt, rest });
+  });
+
+  return { inventory: inv, weekmenu: wm, wmGewijzigd, extrasStempel, extrasWeg, vrij, vrijgegeven, resultaten };
+}
+
+// Welke kliekjes horen bij deze avond en liggen er nog? Het kliekje van de
+// avond zelf eerst, dan de extraatjes. Elk bakje één keer.
+function kliekjesVanAvond({ dagSleutel, weekmenu = {}, extras = [], inventory = [], recipes = [] }) {
+  const dag = leesDag(weekmenu, dagSleutel) || {};
+  const ids = [];
+  if (dag.leftoverItemId && !dag.eatenAt) ids.push(dag.leftoverItemId);
+  (extras || []).forEach((e) => {
+    if (e && e.date === dagSleutel && e.kliekje && !e.eatenAt && e.leftoverItemId && !ids.includes(e.leftoverItemId)) {
+      ids.push(e.leftoverItemId);
+    }
+  });
+  return ids.map((id) => {
+    const item = inventory.find((i) => i.id === id);
+    const recipe = item && recipes.find((r) => r.id === item.sourceRecipeId);
+    return item && recipe ? { item, recipe } : null;
+  }).filter(Boolean);
+}
+
+function kliekjePlek(item) {
+  return /^vriezer\s*:/i.test((item && item.name) || "") ? "vriezer" : "koelkast";
+}
+
+// De regel onder een gepland kliekje: hoeveel, welk bakje, hoe lang nog goed.
+// Gedeeld door de avond zelf en door een kliekje als extraatje.
+function kliekjeStatus(restje, dagSleutel, vandaag = startOfDay(new Date())) {
+  if (!restje) return { tekst: "Kliekje staat niet meer in je voorraad", kleur: "brick" };
+  const porties = Number(restje.current) || 0;
+  const houdbaarTot = restje.expiryDate ? parseDateKey(restje.expiryDate) : null;
+  const bederftEerder = !!(houdbaarTot && dateKey(houdbaarTot) < dagSleutel);
+  const dagenOver = houdbaarTot ? Math.round((houdbaarTot - vandaag) / 86400000) : null;
+  const bakjes = restje.containers || [];
+  return {
+    tekst: `Kliekje · ${porties} ${porties === 1 ? "portie" : "porties"}`
+      + (bakjes.length ? ` · bakje ${bakjesTekst(bakjes)}` : "")
+      + (bederftEerder
+        ? ` · let op: houdbaar tot ${houdbaarTot.getDate()}/${houdbaarTot.getMonth() + 1}`
+        : dagenOver !== null ? ` · nog ${dagenOver} ${dagenOver === 1 ? "dag" : "dagen"} houdbaar` : ""),
+    kleur: bederftEerder ? "brick" : "mustardDeep",
+  };
+}
+
+// Is er op deze kliekjesavond genoeg? Telt de porties van alle kliekjes die er
+// nog liggen — het hoofdgerecht en de extraatjes — keer hoeveel mensen er bij
+// dit huishouden van één portie eten, tegen het aantal eters. Geeft null als
+// het genoeg is of als er niets te zeggen valt.
+//
+// Personen per portie is een instelling, want het hangt af van de bakjes: bij
+// het ene huishouden is één bakje één bord, bij het andere twee.
+function kliekjesTekort({ entry, extras = [], inventory = [], dagSleutel, eters, personenPerPortie = 1 }) {
+  if (!entry || entry.eatenAt || !entry.leftoverItemId || !eters) return null;
+  const ids = [entry.leftoverItemId, ...extras
+    .filter((x) => x && x.date === dagSleutel && x.kliekje && !x.eatenAt && x.leftoverItemId)
+    .map((x) => x.leftoverItemId)];
+  const porties = ids.reduce((som, id) => {
+    const i = inventory.find((v) => v.id === id);
+    return som + (i ? Number(i.current) || 0 : 0);
+  }, 0);
+  const genoegVoor = porties * (Number(personenPerPortie) || 1);
+  return genoegVoor < eters ? { porties, eters } : null;
+}
+
+function metZnAllen(n) {
+  const woorden = { 2: "z'n tweeën", 3: "z'n drieën", 4: "z'n vieren", 5: "z'n vijven", 6: "z'n zessen" };
+  return woorden[n] || `${n} personen`;
 }
 
 // "vrijdag 16" of "donderdag 15 en zaterdag 17". Dubbele datums (een avond én
@@ -3846,7 +3977,8 @@ const EXTRA_ICONEN = { Ontbijt: "🥐", Lunch: "🥪", Middag: "☕", Toetje: "�
 
 // Kiezen wát het is, en voor hoeveel mensen. Dat aantal is apart nodig: een
 // taart voor twaalf terwijl jullie met vier eten, anders klopt de boodschappenlijst niet.
-function ExtraToevoegenModal({ datum, recipes, onKies, onClose }) {
+function ExtraToevoegenModal({ datum, recipes, inventory = [], beginTab = "recept", geplandOp = null, alOpDezeDag = [], onKies, onClose }) {
+  const [tab, setTab] = useState(beginTab);
   const [label, setLabel] = useState("Taart");
   const [eigenLabel, setEigenLabel] = useState("");
   const [zoek, setZoek] = useState("");
@@ -3859,8 +3991,88 @@ function ExtraToevoegenModal({ datum, recipes, onKies, onClose }) {
 
   const echteLabel = label === "Anders" ? (eigenLabel.trim() || "Extra") : label;
 
+  // Kliekjes die al op deze dag staan, vallen weg: twee keer hetzelfde bakje
+  // op één avond kan niet.
+  const kliekjes = kliekjesInVoorraad(inventory, recipes).filter((l) => !alOpDezeDag.includes(l.item.id));
+  const datumObj = parseDateKey(datum);
+
   return (
-    <Modal title="Iets extra's toevoegen" onClose={onClose}>
+    <Modal title={tab === "vriezer" ? "Iets erbij uit de vriezer" : "Iets extra's toevoegen"} onClose={onClose}>
+      <div style={{ ...TYPE.label, color: C.inkSoft, margin: "-4px 0 10px" }}>
+        {DAG_LANG[datumObj.getDay()]} {datumObj.getDate()} {MAAND_LANG[datumObj.getMonth()]}
+      </div>
+      {/* Twee tabs in één blad. Een kliekje is ook "iets erbij", alleen komt
+          het niet uit de winkel maar uit de vriezer. */}
+      <div role="tablist" style={{ display: "flex", background: C.ceramic, borderRadius: 10, padding: 3, marginBottom: 14 }}>
+        {[["recept", "Een recept"], ["vriezer", "\uD83C\uDF71 Uit de vriezer"]].map(([sleutel, tekst]) => (
+          <button
+            key={sleutel}
+            type="button"
+            role="tab"
+            aria-selected={tab === sleutel}
+            onClick={() => setTab(sleutel)}
+            style={{
+              flex: 1, minHeight: 40, borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13,
+              border: tab === sleutel ? `1px solid ${C.ceramicDark}` : "1px solid transparent",
+              background: tab === sleutel ? C.cardBg : "transparent",
+              color: tab === sleutel ? C.ink : C.inkSoft, fontWeight: tab === sleutel ? 600 : 400,
+            }}
+          >
+            {tekst}
+          </button>
+        ))}
+      </div>
+
+      {tab === "vriezer" ? (
+        <>
+          {kliekjes.length === 0 ? (
+            <p style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.5 }}>
+              Er ligt geen kliekje in je voorraad{alOpDezeDag.length ? " dat nog niet op deze dag staat" : ""}.
+            </p>
+          ) : (
+            <>
+              <div style={{ fontSize: 11.5, color: C.inkSoft, margin: "0 0 9px" }}>Wat het eerst over datum gaat, staat bovenaan.</div>
+              <div style={{ maxHeight: "48vh", overflowY: "auto" }}>
+                {kliekjes.map(({ item, recipe, daysLeft }) => {
+                  const elders = geplandOp ? geplandOp(item.id).filter((r) => r.sleutel !== datum) : [];
+                  const bakjes = item.containers || [];
+                  const porties = Number(item.current) || 0;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => onKies({ date: datum, recipeId: recipe.id, label: "Kliekje", kliekje: true, leftoverItemId: item.id })}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left",
+                        background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12,
+                        padding: "8px 10px", marginBottom: 7, minHeight: 52, cursor: "pointer", fontFamily: FONT_BODY,
+                      }}
+                    >
+                      <span style={{ width: 32, height: 32, borderRadius: 10, background: C.ceramic, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>
+                        {recipe.emoji || "\uD83C\uDF7D\uFE0F"}
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: "block", fontSize: 13.5, color: C.ink, fontWeight: 500 }}>{recipe.name}</span>
+                        {/* Al gepland is een signaal, geen slot: met twee porties
+                            kun je op twee avonden van hetzelfde kliekje eten. */}
+                        <span style={{ display: "block", fontSize: 11, fontFamily: FONT_MONO, color: elders.length ? C.mustardDeep : C.inkSoft }}>
+                          {porties} {porties === 1 ? "portie" : "porties"}
+                          {bakjes.length ? ` \u00b7 bakje ${bakjesTekst(bakjes)}` : ""}
+                          {elders.length
+                            ? ` \u00b7 al gepland op ${avondenTekst(elders.map((r) => r.sleutel))}`
+                            : daysLeft == null ? ""
+                              : daysLeft <= 0 ? " \u00b7 vandaag over datum"
+                                : ` \u00b7 nog ${daysLeft} ${daysLeft === 1 ? "dag" : "dagen"}`}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </>
+      ) : (<>
       <div style={{ fontSize: 12, fontWeight: 600, color: C.inkSoft, marginBottom: 7 }}>Wat is het?</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
         {[...EXTRA_LABELS, "Anders"].map((l) => (
@@ -3943,6 +4155,7 @@ function ExtraToevoegenModal({ datum, recipes, onKies, onClose }) {
           </PrimaryButton>
         </>
       )}
+      </>)}
     </Modal>
   );
 }
@@ -4059,7 +4272,7 @@ function ControleModal({ bevindingen, onHerstel, onClose }) {
   );
 }
 
-function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, inventory = [], onOpen, onVerrasMe, onNaarWeekmenu, onKliekjeVraag, onFoto = null }) {
+function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, inventory = [], extraKliekjes = [], onOpenKliekjes = null, onOpen, onVerrasMe, onNaarWeekmenu, onKliekjeVraag, onFoto = null }) {
   const basis = {
     display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left",
     borderRadius: 12, padding: "12px 14px", marginBottom: 12, cursor: "pointer",
@@ -4106,14 +4319,49 @@ function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, invento
   const restje = entry && entry.leftoverItemId
     ? ((inventory || []).find((i) => i.id === entry.leftoverItemId) || "weg")
     : null;
+  // Met meer kliekjes op één avond: noem de bakjes die je pakt (van elk het
+  // eerste), want daar ga je naar zoeken. Zonder nummers: hoeveel kliekjes.
+  const alleKliekjes = restje && restje !== "weg" ? [restje, ...extraKliekjes.map((k) => k.item)] : [];
+  const plekken = [...new Set(alleKliekjes.map(kliekjePlek))];
+  const plekTekst = plekken.length === 1 ? plekken[0] : "vriezer en koelkast";
+  const eersteBakjes = alleKliekjes.map((i) => (i.containers || [])[0]).filter((n) => n != null);
   const kliekjeRegel = !restje ? null
     : restje === "weg" ? { tekst: "kliekje staat niet meer in je voorraad", kleur: C.brick }
-    : {
-        tekst: `uit de ${/^vriezer\s*:/i.test(restje.name || "") ? "vriezer" : "koelkast"} · `
-          + `${netteHoeveelheid(Number(restje.current || 0), restje.unit)} `
-          + `${Number(restje.current) === 1 ? "portie" : "porties"}`,
-        kleur: C.sage,
-      };
+    : alleKliekjes.length > 1
+      ? {
+          tekst: `uit de ${plekTekst} · `
+            + (eersteBakjes.length === alleKliekjes.length ? `bakje ${bakjesTekst(eersteBakjes)}` : `${alleKliekjes.length} kliekjes`),
+          kleur: C.sage,
+        }
+      : {
+          tekst: `uit de ${kliekjePlek(restje)} · `
+            + `${netteHoeveelheid(Number(restje.current || 0), restje.unit)} `
+            + `${Number(restje.current) === 1 ? "portie" : "porties"}`,
+          kleur: C.sage,
+        };
+
+  // Een kliekje erbij op een avond waar iets anders het hoofdgerecht is (of
+  // die al afgerond is): een eigen regel onder de strook, met een eigen tik.
+  // Niet in de strook zelf, want die opent het recept.
+  const losseKliekjes = extraKliekjes.length && (!kliekjeRegel || alGekookt) && onOpenKliekjes ? (
+    <button type="button" onClick={onOpenKliekjes} style={{
+      display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left",
+      background: C.noteBg, border: "none", borderRadius: 12, padding: "10px 12px", minHeight: 44,
+      margin: "-4px 0 12px", cursor: "pointer", fontFamily: FONT_BODY,
+    }}>
+      <span style={{ fontSize: 18, flexShrink: 0 }}>{"\uD83C\uDF71"}</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.ink, lineHeight: 1.35 }}>
+        Erbij: {extraKliekjes.map((k) => k.recipe.name).join(" en ")}
+        <span style={{ display: "block", fontSize: 11.5, color: C.inkSoft }}>
+          uit de {[...new Set(extraKliekjes.map((k) => kliekjePlek(k.item)))].join(" en ")}
+          {extraKliekjes.every((k) => (k.item.containers || []).length)
+            ? ` · bakje ${bakjesTekst(extraKliekjes.map((k) => k.item.containers[0]))}` : ""}
+        </span>
+      </span>
+      <span style={{ fontSize: 13, fontWeight: 600, color: C.blue, flexShrink: 0 }}>Opeten</span>
+      <ChevronRight size={16} color={C.blue} style={{ flexShrink: 0 }} />
+    </button>
+  ) : null;
 
   if (alGekookt) {
     // Is er al gevraagd of er iets over was? Zolang dat niet zo is, bieden we
@@ -4162,6 +4410,7 @@ function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, invento
             </button>
           </div>
         )}
+        {losseKliekjes && <div style={{ marginTop: 16 }}>{losseKliekjes}</div>}
         {kliekjeNogVragen && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 13, paddingTop: 12, borderTop: `1px solid ${C.ceramicDark}` }}>
             <span style={{ fontSize: 13, color: C.ink }}>Is er iets over?</span>
@@ -4175,6 +4424,7 @@ function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, invento
   }
 
   return (
+    <>
     <button onClick={() => onOpen(recipe.id)} style={{ ...basis, borderColor: C.mustard }}>
       <span style={{ fontSize: 26, flexShrink: 0 }}>{recipe.emoji || "🍽️"}</span>
       <span style={{ flex: 1, minWidth: 0 }}>
@@ -4182,6 +4432,11 @@ function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, invento
         <span style={{ display: "block", fontSize: 15, color: C.ink, fontWeight: 600, lineHeight: 1.25 }}>
           {kliekjeRegel ? "🍱 " : ""}{recipe.name}
         </span>
+        {kliekjeRegel && alleKliekjes.length > 1 && extraKliekjes.map((k) => (
+          <span key={k.item.id} style={{ display: "block", fontSize: 13, color: C.ink, lineHeight: 1.3, marginTop: 1 }}>
+            + {k.recipe.name}
+          </span>
+        ))}
         <span style={{ display: "block", fontSize: 12, color: kliekjeRegel ? kliekjeRegel.kleur : (mist ? C.brick : C.sage), marginTop: 2 }}>
           {kliekjeRegel ? "" : (cookNaam ? `${cookNaam} kookt · ` : "")}
           {kliekjeRegel
@@ -4193,6 +4448,8 @@ function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, invento
       </span>
       <ChevronRight size={18} color={C.inkSoft} style={{ flexShrink: 0 }} />
     </button>
+    {losseKliekjes}
+    </>
   );
 }
 
@@ -4408,6 +4665,8 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
   const [logboekOpen, setLogboekOpen] = useState(false);
   const [extras, setExtras] = useState([]); // extra gerechten naast het avondeten
   const [extraVoorDag, setExtraVoorDag] = useState(null);
+  // Voor welke avond staat het opeetblad open.
+  const [avondKliekjesDag, setAvondKliekjesDag] = useState(null);
 
   const [periodIndex, setPeriodIndex] = useState(0); // welke planningsperiode je bekijkt
   // Welke kijk op je kookboek: alles, kan ik maken, favoriet of seizoen.
@@ -5890,9 +6149,12 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   // Extra gerechten: plannen en meetellen in de boodschappen. Bewust géén
   // afboeken van de voorraad — dan zou elk extraatje een eigen kookknop met
   // bevestigingsscherm krijgen, en dat maakt het weekmenu een rommeltje.
-  const voegExtraToe = async ({ date, recipeId, label, servings }) => {
+  const voegExtraToe = async ({ date, recipeId, label, servings, kliekje = false, leftoverItemId = null }) => {
     const bestaande = extras.filter((e) => e.date === date).length;
-    const nieuw = { date, recipeId, label: label || "Extra", servings: servings || null, sortOrder: bestaande };
+    const nieuw = {
+      date, recipeId, label: label || "Extra", servings: servings || null, sortOrder: bestaande,
+      kliekje: !!kliekje, leftoverItemId: kliekje ? leftoverItemId : null, eatenAt: null,
+    };
     if (hasDataAPI && window.dataAPI.extras) {
       try {
         const id = await window.dataAPI.extras.add(nieuw);
@@ -5906,7 +6168,8 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       setExtras((prev) => [...prev, { ...nieuw, id: uid() }]);
     }
     setExtraVoorDag(null);
-    showToast(`${label} toegevoegd aan het weekmenu.`);
+    const naam = (recipes.find((r) => r.id === recipeId) || {}).name;
+    showToast(kliekje && naam ? `${naam} staat erbij.` : `${label} toegevoegd aan het weekmenu.`);
   };
 
   const verwijderExtra = async (id) => {
@@ -6519,69 +6782,56 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   // losse ingrediënten. Die zijn immers al opgemaakt toen je het kookte.
   // gekozenBakjes: welke bakjes je werkelijk gepakt hebt. Die nummers komen
   // daarna weer vrij voor een volgend gerecht.
+  // Eén kliekje opeten vanaf het recept. Zelfde regel als het opeetblad.
   const eatLeftover = (inventoryItemId, porties, recipe, gekozenBakjes = null, dagSleutel = null) => {
-    const item = inventory.find((i) => i.id === inventoryItemId);
-    if (!item) { showToast("Dit kliekje staat niet meer in je voorraad."); return; }
+    if (!inventory.some((i) => i.id === inventoryItemId)) { showToast("Dit kliekje staat niet meer in je voorraad."); return; }
+    eetKliekjes([{ itemId: inventoryItemId, porties, bakjes: gekozenBakjes, recipeId: recipe ? recipe.id : null }], dagSleutel);
+  };
 
-    // Eerst de avond afstempelen, dan pas de voorraad. Gaat het laatste bakje
-    // eruit, dan haalt de database de koppeling naar het kliekje weg; de avond
-    // moet dan al weten dat hij gegeten is. Alleen als het om dít kliekje op
-    // díé avond gaat — eet je iets uit de vriezer vanuit het kookboek, dan is
-    // er geen avond om bij te werken.
-    const gebruikt = Math.min(Number(porties) || 1, Number(item.current) || 0);
-    const rest = round2(Math.max(0, Number(item.current || 0) - gebruikt));
+  // Eén of meer kliekjes van één avond. Alles één keer wegschrijven.
+  const eetKliekjes = (keuzes, dagSleutel = null) => {
     const nu = new Date().toISOString();
+    const r = kliekjesOpeten({ keuzes, dagSleutel, weekmenu, extras, inventory, nu });
+    if (!r.resultaten.length) { showToast("Er is niets afgeboekt."); return; }
 
-    // De avond van waaruit je eet, krijgt altijd het stempel — ook als je
-    // vrijdags kliekje een dag eerder opeet. Eén weekmenu opbouwen en één keer
-    // wegschrijven: twee schrijfacties na elkaar op dezelfde oude toestand
-    // overschrijven elkaars werk.
-    let nextWeekmenu = weekmenu;
-    let wmGewijzigd = false;
-    if (dagSleutel) {
-      const dag = leesDag(weekmenu, dagSleutel);
-      if (dag && dag.leftoverItemId === inventoryItemId && !dag.eatenAt) {
-        nextWeekmenu = { ...weekmenu, [dagSleutel]: { ...dag, eatenAt: nu } };
-        wmGewijzigd = true;
-      }
+    if (r.wmGewijzigd) persist("weekmenu", r.weekmenu, setWeekmenu);
+    pasExtrasAan(r, nu);
+    persist("inventory", r.inventory, setInventory);
+
+    const regels = r.resultaten.map((x) => {
+      const recept = recipes.find((q) => q.id === (x.recipeId || (keuzes.find((k) => k.itemId === x.itemId) || {}).recipeId));
+      return recept
+        ? { id: uid(), recipeId: recept.id, recipeName: recept.name, emoji: recept.emoji || "", servings: recept.servings, date: nu, leftover: true }
+        : null;
+    }).filter(Boolean);
+    if (regels.length) persist("cookLog", [...regels, ...cookLog], setCookLog);
+
+    const bakjeMelding = r.vrijgegeven.length
+      ? ` Bakje ${bakjesTekst(r.vrijgegeven)} ${r.vrijgegeven.length === 1 ? "is" : "zijn"} weer vrij.` : "";
+    const vrijMelding = r.vrij.length ? ` Het stond ook op ${avondenTekst(r.vrij)}; die avond is nu vrij.` : "";
+    let kop;
+    if (r.resultaten.length === 1) {
+      const rest = r.resultaten[0].rest;
+      kop = rest > 0
+        ? `Opgegeten. Er ${rest === 1 ? "is nog 1 portie" : `zijn nog ${rest} porties`} over.`
+        : "Opgegeten — het kliekje is op.";
+    } else {
+      const over = r.resultaten.filter((x) => x.rest > 0).length;
+      kop = `Opgegeten.${over ? ` Van ${over === 1 ? "één kliekje is" : `${over} kliekjes zijn`} nog wat over.` : ""}`;
     }
-    // Is dit het laatste bakje, dan verliezen andere avonden met hetzelfde
-    // kliekje hun koppeling. Die handelen we hier af in plaats van ze stil te
-    // laten terugvallen tot kookavond.
-    let andere = null;
-    if (rest <= 0) {
-      andere = kliekjeAfhandelen({ itemId: inventoryItemId, hoe: "opgegeten", weekmenu: nextWeekmenu, extras, nu });
-      if (andere.gestempeld.length || andere.vrij.length) {
-        nextWeekmenu = andere.weekmenu;
-        wmGewijzigd = true;
-        pasExtrasAan(andere);
-      }
-    }
-    if (wmGewijzigd) persist("weekmenu", nextWeekmenu, setWeekmenu);
+    showToast(kop + bakjeMelding + vrijMelding);
+  };
 
-    // Alleen de bakjes die je hebt aangetikt komen vrij; de rest blijft staan.
-    const hadBakjes = item.containers || [];
-    const vrijgegeven = gekozenBakjes && gekozenBakjes.length
-      ? gekozenBakjes.map(Number)
-      : hadBakjes.slice(0, gebruikt);
-    const overigeBakjes = hadBakjes.filter((n) => !vrijgegeven.includes(Number(n)));
-
-    const next = rest > 0
-      ? inventory.map((i) => (i.id === item.id ? { ...i, current: rest, containers: overigeBakjes } : i))
-      : inventory.filter((i) => i.id !== item.id);
-    persist("inventory", next, setInventory);
-
-    if (recipe) {
-      const entry = { id: uid(), recipeId: recipe.id, recipeName: recipe.name, emoji: recipe.emoji || "", servings: recipe.servings, date: new Date().toISOString(), leftover: true };
-      persist("cookLog", [entry, ...cookLog], setCookLog);
-    }
-    const bakjeMelding = vrijgegeven.length ? ` Bakje ${bakjesTekst(vrijgegeven)} is weer vrij.` : "";
-    const vrijMelding = andere && andere.vrij.length
-      ? ` Het stond ook op ${avondenTekst(andere.vrij)}; die avond is nu vrij.`
-      : "";
-    showToast((rest > 0
-      ? `Opgegeten. Er ${rest === 1 ? "is nog 1 portie" : `zijn nog ${rest} porties`} over.`
-      : "Opgegeten — het kliekje is op.") + bakjeMelding + vrijMelding);
+  const kliekjesOp = (dagSleutel) => kliekjesVanAvond({ dagSleutel, weekmenu, extras, inventory, recipes });
+  const openAvondKliekjes = (dagSleutel) => {
+    if (!kliekjesOp(dagSleutel).length) { showToast("Van deze avond ligt niets meer in je voorraad."); return; }
+    setAvondKliekjesDag(dagSleutel);
+  };
+  // Uit het weekmenu een avond openen. Liggen er meer kliekjes op, dan het
+  // blad; anders het recept, zoals altijd.
+  const openVanuitWeekmenu = (id, dbl, leftoverId, dagSleutel, metenKoken) => {
+    if (leftoverId && dagSleutel && kliekjesOp(dagSleutel).length > 1) { openAvondKliekjes(dagSleutel); return; }
+    openRecipeVanuit(id, { dag: dagSleutel, leftoverId, dubbel: dbl, naarKookboek: true, startKoken: metenKoken });
   };
 
   // Extraatjes staan niet in persist(): die gaan per stuk naar de database.
@@ -7637,14 +7887,37 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
         <WelcomeTour onFinish={() => updatePreferences({ welcomeSeen: true })} />
       )}
 
-      {extraVoorDag && (
-        <ExtraToevoegenModal
-          datum={extraVoorDag}
-          recipes={recipes}
-          onKies={voegExtraToe}
-          onClose={() => setExtraVoorDag(null)}
+      {avondKliekjesDag && (
+        <AvondKliekjesBlad
+          dagSleutel={avondKliekjesDag}
+          kliekjes={kliekjesOp(avondKliekjesDag)}
+          onEet={(keuzes) => { eetKliekjes(keuzes, avondKliekjesDag); setAvondKliekjesDag(null); }}
+          onClose={() => setAvondKliekjesDag(null)}
         />
       )}
+
+      {extraVoorDag && (() => {
+        // extraVoorDag is een datum ("Iets extra's") of { datum, tab } ("Nog
+        // een kliekje", dat meteen op de vriezer opent).
+        const datum = typeof extraVoorDag === "string" ? extraVoorDag : extraVoorDag.datum;
+        const dag = leesDag(weekmenu, datum) || {};
+        const alOpDezeDag = [
+          dag.leftoverItemId,
+          ...extras.filter((e) => e.date === datum && e.kliekje).map((e) => e.leftoverItemId),
+        ].filter(Boolean);
+        return (
+          <ExtraToevoegenModal
+            datum={datum}
+            beginTab={typeof extraVoorDag === "string" ? "recept" : (extraVoorDag.tab || "recept")}
+            recipes={recipes}
+            inventory={inventory}
+            geplandOp={(id) => kliekjeVerwijzingen(id, weekmenu, extras)}
+            alOpDezeDag={alOpDezeDag}
+            onKies={voegExtraToe}
+            onClose={() => setExtraVoorDag(null)}
+          />
+        );
+      })()}
 
       {logboekOpen && <LogboekModal onClose={() => setLogboekOpen(false)} />}
 
@@ -7796,9 +8069,16 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             cookNaam={(vanavondEntry || {}).cook}
             alGekookt={vanavondAlGekookt || !!(vanavondEntry && vanavondEntry.eatenAt)}
             inventory={inventory}
+            extraKliekjes={kliekjesOp(dateKey(new Date())).filter((k) => k.item.id !== (vanavondEntry || {}).leftoverItemId)}
+            onOpenKliekjes={() => openAvondKliekjes(dateKey(new Date()))}
             onKliekjeVraag={() => setKliekjeVraagDag(dateKey(new Date()))}
             onFoto={vanavondRecept && recipes.some((r) => r.id === vanavondRecept.id) ? () => setFotoVoorRecept(vanavondRecept.id) : null}
-            onOpen={(id) => openRecipeVanuit(id, { dag: dateKey(new Date()), leftoverId: (vanavondEntry || {}).leftoverItemId || null, dubbel: (vanavondEntry || {}).doublePortion })}
+            onOpen={(id) => {
+              const lid = (vanavondEntry || {}).leftoverItemId || null;
+              // Een kliekjesavond met meer dan één kliekje: het blad.
+              if (lid && kliekjesOp(dateKey(new Date())).length > 1) { openAvondKliekjes(dateKey(new Date())); return; }
+              openRecipeVanuit(id, { dag: dateKey(new Date()), leftoverId: lid, dubbel: (vanavondEntry || {}).doublePortion });
+            }}
             onVerrasMe={verrasMeVanavond}
             onNaarWeekmenu={() => setTab("weekmenu")}
           />
@@ -7896,7 +8176,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             onDelete={deleteInventoryItem}
             kliekjePlanning={(id) => kliekjeVerwijzingen(id, weekmenu, extras)}
             onScan={() => setScanOpen(true)}
-            onOpenRecipe={(id, dbl, leftoverId, dagSleutel, metenKoken) => openRecipeVanuit(id, { dag: dagSleutel, leftoverId, dubbel: dbl, naarKookboek: true, startKoken: metenKoken })}
+            onOpenRecipe={openVanuitWeekmenu}
             ernstigeBevindingen={bevindingen.filter((b) => b.ernst === "hoog").length}
             onOpenControle={() => setControleOpen(true)}
             onOpenShelfPhoto={() => { setShelfScanError(""); setShelfScanResults([]); setShelfPhotoOpen(true); }}
@@ -7925,7 +8205,10 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
         {tab === "weekmenu" && (
           <WeekmenuView
             extras={extras}
-            onAddExtra={(dag) => setExtraVoorDag(dag)}
+            personsPerPortion={preferences.personsPerPortion || 1}
+            onSetPersonsPerPortion={(v) => updatePreferences({ personsPerPortion: v })}
+            onOpenAvondKliekjes={(dag) => openAvondKliekjes(dag)}
+            onAddExtra={(dag, tab) => setExtraVoorDag(tab ? { datum: dag, tab } : dag)}
             onRemoveExtra={verwijderExtra}
             periodDays={periodDays}
             periods={periods}
@@ -7947,7 +8230,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             onDuplicate={duplicateWeekmenu}
             onApplyTemplate={applyWeekmenuTemplate}
             onShuffle={shuffleWeekmenu}
-            onOpenRecipe={(id, dbl, leftoverId, dagSleutel, metenKoken) => openRecipeVanuit(id, { dag: dagSleutel, leftoverId, dubbel: dbl, naarKookboek: true, startKoken: metenKoken })}
+            onOpenRecipe={openVanuitWeekmenu}
             onExportCalendar={() => setCalendarOpen(true)}
             onQuickPlan={quickPlanExpiring}
             onKliekjeVraag={(dagSleutel) => setKliekjeVraagDag(dagSleutel)}
@@ -8024,6 +8307,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
           }}
           onSetContainerNumbering={(v) => updatePreferences({ containerNumbering: v })}
           onSetContainerCount={(v) => updatePreferences({ containerCount: v })}
+          onSetPersonsPerPortion={(v) => updatePreferences({ personsPerPortion: v })}
           onOpenControle={() => { setSettingsOpen(false); setControleOpen(true); }}
           onOpenLogboek={() => { setSettingsOpen(false); setLogboekOpen(true); }}
           aantalBevindingen={bevindingen.length}
@@ -10136,10 +10420,12 @@ function RecipeForm({ initial, inventoryNames, inventoryItems = [], onImport, on
 /*  Voorraad                                                         */
 /* ---------------------------------------------------------------- */
 
-function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras = [], onAddExtra, onRemoveExtra, periodDays, periods, periodIndex, onPeriodChange, onPickDay, onPickCook, onPickAttendees, onSetDoublePortion, onClearDay, onGenerate, onAIGenerate, onPatternGenerate, onDuplicate, onApplyTemplate, onShuffle, onOpenRecipe, onExportCalendar, onQuickPlan, onKliekjeVraag, onNietGekookt }) {
+function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras = [], personsPerPortion = 1, onSetPersonsPerPortion = null, onOpenAvondKliekjes = null, onAddExtra, onRemoveExtra, periodDays, periods, periodIndex, onPeriodChange, onPickDay, onPickCook, onPickAttendees, onSetDoublePortion, onClearDay, onGenerate, onAIGenerate, onPatternGenerate, onDuplicate, onApplyTemplate, onShuffle, onOpenRecipe, onExportCalendar, onQuickPlan, onKliekjeVraag, onNietGekookt }) {
   const findRecipe = (id) => recipes.find((r) => r.id === id);
   const dayEntry = (day) => leesDag(weekmenu, day);
   const [toolsOpen, setToolsOpen] = useState(false);
+  // Bij welke dag staat de "Klopt niet?"-keuze open.
+  const [portieUitleg, setPortieUitleg] = useState(null);
   const plannedCount = periodDays.filter((d) => dayEntry(d.key)?.recipeId).length;
 
   const hasEmptyDay = periodDays.some((d) => { const e = dayEntry(d.key); return !e || (!e.recipeId && !e.offNight); });
@@ -10285,28 +10571,8 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
                       {/* Bij een kliekje erbij zetten hoeveel er is en hoe lang het nog
                           goed is — plan je iets dat eerder bederft, dan zeg ik dat. */}
                       {entry?.leftoverItemId && !entry?.eatenAt && (() => {
-                        const restje = (inventory || []).find((i) => i.id === entry.leftoverItemId);
-                        if (!restje) {
-                          return (
-                            <div style={{ fontSize: 11.5, color: C.brick }}>
-                              Kliekje staat niet meer in je voorraad
-                            </div>
-                          );
-                        }
-                        const houdbaarTot = restje.expiryDate ? parseDateKey(restje.expiryDate) : null;
-                        const bederftEerder = houdbaarTot && dateKey(houdbaarTot) < day.key;
-                        const dagenOver = houdbaarTot
-                          ? Math.round((houdbaarTot - startOfDay(new Date())) / 86400000)
-                          : null;
-                        return (
-                          <div style={{ fontSize: 11.5, color: bederftEerder ? C.brick : C.mustardDeep }}>
-                            Kliekje · {restje.current} {restje.current === 1 ? "portie" : "porties"}
-                            {(restje.containers || []).length > 0 ? ` · bakje ${bakjesTekst(restje.containers)}` : ""}
-                            {bederftEerder
-                              ? ` · let op: houdbaar tot ${houdbaarTot.getDate()}/${houdbaarTot.getMonth() + 1}`
-                              : dagenOver !== null ? ` · nog ${dagenOver} ${dagenOver === 1 ? "dag" : "dagen"} houdbaar` : ""}
-                          </div>
-                        );
+                        const st = kliekjeStatus((inventory || []).find((i) => i.id === entry.leftoverItemId), day.key);
+                        return <div style={{ fontSize: 11.5, color: C[st.kleur] }}>{st.tekst}</div>;
                       })()}
                     </div>
                     <button onClick={() => onPickDay(day.key)} title="Ander recept kiezen" style={{ background: "none", border: "none", cursor: "pointer" }}><Pencil size={13} color={C.inkSoft} /></button>
@@ -10415,6 +10681,40 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
                   Het avondgerecht blijft het anker van de dag. */}
               {(extras || []).filter((e) => e.date === day.key).map((extra) => {
                 const extraRecept = extra.recipeId ? findRecipe(extra.recipeId) : null;
+                if (extra.kliekje) {
+                  // Een kliekje erbij: zelfde regel als het kliekje van de
+                  // avond zelf. Tikken opent het opeetblad van die avond.
+                  const st = extra.eatenAt ? null
+                    : kliekjeStatus((inventory || []).find((i) => i.id === extra.leftoverItemId), day.key);
+                  return (
+                    <div key={extra.id} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7, paddingLeft: 56 }}>
+                      <span style={{ color: C.inkSoft, fontSize: 13 }}>┗</span>
+                      <span style={{ fontSize: 15 }}>{extraRecept?.emoji || "\uD83C\uDF71"}</span>
+                      <span
+                        style={{ flex: 1, minWidth: 0, cursor: extraRecept ? "pointer" : "default" }}
+                        onClick={() => extraRecept && (onOpenAvondKliekjes ? onOpenAvondKliekjes(day.key) : onOpenRecipe(extraRecept.id))}
+                      >
+                        <span style={{ display: "block", fontSize: 13, color: extra.eatenAt ? C.inkSoft : C.ink }}>
+                          {"\uD83C\uDF71 "}{extraRecept ? extraRecept.name : "Onbekend recept"}
+                        </span>
+                        {extra.eatenAt ? (
+                          <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, color: C.sage }}>
+                            <Check size={12} style={{ flexShrink: 0 }} /> Opgegeten · {gekooktOmschrijving(extra.eatenAt)}
+                          </span>
+                        ) : (
+                          <span style={{ display: "block", fontSize: 11.5, color: C[st.kleur] }}>{st.tekst}</span>
+                        )}
+                      </span>
+                      <button
+                        onClick={() => onRemoveExtra(extra.id)}
+                        aria-label="Kliekje van deze dag halen"
+                        style={{ background: "none", border: "none", cursor: "pointer", padding: 8, margin: -8 }}
+                      >
+                        <X size={14} color={C.inkSoft} />
+                      </button>
+                    </div>
+                  );
+                }
                 return (
                   <div key={extra.id} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, paddingLeft: 56 }}>
                     <span style={{ color: C.inkSoft, fontSize: 13 }}>┗</span>
@@ -10441,18 +10741,71 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
                 );
               })}
 
+              {/* Te weinig porties voor wie er mee-eet? Zeggen, niet beslissen:
+                  "Klopt niet?" stelt in hoeveel mensen er bij jullie van één
+                  portie eten, en dan blijft deze melding voortaan weg. */}
+              {!day.isVerleden && (() => {
+                const eters = (entry?.attendees || []).length || (cooks || []).length;
+                const tekort = kliekjesTekort({ entry, extras, inventory, dagSleutel: day.key, eters, personenPerPortie: personsPerPortion });
+                if (!tekort) return null;
+                return (
+                  <div style={{ marginLeft: 56, marginTop: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", fontSize: 11.5, color: C.ink }}>
+                      <span aria-hidden="true" style={{ width: 5, height: 5, borderRadius: "50%", background: C.brick, flexShrink: 0 }} />
+                      <span>
+                        {tekort.porties} {tekort.porties === 1 ? "portie" : "porties"}, en jullie eten met {metZnAllen(tekort.eters)}
+                      </span>
+                      {onSetPersonsPerPortion && (
+                        <button type="button"
+                          onClick={() => setPortieUitleg(portieUitleg === day.key ? null : day.key)}
+                          // 44 pixels hoog raakvlak, met negatieve marge zodat de regel er niet hoger van wordt.
+                          style={{ ...linkKnop, fontSize: 11.5, minHeight: 44, padding: "0 8px", margin: "-14px -4px", display: "inline-flex", alignItems: "center" }}>
+                          Klopt niet?
+                        </button>
+                      )}
+                    </div>
+                    {portieUitleg === day.key && (
+                      <div style={{ background: C.noteBg, borderRadius: 12, padding: "10px 12px", marginTop: 8 }}>
+                        <div style={{ fontSize: 12.5, color: C.ink, marginBottom: 8 }}>Eén portie is bij jullie genoeg voor:</div>
+                        <PortieKeuze waarde={personsPerPortion} onKies={(n) => { onSetPersonsPerPortion(n); setPortieUitleg(null); }} />
+                        <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 8, lineHeight: 1.45 }}>
+                          Geldt voor alle kliekjes. Ook te wijzigen in Instellingen.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {!day.isVerleden && (
-                <button
-                  onClick={() => onAddExtra(day.key)}
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 5, marginTop: 6, marginLeft: 56,
-                    background: "none", border: `1px dashed ${C.borderTint}`, borderRadius: 20,
-                    padding: "5px 11px", minHeight: 34, cursor: "pointer", fontFamily: FONT_BODY,
-                  }}
-                >
-                  <Plus size={12} color={C.inkSoft} />
-                  <span style={{ fontSize: 11.5, color: C.inkSoft }}>Iets extra's</span>
-                </button>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 7, marginLeft: 56 }}>
+                  {/* Alleen bij een kliekjesavond. Bij een gewone kookavond
+                      kan een kliekje erbij via Iets extra's > Uit de vriezer. */}
+                  {entry?.leftoverItemId && !entry?.eatenAt && (
+                    <button
+                      onClick={() => onAddExtra(day.key, "vriezer")}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 5,
+                        background: "none", border: `1px solid ${C.mustardDeep}`, borderRadius: 20,
+                        padding: "5px 11px", minHeight: 34, cursor: "pointer", fontFamily: FONT_BODY,
+                      }}
+                    >
+                      <Plus size={12} color={C.mustardDeep} />
+                      <span style={{ fontSize: 11.5, color: C.mustardDeep, fontWeight: 600 }}>Nog een kliekje</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => onAddExtra(day.key)}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 5,
+                      background: "none", border: `1px dashed ${C.borderTint}`, borderRadius: 20,
+                      padding: "5px 11px", minHeight: 34, cursor: "pointer", fontFamily: FONT_BODY,
+                    }}
+                  >
+                    <Plus size={12} color={C.inkSoft} />
+                    <span style={{ fontSize: 11.5, color: C.inkSoft }}>Iets extra's</span>
+                  </button>
+                </div>
               )}
             </div>
           );
@@ -10742,7 +11095,122 @@ function CookDislikeRow({ name, preferences, onUpdate }) {
   );
 }
 
-function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onShowWelcome, onExportBackup, onToggleDarkMode, onSetWinkeldagen, onSetContainerNumbering, onSetContainerCount, onOpenControle, onOpenLogboek, aantalBevindingen = 0, heeftPremium = false, dataConsent = false, onSetDataConsent, onSetHouseholdFacts, huishoudFeiten = null, onMoveCategoryOrder, onUpdateCookDiets, onUpdateCookDislikes, onTogglePremium, onClose }) {
+// Opeetblad voor een avond met meer dan één kliekje. Sta je bij een open
+// vriezer, dan wil je één lijst: welke bakjes pak ik. Niet twee receptpagina's.
+// Per kliekje een aantal (0 = vanavond niet), en één knop.
+function AvondKliekjesBlad({ dagSleutel, kliekjes = [], onEet, onClose }) {
+  const [porties, setPorties] = useState(() => Object.fromEntries(kliekjes.map((k) => [k.item.id, 1])));
+  const vandaagK = dateKey(new Date());
+  const d = parseDateKey(dagSleutel);
+  const plekken = [...new Set(kliekjes.map((k) => kliekjePlek(k.item)))];
+  const titel = plekken.length === 1 ? `Uit de ${plekken[0]}` : "Uit de vriezer en de koelkast";
+  const keuzes = kliekjes.map((k) => ({ itemId: k.item.id, porties: porties[k.item.id] || 0, recipeId: k.recipe.id }));
+  const teEten = keuzes.filter((k) => k.porties > 0);
+  const pakBakjes = kliekjes.flatMap((k) => (k.item.containers || []).slice(0, porties[k.item.id] || 0));
+
+  return (
+    <Modal title={titel} onClose={onClose}>
+      <div style={{ ...TYPE.label, color: C.inkSoft, margin: "-4px 0 4px" }}>
+        {dagSleutel === vandaagK ? "Vanavond" : `${DAG_LANG[d.getDay()]} ${d.getDate()} ${MAAND_LANG[d.getMonth()]}`}
+      </div>
+      <div style={{ ...TYPE.klein, color: C.inkSoft, marginBottom: 4 }}>
+        {pakBakjes.length ? "Pak deze bakjes." : "Hoeveel eten jullie ervan?"}
+      </div>
+
+      {kliekjes.map(({ item, recipe }) => {
+        const aantal = porties[item.id] || 0;
+        const max = Number(item.current) || 0;
+        const bakjes = (item.containers || []).slice(0, aantal);
+        const zet = (n) => setPorties((p) => ({ ...p, [item.id]: Math.max(0, Math.min(max, n)) }));
+        return (
+          <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderBottom: `1px solid ${C.ceramicDark}` }}>
+            {/* Het bakjenummer groot, want daar zoek je naar met de vriezer
+                open. Geen nummers? Dan het gerecht. */}
+            <div style={{
+              width: 46, height: 46, borderRadius: 10, flexShrink: 0,
+              border: `2px solid ${aantal ? C.ink : C.inkSoft}`,
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            }}>
+              {bakjes.length ? (
+                <>
+                  <span style={{ fontFamily: FONT_MONO, fontSize: bakjes.length > 1 ? 13 : 19, lineHeight: 1, fontWeight: 500, color: C.ink }}>
+                    {bakjes.join(",")}
+                  </span>
+                  <span style={{ fontFamily: FONT_MONO, fontSize: 8, letterSpacing: "0.1em", color: C.inkSoft, marginTop: 3 }}>
+                    {bakjes.length === 1 ? "BAKJE" : "BAKJES"}
+                  </span>
+                </>
+              ) : (
+                <span style={{ fontSize: 22 }}>{recipe.emoji || "\uD83C\uDF71"}</span>
+              )}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 500, color: aantal ? C.ink : C.inkSoft, lineHeight: 1.3 }}>{recipe.name}</div>
+              <div style={{ ...TYPE.klein, color: C.inkSoft }}>
+                {aantal ? `${max} ${max === 1 ? "portie" : "porties"} in de ${kliekjePlek(item)}` : "vanavond niet"}
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", border: `1px solid ${C.ceramicDark}`, borderRadius: 10, background: C.cardBg, flexShrink: 0 }}>
+              <button type="button" onClick={() => zet(aantal - 1)} disabled={aantal <= 0} aria-label={`Minder ${recipe.name}`}
+                style={{ width: 40, height: 44, background: "none", border: "none", cursor: aantal > 0 ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Minus size={15} color={aantal > 0 ? C.ink : C.offBtn} />
+              </button>
+              <span style={{ width: 22, textAlign: "center", fontWeight: 600, fontSize: 14, color: C.ink }}>{aantal}</span>
+              <button type="button" onClick={() => zet(aantal + 1)} disabled={aantal >= max} aria-label={`Meer ${recipe.name}`}
+                style={{ width: 40, height: 44, background: "none", border: "none", cursor: aantal < max ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Plus size={15} color={aantal < max ? C.ink : C.offBtn} />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+
+      <div style={{ marginTop: 14 }}>
+        <PrimaryButton tone="mustard" full disabled={!teEten.length} onClick={() => onEet(teEten)}>
+          <Check size={16} /> Opgegeten
+        </PrimaryButton>
+      </div>
+      <div style={{ ...TYPE.klein, color: C.inkSoft, textAlign: "center", marginTop: 9 }}>
+        {pakBakjes.length ? `Bakje ${bakjesTekst(pakBakjes)} ${pakBakjes.length === 1 ? "komt" : "komen"} vrij. ` : ""}
+        De avond staat daarna als gegeten.
+      </div>
+    </Modal>
+  );
+}
+
+// Hoeveel mensen eten er van één portie? Eén rijtje, gebruikt in Instellingen
+// én in de portiemelding in het weekmenu, zodat de keuze er op beide plekken
+// hetzelfde uitziet. Zelfde vorm als de winkeldagen: daarvan is het contrast
+// in beide thema's al doorgemeten.
+function PortieKeuze({ waarde = 1, onKies }) {
+  return (
+    <div style={{ display: "flex", gap: 6 }} role="radiogroup" aria-label="Personen per portie">
+      {[1, 2, 3, 4].map((n) => {
+        const aan = Number(waarde) === n;
+        return (
+          <button
+            key={n}
+            type="button"
+            role="radio"
+            aria-checked={aan}
+            onClick={() => onKies && onKies(n)}
+            style={{
+              width: 44, height: 44, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+              fontFamily: FONT_BODY, fontSize: 14, fontWeight: 600,
+              background: aan ? C.blueBtn : "transparent",
+              border: `1.5px solid ${aan ? C.blue : C.inkSoft}`,
+              color: aan ? C.blueBtnInk : C.inkSoft,
+            }}
+          >
+            {n}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SettingsModal({ household, members, preferences, cooks, onRename, onLogout, onOpenMagnet, onOpenTabletMode, onShowWelcome, onExportBackup, onToggleDarkMode, onSetWinkeldagen, onSetContainerNumbering, onSetContainerCount, onSetPersonsPerPortion = null, onOpenControle, onOpenLogboek, aantalBevindingen = 0, heeftPremium = false, dataConsent = false, onSetDataConsent, onSetHouseholdFacts, huishoudFeiten = null, onMoveCategoryOrder, onUpdateCookDiets, onUpdateCookDislikes, onTogglePremium, onClose }) {
   const hoofdDag = preferences.shoppingDay == null ? 6 : Number(preferences.shoppingDay);
   const extraDagen = winkelDagen(hoofdDag, preferences.shoppingDaysExtra).filter((d) => d !== hoofdDag);
   const [hoofddagOpen, setHoofddagOpen] = useState(false);
@@ -10954,6 +11422,19 @@ function SettingsModal({ household, members, preferences, cooks, onRename, onLog
             </div>
           )}
         </div>
+        {/* Hoeveel mensen er van één portie eten. Hangt af van de bakjes:
+            in het ene huishouden is een bakje één bord, in het andere twee.
+            Bepaalt alleen of het weekmenu meldt dat een kliekje te weinig is. */}
+        {onSetPersonsPerPortion && (
+          <div style={{ padding: "12px", borderBottom: `1px solid ${C.ceramic}` }}>
+            <div style={{ fontSize: 14, color: C.ink, marginBottom: 2 }}>Eén portie is genoeg voor</div>
+            <div style={{ fontSize: 11, color: C.inkSoft, marginBottom: 9, lineHeight: 1.45 }}>
+              Zoveel mensen eten er bij jullie van één bakje. Het weekmenu meldt een kliekje als
+              te weinig pas als het onder dat aantal blijft.
+            </div>
+            <PortieKeuze waarde={preferences.personsPerPortion || 1} onKies={onSetPersonsPerPortion} />
+          </div>
+        )}
         {/* Eén rij met de week erin, in plaats van een keuzelijst met één dag.
             De hoofddag is gevuld: daar begint je weekmenu, en die kan dus niet
             zomaar uit. De extra dagen zijn gewone rondes — die bepalen alleen
@@ -12162,13 +12643,7 @@ function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose
     }, 900);
   };
 
-  const leftovers = useMemo(() => {
-    if (!inventory) return [];
-    return inventory
-      .filter((i) => i.sourceRecipeId && i.current > 0)
-      .map((i) => ({ item: i, recipe: recipes.find((r) => r.id === i.sourceRecipeId), daysLeft: daysUntil(i.expiryDate) }))
-      .filter((l) => l.recipe);
-  }, [inventory, recipes]);
+  const leftovers = useMemo(() => kliekjesInVoorraad(inventory, recipes), [inventory, recipes]);
 
   return (
     <Modal title="Kies een recept" onClose={onClose}>
@@ -12275,6 +12750,17 @@ function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose
       </div>
     </Modal>
   );
+}
+
+// Welke kliekjes liggen er? Eén plek voor de receptkiezer en voor "Uit de
+// vriezer". Wat het eerst over datum gaat staat bovenaan: dat is de volgorde
+// waarin je ze wilt opeten. Zonder houdbaarheidsdatum achteraan.
+function kliekjesInVoorraad(inventory, recipes) {
+  return (inventory || [])
+    .filter((i) => i && i.sourceRecipeId && Number(i.current) > 0)
+    .map((i) => ({ item: i, recipe: (recipes || []).find((r) => r.id === i.sourceRecipeId), daysLeft: daysUntil(i.expiryDate) }))
+    .filter((l) => l.recipe)
+    .sort((a, b) => (a.daysLeft == null ? 1e9 : a.daysLeft) - (b.daysLeft == null ? 1e9 : b.daysLeft));
 }
 
 function daysUntil(dateStr) {
