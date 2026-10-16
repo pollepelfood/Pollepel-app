@@ -345,7 +345,7 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v95 · 15 oktober 2026";
+const APP_VERSIE = "v96 · 16 oktober 2026";
 
 // Versie van de toestemmingstekst. Verandert de tekst wezenlijk, dan gaat dit
 // omhoog en moet er opnieuw gevraagd worden — oude toestemming dekt een nieuwe
@@ -407,6 +407,8 @@ const norm = (s) => (s || "").trim().toLowerCase();
 const IRREGULAR_SINGULARS = {
   eieren: "ei", kinderen: "kind", bladeren: "blad", eiwitten: "eiwit",
   tenen: "teen", teentjes: "teentje",
+  // Geen meervoud, maar zonder dit is "verse gember" iets anders dan "Gember vers".
+  verse: "vers",
 };
 
 // Geeft de mogelijke enkelvoudsvormen terug. We gokken bewust niet op één vorm:
@@ -443,7 +445,8 @@ function wordVariants(w) {
 const INGREDIENT_SYNONYMS = [
   ["knoflook", "knoflookteen", "knoflooktenen", "knoflookteentje", "knoflookteentjes", "teentje knoflook"],
   ["kip", "kipfilet", "kipdij", "kipdijfilet", "kippenpoot", "kipreepjes", "kippendij"],
-  ["tomaat", "tomaten", "tomatenblokje", "tomatenblokjes", "trostomaat", "kerstomaat", "cherrytomaat", "cherrytomaatjes"],
+  // Geen tomatenblokjes: dat zijn blikken, en "4 tomaten" werd zo 4 blikken.
+  ["tomaat", "tomaten", "trostomaat", "kerstomaat", "cherrytomaat", "cherrytomaatjes", "snoeptomaat"],
   ["ui", "uien", "sjalot", "sjalotje"],
   ["room", "kookroom", "slagroom"],
   ["melk", "halfvolle melk", "volle melk", "magere melk"],
@@ -870,6 +873,172 @@ function convertAmount(amount, fromUnit, toUnit) {
   return null;
 }
 
+// ---- Past dit voorraadproduct bij deze receptregel? ----
+//
+// namesMatch zegt of twee namen hetzelfde product kúnnen zijn. Voor een
+// recept is dat te ruim: dan telt gruyère als "in huis" omdat je parmezaan
+// hebt, wordt curry pasta een pak penne, en 4 tomaten 4 blikken. Een
+// verkeerde koppeling is erger dan geen: zonder koppeling zie je dat iets
+// ontbreekt en kun je het zelf aanwijzen ("Tik erop om het te koppelen"),
+// een verkeerde zie je niet.
+//
+// Drie extra eisen, alleen voor recepten:
+//   1. Dezelfde vorm. Poeder of gemalen, blik, gedroogd, gebakken of al
+//      gekookt is een ander product dan het verse.
+//   2. Een woord dat het recept preciezer maakt ("gruyère", "zoete",
+//      "lente-") moet ook in het product staan. Andersom mag wel: vraagt het
+//      recept "kaas", dan is je parmezaan goed.
+//   3. Binnen een synoniemengroep mag een algemene naam ("pasta", "kip") elk
+//      lid dekken, maar twee verschillende leden niet elkaar: penne is geen
+//      spaghetti, kipfilet geen kippenpoot, kookroom geen slagroom.
+
+// Woorden die niets aan het product veranderen.
+const NEUTRALE_WOORDEN = new Set([
+  "vers", "verse", "groot", "grote", "klein", "kleine", "middelgrote", "fijn", "fijne",
+  "bio", "biologisch", "biologische", "rode", "rood", "witte", "wit", "gele", "geel",
+  "groene", "groen", "half", "om", "halfvolle", "volle", "magere", "nieuwe",
+  "kruimige", "vastkokende", "festijn", "geraspte", "geraspt", "gesneden",
+  "fijngesneden", "gehakte", "uitgelekt", "uitgelekte", "of", "en", "met", "van",
+  "stuk", "stuks", "teen", "tenen", "teentje", "teentjes", "takje", "takjes",
+  "extra", "vierge", "mild", "milde", "licht", "lichte", "zwart", "zwarte", "volkoren",
+  "julienne", "houdbaar", "houdbare", "mix", "kruidenmix", "kruidenmengsel", "specerijenmix",
+  // De vorm is hierboven al vergeleken; die woorden tellen hier niet nog eens.
+  "poeder", "gemalen", "blik", "blikje", "blikken", "gedroogd", "gedroogde",
+  "gebakken", "gekookt", "gekookte",
+]);
+
+// Smaken waarbij "pasta" een smeersel is en geen deegwaar.
+const PASTA_ALS_SMEERSEL = /\b(curry|kerrie|tikka|masala|sambal|miso|gember|knoflook|harissa|pinda|sesam|tandoori|korma|rendang|laksa|chipotle|vanille|amandel|pistache|truffel|olijven|tomaten)\b[^()]*\bpasta\b|\bpaste\b/;
+
+// Producten die je vers koopt; zonder "poeder" of "blik" erbij is het die.
+const VERS_BASIS = ["paprika", "ui", "uien", "sjalot", "sjalotje", "knoflook", "gember",
+  "tomaat", "tomaten", "wortel", "citroen", "limoen", "peterselie", "koriander", "basilicum"];
+
+function productVormen(naam) {
+  const tekst = norm(naam);
+  const woorden = tekst.replace(/[^a-zà-ÿ\s-]/g, " ").replace(/-+/g, " ").split(/\s+/).filter(Boolean);
+  const v = new Set();
+  woorden.forEach((w) => {
+    if (w === "poeder" || w === "gemalen" || (w.length > 6 && w.endsWith("poeder"))) v.add("poeder");
+    if (w === "blik" || w === "blikje" || w === "blikken" || /blokjes?$/.test(w)) v.add("blik");
+    if (w === "gedroogd" || w === "gedroogde") v.add("gedroogd");
+    if (w === "gebakken") v.add("gebakken");
+    if (w === "gekookt" || w === "gekookte") v.add("gekookt");
+    if (w === "mix" || w === "kruidenmix" || w === "kruidenmengsel" || w === "specerijenmix" || w === "marinade") v.add("mix");
+  });
+  if (PASTA_ALS_SMEERSEL.test(tekst)) v.add("smeersel");
+  return v;
+}
+
+const LEPELMATEN = new Set(["eetlepel", "theelepel", "snufje"]);
+
+function lijktVers(naam, eenheid) {
+  const w = nameWords(naam);
+  // Ook tussen haakjes: "Gember (vers)".
+  if (/\bverse?\b/.test(norm(naam))) return true;
+  if ((eenheid || "").toLowerCase() === "stuks") return true;
+  if (LEPELMATEN.has((eenheid || "").toLowerCase())) return false;
+  return w.some((x) => VERS_BASIS.some((b) => wordsEqual(x, b)));
+}
+
+// Welke term uit de synoniemenlijst draagt deze naam, en is die algemeen
+// (de eerste van de groep) of een specifiek lid?
+function synoniemTerm(woorden) {
+  const groep = synonymGroup(woorden);
+  if (!groep) return null;
+  const algemeen = groep[0];
+  let term = null;
+  const kandidaat = (t) => {
+    if (!groep.includes(t)) return;
+    const isAlgemeen = wordVariants(t).some((x) => wordVariants(algemeen).includes(x));
+    if (!term || (term.algemeen && !isAlgemeen)) term = { t, algemeen: isAlgemeen };
+  };
+  kandidaat(woorden.join(" "));
+  woorden.forEach((w) => { kandidaat(w); wordVariants(w).forEach(kandidaat); });
+  return term ? { groep, ...term } : null;
+}
+
+// Specifieke leden die wél voor elkaar mogen invallen (zelfde product).
+const ZELFDE_PRODUCT = [
+  ["knoflook", "knoflookteen", "knoflooktenen", "knoflookteentje", "knoflookteentjes", "teentje knoflook"],
+  ["kipdij", "kipdijfilet", "kippendij"],
+  ["kipfilet", "kipreepjes"],
+  ["kerstomaat", "cherrytomaat", "cherrytomaatjes", "snoeptomaat"],
+  ["sjalot", "sjalotje"],
+  ["halfvolle melk", "volle melk", "magere melk"],
+  ["spek", "spekjes", "katenspek", "ontbijtspek"],
+  ["wortel", "wortels", "winterpeen", "bospeen", "worteltjes"],
+  ["aardappel", "aardappelen"],
+  ["boter", "roomboter"],
+  ["bouillon", "bouillonblokje", "bouillonblokjes"],
+];
+const STRIKTE_GROEPEN = new Set(["tomaat"]);
+const zelfdeProduct = (a, b) => ZELFDE_PRODUCT.some((set) =>
+  set.some((x) => wordVariants(a).includes(x) || x === a) && set.some((x) => wordVariants(b).includes(x) || x === b));
+
+function pastBijRecept(itemNaam, ing) {
+  const na = norm(itemNaam), nb = norm(ing && ing.name);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+
+  // 1. Vorm.
+  const vi = productVormen(itemNaam), vr = productVormen(ing.name);
+  for (const vorm of new Set([...vi, ...vr])) {
+    if (vi.has(vorm) === vr.has(vorm)) continue;
+    // Een kale specerij in lepels is vrijwel altijd gemalen: "1 tl paprika".
+    if (vorm === "poeder") {
+      const zonder = vi.has(vorm) ? { naam: ing.name, eenheid: ing.unit } : { naam: itemNaam, eenheid: null };
+      if (!lijktVers(zonder.naam, zonder.eenheid)) continue;
+    }
+    // "Kikkererwten" en "Kikkererwten (blik)" zijn hetzelfde, en gedroogde
+    // oregano is gewoon oregano; alleen bij iets dat je normaal vers koopt is
+    // blik of gedroogd een ander product.
+    if (vorm === "blik" || vorm === "gedroogd") {
+      const zonder = vi.has(vorm) ? ing.name : itemNaam;
+      if (!lijktVers(zonder, null)) continue;
+    }
+    // Een kruidenmix in lepels ("baharat kruidenmix") mag het kale potje zijn;
+    // "Mix voor kip" is nooit de kip zelf.
+    if (vorm === "mix" && vr.has(vorm) && LEPELMATEN.has((ing.unit || "").toLowerCase())) continue;
+    return false;
+  }
+
+  const wi = nameWords(itemNaam), wr = nameWords(ing.name);
+  // Aaneengeschreven tegenover los ("rodewijnazijn"): daar zijn de woorden
+  // niet los te vergelijken, en de vorm is hierboven al bekeken.
+  if (aaneenMatch(wi, wr)) return true;
+
+  // 2. Wat het recept preciezer maakt, moet het product ook hebben.
+  const ti = synoniemTerm(wi), tr = synoniemTerm(wr);
+  const inTerm = (w, t) => t && (t.t.split(" ").some((x) => wordsEqual(x, w)) || wordVariants(w).some((x) => t.groep.includes(x)));
+  const extra = wr.filter((w) => !NEUTRALE_WOORDEN.has(w)
+    && !wi.some((x) => wordsEqual(x, w))
+    && !inTerm(w, tr));
+  if (extra.length) return false;
+
+  // 3. Twee verschillende specifieke leden van één groep.
+  if (ti && tr && ti.groep === tr.groep && !wordsEqual(ti.t, tr.t) && !zelfdeProduct(ti.t, tr.t)) {
+    if (!ti.algemeen && !tr.algemeen) return false;
+    // Bij tomaten is ook de algemene naam een eigen product: "4 tomaten"
+    // zijn geen cherrytomaatjes.
+    if (STRIKTE_GROEPEN.has(ti.groep[0])) return false;
+    // Het recept vraagt iets specifieks (penne), het product heet algemeen
+    // maar zegt er zelf iets anders bij ("Pipe Rigate pasta", "Mix voor kip").
+    if (!tr.algemeen && ti.algemeen) {
+      const eigen = wi.filter((w) => !NEUTRALE_WOORDEN.has(w)
+        && !wr.some((x) => wordsEqual(x, w)) && !inTerm(w, ti));
+      if (eigen.length) return false;
+    }
+  }
+  return true;
+}
+
+// Kliekjes zijn eten dat je zelf hebt gekookt, geen ingrediënt. Zonder deze
+// regel kwam "kip cordon bleu" uit bij "Vriezer: Kip tikka masala".
+function isKliekjeProduct(item) {
+  return !!(item && (item.sourceRecipeId || /^(vriezer|restje)\b/i.test(norm(item.name))));
+}
+
 // Zoekt het voorraaditem bij een receptingrediënt.
 // Een vastgelegde koppeling gaat altijd voor op raden.
 function findInventoryMatch(inventory, ing) {
@@ -882,7 +1051,8 @@ function findInventoryMatch(inventory, ing) {
   // Meerdere producten kunnen op dezelfde naam matchen: "Aardappelen" én
   // "Krieltjes". Eerder pakte de app simpelweg de eerste uit de lijst, wat een
   // willekeurige keuze is. Nu kiest hij de beste.
-  const kandidaten = inventory.filter((i) => namesMatch(i.name, ing.name));
+  const kandidaten = inventory.filter((i) => !isKliekjeProduct(i)
+    && namesMatch(i.name, ing.name) && pastBijRecept(i.name, ing));
   if (!kandidaten.length) return null;
   if (kandidaten.length === 1) return kandidaten[0];
 
@@ -1666,7 +1836,18 @@ function kliekjeVerwijzingen(itemId, weekmenu, extras) {
 function kliekjeAfhandelen({ itemId, hoe, weekmenu, extras, vandaag = dateKey(new Date()), nu = new Date().toISOString() }) {
   const refs = kliekjeVerwijzingen(itemId, weekmenu, extras);
   const wm = { ...weekmenu };
-  const uit = { weekmenu: wm, extrasStempel: [], extrasWeg: [], gestempeld: [], vrij: [] };
+  const uit = { weekmenu: wm, extrasStempel: [], extrasWeg: [], gestempeld: [], vrij: [], producent: [] };
+  // De avond waarop dit kliekje is gekookt. Verdwijnt het product, dan maakt
+  // de database die koppeling leeg, en dan lijkt het alsof er nooit naar een
+  // kliekje is gevraagd: "Restje bewaren" en "Is er iets over?" kwamen terug.
+  // Wat er over was is nu op of weg, dus: niets meer over.
+  Object.keys(wm).forEach((sleutel) => {
+    const dag = wm[sleutel];
+    if (dag && dag.producedLeftoverId === itemId) {
+      wm[sleutel] = { ...dag, producedLeftoverId: "geen" };
+      uit.producent.push(sleutel);
+    }
+  });
   refs.forEach((r) => {
     const stempel = hoe === "opgegeten" && r.sleutel <= vandaag;
     if (r.soort === "dag") {
@@ -1736,7 +1917,7 @@ function kliekjesOpeten({ keuzes = [], dagSleutel = null, weekmenu = {}, extras 
     }
     if (rest <= 0) {
       const r = kliekjeAfhandelen({ itemId, hoe: "opgegeten", weekmenu: wm, extras: extrasNu(), nu, vandaag });
-      if (r.gestempeld.length || r.vrij.length) { wm = r.weekmenu; wmGewijzigd = true; }
+      if (r.gestempeld.length || r.vrij.length || r.producent.length) { wm = r.weekmenu; wmGewijzigd = true; }
       extrasStempel.push(...r.extrasStempel);
       extrasWeg.push(...r.extrasWeg);
       vrij.push(...r.vrij);
@@ -4991,13 +5172,22 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
         const weg = cookLog.filter((e) => !nieuweIds.has(e.id));
         for (const e of weg) await window.dataAPI.cookLog.remove(e);
       }
-      if (value.length && (!cookLog.length || value[0].id !== cookLog[0]?.id)) {
+      // Alleen een regel die er echt nog niet was. Eerder gold "de bovenste
+      // regel heeft een ander id" als nieuw — maar na het terugdraaien van de
+      // laatste kookbeurt schuift de vorige naar boven, en die werd dan nog
+      // een keer opgeslagen. Zo stond een kookbeurt dubbel in Historie.
+      if (value.length && !cookLog.some((e) => e.id === value[0].id)) {
         await window.dataAPI.cookLog.add(value[0]);
       }
       return;
     }
     if (key === "consumptionLog") {
-      const nieuw = value.slice(0, Math.max(0, value.length - consumptionLog.length));
+      // Nieuw = wat er in de vorige lijst niet in zat. Eerder werd dat
+      // afgeleid uit het verschil in lengte, maar de lijst wordt op 500
+      // afgekapt: vanaf dat punt is hij niet meer langer geworden en werd er
+      // stilletjes niets meer opgeslagen.
+      const oud = new Set(consumptionLog);
+      const nieuw = value.filter((e) => !oud.has(e));
       if (nieuw.length) await window.dataAPI.consumptionLog.addMany(nieuw);
       return;
     }
@@ -6227,6 +6417,9 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     // exact terug te kunnen draaien: opnieuw uitrekenen kan niet, want je mag
     // bij het koken zelf een afwijkende hoeveelheid invullen.
     const afgeboekt = [];
+    // Eén tijdstip voor de hele kookbeurt: de kookregel en de verbruiksregels
+    // krijgen hetzelfde, zodat terugdraaien precies die regels terugvindt.
+    const nu = new Date().toISOString();
 
     recipe.ingredients.forEach((ing) => {
       const matchItem = findInventoryMatch(nextInventory, ing);
@@ -6247,7 +6440,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       nextInventory[idx] = { ...item, current: newCurrent };
       used.push(item.name);
       afgeboekt.push({ itemId: item.id, name: item.name, unit: item.unit, amount: amountUsed });
-      newConsumptionEntries.push({ name: item.name, unit: item.unit, amount: amountUsed, date: new Date().toISOString() });
+      newConsumptionEntries.push({ name: item.name, unit: item.unit, amount: amountUsed, date: nu });
 
       const result = pushLowStockToShopping(nextShopping, item, newCurrent);
       nextShopping = result.list;
@@ -6274,7 +6467,6 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       }
     }
 
-    const nu = new Date().toISOString();
     const logEntry = {
       id: uid(), recipeId: recipe.id, recipeName: recipe.name, emoji: recipe.emoji,
       date: nu, servings: Math.round(recipe.servings * scale),
@@ -6334,6 +6526,24 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
         e.recipeId === entry.recipeId && String(e.date).slice(0, 10) === String(entry.cookedAt).slice(0, 10));
 
     const terug = (regel && Array.isArray(regel.deducted)) ? regel.deducted : [];
+
+    // Ook het verbruik van deze kookbeurt hoort weg: daarop rekenen
+    // "Voorspelde uitputting" en "x keer gebruikt deze maand". Per afgeboekt
+    // product zoeken we de verbruiksregel met dezelfde naam, eenheid en
+    // hoeveelheid rond het tijdstip van de kookbeurt. Sinds v96 is dat
+    // tijdstip exact gelijk; bij oudere kookbeurten ligt het er vlak voor.
+    const verbruikWeg = [];
+    if (regel && terug.length) {
+      const t0 = new Date(regel.date).getTime();
+      const gevonden = new Set();
+      terug.forEach((d) => {
+        const hit = (consumptionLog || []).find((e) => !gevonden.has(e)
+          && e.name === d.name && e.unit === d.unit
+          && Math.abs(Number(e.amount) - Number(d.amount)) < 0.0001
+          && Math.abs(new Date(e.date).getTime() - t0) <= 120000);
+        if (hit) { gevonden.add(hit); verbruikWeg.push(hit); }
+      });
+    }
     let hersteld = 0;
     let nextInventory = inventory.map((i) => ({ ...i }));
     let voorraadGewijzigd = false;
@@ -6383,6 +6593,16 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     persist("weekmenu", nextWeekmenu, setWeekmenu);
     if (voorraadGewijzigd) persist("inventory", nextInventory, setInventory);
     if (regel) persist("cookLog", cookLog.filter((e) => e.id !== regel.id), setCookLog);
+    if (verbruikWeg.length) {
+      const weg = new Set(verbruikWeg);
+      if (hasDataAPI) {
+        setConsumptionLog((huidig) => huidig.filter((e) => !weg.has(e)));
+        window.dataAPI.consumptionLog.removeEntries(verbruikWeg)
+          .catch((e) => console.error("Verbruik terugdraaien mislukt:", e));
+      } else {
+        persist("consumptionLog", consumptionLog.filter((e) => !weg.has(e)), setConsumptionLog);
+      }
+    }
 
     if (!terug.length) {
       showToast("Teruggezet op \u201Cnog niet gekookt\u201D. Van deze kookbeurt is niet vastgelegd wat er is afgeboekt, dus de voorraad blijft zoals hij nu staat.");
@@ -6927,6 +7147,9 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     // Eerst de avonden, dan de voorraad. Andersom maakt de database de
     // koppeling leeg voordat wij hem hebben kunnen afhandelen.
     const planning = kliekjeAfhandelen({ itemId: id, hoe, weekmenu, extras });
+    if (planning.producent.length && !(planning.gestempeld.length || planning.vrij.length)) {
+      persist("weekmenu", planning.weekmenu, setWeekmenu);
+    }
     if (planning.gestempeld.length || planning.vrij.length) {
       persist("weekmenu", planning.weekmenu, setWeekmenu);
       pasExtrasAan(planning);

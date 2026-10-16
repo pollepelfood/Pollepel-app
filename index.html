@@ -401,6 +401,13 @@
       const fotoAdres = (waarde, kaart) =>
         !waarde ? "" : (isExternAdres(waarde) ? waarde : (kaart[waarde] || ""));
 
+      // Alleen een echt id mag in een id-kolom. De app gebruikt bij een gekookte
+      // avond ook het woord "geen" voor "er bleef niets over"; dat weigert de
+      // database in een uuid-kolom, en dan ging de hele wijziging verloren.
+      // Dat woord krijgt nu een eigen kolom (leftover_none).
+      const alsId = (v) =>
+        (typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) ? v : null;
+
       window.dataAPI = {
         // ---------- Foto's ----------
         photos: {
@@ -1168,7 +1175,7 @@
                 leftoverItemId: d.leftover_item_id || null,
                 cookedAt: d.cooked_at || null,
                 eatenAt: d.eaten_at || null,
-                producedLeftoverId: d.produced_leftover_id || null,
+                producedLeftoverId: d.produced_leftover_id || (d.leftover_none ? "geen" : null),
                 cookSkipped: !!d.cook_skipped,
               };
             });
@@ -1190,7 +1197,8 @@
                 // Altijd meeschrijven, ook als hij leeg is: een avond die een
                 // ander gerecht krijgt moet zijn "opgegeten" kwijtraken.
                 eaten_at: entry.eatenAt || null,
-                produced_leftover_id: entry.producedLeftoverId || null,
+                produced_leftover_id: alsId(entry.producedLeftoverId),
+                leftover_none: entry.producedLeftoverId === "geen",
                 cook_skipped: !!entry.cookSkipped,
               } : {}),
             }, { onConflict: "household_id,menu_date" });
@@ -1225,7 +1233,8 @@
                 ...(houdtGekooktBij ? {
                   cooked_at: v.cookedAt || null,
                   eaten_at: v.eatenAt || null,
-                  produced_leftover_id: v.producedLeftoverId || null,
+                  produced_leftover_id: alsId(v.producedLeftoverId),
+                  leftover_none: v.producedLeftoverId === "geen",
                   cook_skipped: !!v.cookSkipped,
                 } : {}),
               }));
@@ -1292,6 +1301,18 @@
             await supabase.from("consumption_log").insert(entries.map((e) => ({
               household_id: householdId, name: e.name, unit: e.unit, amount: e.amount, logged_at: e.date || new Date().toISOString(),
             })));
+          },
+          // Het verbruik van een teruggedraaide kookbeurt. Op naam, eenheid,
+          // hoeveelheid en tijdstip: een id heeft de app in het geheugen niet,
+          // maar het tijdstip is van de app zelf en komt exact overeen.
+          async removeEntries(entries) {
+            for (const e of entries || []) {
+              if (!e || !e.date) continue;
+              const { error } = await supabase.from("consumption_log").delete()
+                .eq("household_id", householdId).eq("name", e.name).eq("unit", e.unit)
+                .eq("amount", e.amount).eq("logged_at", e.date);
+              if (error) throw error;
+            }
           },
         },
 
