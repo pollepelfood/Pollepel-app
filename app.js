@@ -361,7 +361,14 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v96 \xB7 16 oktober 2026";
+const APP_VERSIE = "v97 \xB7 17 oktober 2026";
+const SESSIE = Math.random().toString(36).slice(2, 6);
+const kookverslag = (tekst) => {
+  try {
+    console.info(`[${SESSIE} ${APP_VERSIE.split(" ")[0]}] ${tekst}`);
+  } catch (e) {
+  }
+};
 const TOESTEMMING_VERSIE = 1;
 const TYPE = {
   scherm: { fontFamily: "'Fraunces', serif", fontSize: 31, lineHeight: 1.06, letterSpacing: "-0.02em", fontWeight: 600 },
@@ -4561,7 +4568,7 @@ function ExtraToevoegenModal({ datum, recipes, inventory = [], beginTab = "recep
 function LogboekModal({ onClose }) {
   const regels = typeof window !== "undefined" && window.pollepelLog ? [...window.pollepelLog].reverse() : [];
   const [gekopieerd, setGekopieerd] = useState(false);
-  const alsTekst = () => regels.map((r) => `[${r.soort}] ${r.tijd.slice(11, 19)} ${r.tekst}`).join("\n") || "geen meldingen";
+  const alsTekst = () => regels.map((r) => `[${r.soort}] ${new Date(r.tijd).toLocaleString("nl-NL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })} ${r.tekst}`).join("\n") || "geen meldingen";
   const deel = async () => {
     const tekst = `Pollepel foutlogboek
 ${(/* @__PURE__ */ new Date()).toLocaleString("nl-NL")}
@@ -5090,6 +5097,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       setWeekmenu(w);
       setCooks(c);
       setLoading(false);
+      kookverslag(`App gestart (${navigator.standalone ? "beginscherm" : "browser"})`);
       if (hasDataAPI && window.dataAPI.cooking) {
         try {
           setCookingSessions(await window.dataAPI.cooking.active());
@@ -5202,7 +5210,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       } else {
         await saveKey(key, value);
       }
-      setSaveError(null);
+      setSaveError((vorige) => vorige && vorige.key === key ? null : vorige);
     } catch (e) {
       console.error(`Opslaan van "${key}" mislukt:`, e);
       if (terugrolWaarde !== void 0) setter(terugrolWaarde);
@@ -5221,15 +5229,19 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       const prevIds = new Set(prev.map((i) => i.id));
       const nextIds = new Set(value.map((i) => i.id));
       await Promise.all(prev.filter((i) => !nextIds.has(i.id)).map((i) => window.dataAPI.inventory.remove(i.id)));
+      const verstuurd = [];
       for (const item of value) {
         const before = prev.find((i) => i.id === item.id);
         if (!before) {
           const newId = await window.dataAPI.inventory.create(item);
           item.id = newId;
+          verstuurd.push(`+${item.name}`);
         } else if (JSON.stringify(before) !== JSON.stringify(item)) {
           await window.dataAPI.inventory.update(item.id, item);
+          verstuurd.push(`${item.name} ${before.current}\u2192${item.current}`);
         }
       }
+      if (verstuurd.length) kookverslag(`Voorraad opgeslagen: ${verstuurd.join("; ")}`.slice(0, 400));
       return;
     }
     if (key === "shoppingList") {
@@ -5280,7 +5292,9 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
     if (key === "consumptionLog") {
       const oud = new Set(consumptionLog);
       const nieuw = value.filter((e) => !oud.has(e));
+      kookverslag(`Verbruik opslaan: ${nieuw.length} nieuw (lijst ${consumptionLog.length} \u2192 ${value.length})`);
       if (nieuw.length) await window.dataAPI.consumptionLog.addMany(nieuw);
+      if (nieuw.length) kookverslag(`Verbruik opgeslagen: ${nieuw.length}`);
       return;
     }
     if (key === "preferences") {
@@ -6185,12 +6199,19 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   };
   const saveRecipe = async (recipe) => {
     if (hasDataAPI) {
-      if (recipe.id) {
-        await window.dataAPI.recipes.update(recipe.id, recipe);
-        setRecipes(recipes.map((r) => r.id === recipe.id ? recipe : r));
-      } else {
-        const newId = await window.dataAPI.recipes.create({ ...recipe, favorite: false, community: false });
-        setRecipes([...recipes, { ...recipe, id: newId, favorite: false, community: false }]);
+      try {
+        if (recipe.id) {
+          await window.dataAPI.recipes.update(recipe.id, recipe);
+          setRecipes(recipes.map((r) => r.id === recipe.id ? recipe : r));
+        } else {
+          const newId = await window.dataAPI.recipes.create({ ...recipe, favorite: false, community: false });
+          setRecipes([...recipes, { ...recipe, id: newId, favorite: false, community: false }]);
+        }
+        setSaveError((v) => v && v.key === "receptOpslaan" ? null : v);
+      } catch (e) {
+        console.error("Recept opslaan mislukt:", e);
+        setSaveError({ key: "receptOpslaan", tekst: `"${recipe.name || "Recept"}" is niet opgeslagen. Je invoer staat nog in het formulier.`, opnieuw: () => saveRecipe(recipe) });
+        return;
       }
     } else {
       let next;
@@ -6306,8 +6327,13 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     }
   };
   const deleteRecipe = (id) => {
+    const weg = recipes.find((r) => r.id === id);
+    const plek = recipes.findIndex((r) => r.id === id);
     setRecipes(recipes.filter((r) => r.id !== id));
-    if (hasDataAPI) window.dataAPI.recipes.remove(id).catch(() => {
+    if (hasDataAPI) window.dataAPI.recipes.remove(id).catch((e) => {
+      console.error("Recept verwijderen mislukt:", e);
+      if (weg) setRecipes((huidig) => huidig.some((r) => r.id === id) ? huidig : [...huidig.slice(0, plek), weg, ...huidig.slice(plek)]);
+      setSaveError({ key: "recept", tekst: `"${weg ? weg.name : "Recept"}" is niet verwijderd.`, opnieuw: () => deleteRecipe(id) });
     });
     else persist("recipes", recipes.filter((r) => r.id !== id), setRecipes);
     openRecipeVanuit(null);
@@ -6359,6 +6385,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
         }, 2600);
       }
     }
+    kookverslag(`Gekookt: ${recipe.name}${dagSleutel ? ` (avond ${dagSleutel})` : ""} \u2014 afgeboekt ${afgeboekt.length}: ` + afgeboekt.map((d) => `${d.name} ${d.amount} ${d.unit}`).join(", ") + ` \xB7 verbruiksregels ${newConsumptionEntries.length} \xB7 lijst nu ${consumptionLog.length}`);
     const logEntry = {
       id: uid(),
       recipeId: recipe.id,
@@ -6412,6 +6439,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
         }
       });
     }
+    kookverslag(`Terugdraaien: ${regel ? regel.recipeName : "geen kookregel gevonden"} \u2014 terug ${terug.length}, verbruiksregels gevonden ${verbruikWeg.length} van ${(consumptionLog || []).length}`);
     let hersteld = 0;
     let nextInventory = inventory.map((i) => ({ ...i }));
     let voorraadGewijzigd = false;
@@ -6456,7 +6484,11 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       const weg = new Set(verbruikWeg);
       if (hasDataAPI) {
         setConsumptionLog((huidig) => huidig.filter((e) => !weg.has(e)));
-        window.dataAPI.consumptionLog.removeEntries(verbruikWeg).catch((e) => console.error("Verbruik terugdraaien mislukt:", e));
+        const verbruikWegHalen = () => window.dataAPI.consumptionLog.removeEntries(verbruikWeg).then(() => setSaveError((v) => v && v.key === "verbruikTerug" ? null : v)).catch((e) => {
+          console.error("Verbruik terugdraaien mislukt:", e);
+          setSaveError({ key: "verbruikTerug", tekst: "Het verbruik van deze kookbeurt is nog niet uit de database gehaald.", opnieuw: verbruikWegHalen });
+        });
+        verbruikWegHalen();
       } else {
         persist("consumptionLog", consumptionLog.filter((e) => !weg.has(e)), setConsumptionLog);
       }
@@ -7705,7 +7737,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingredi\xEBntenlijst na en vraag
         },
         children: [
           /* @__PURE__ */ jsx(AlertTriangle, { size: 17, style: { flexShrink: 0 } }),
-          /* @__PURE__ */ jsx("span", { style: { flex: 1, fontSize: 14, lineHeight: 1.4 }, children: "Niet opgeslagen \u2014 je laatste wijziging is teruggedraaid." }),
+          /* @__PURE__ */ jsx("span", { style: { flex: 1, fontSize: 14, lineHeight: 1.4 }, children: saveError.tekst || "Niet opgeslagen \u2014 je laatste wijziging is teruggedraaid." }),
           /* @__PURE__ */ jsx(
             "button",
             {

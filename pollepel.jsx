@@ -345,7 +345,14 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v96 · 16 oktober 2026";
+const APP_VERSIE = "v97 · 17 oktober 2026";
+// Kort kenmerk van dit geopende exemplaar van de app. Staat de app op één
+// telefoon twee keer open (beginscherm én Safari), dan zie je dat in het
+// foutlogboek aan twee verschillende kenmerken.
+const SESSIE = Math.random().toString(36).slice(2, 6);
+// Kookverslag in het foutlogboek. Geen fout, maar zonder dit is achteraf niet
+// te zien wat er bij het koken wel en niet is opgeslagen.
+const kookverslag = (tekst) => { try { console.info(`[${SESSIE} ${APP_VERSIE.split(" ")[0]}] ${tekst}`); } catch (e) { /* nooit stuk */ } };
 
 // Versie van de toestemmingstekst. Verandert de tekst wezenlijk, dan gaat dit
 // omhoog en moet er opnieuw gevraagd worden — oude toestemming dekt een nieuwe
@@ -4349,7 +4356,7 @@ function LogboekModal({ onClose }) {
   const [gekopieerd, setGekopieerd] = useState(false);
 
   const alsTekst = () =>
-    regels.map((r) => `[${r.soort}] ${r.tijd.slice(11, 19)} ${r.tekst}`).join("\n") || "geen meldingen";
+    regels.map((r) => `[${r.soort}] ${new Date(r.tijd).toLocaleString("nl-NL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })} ${r.tekst}`).join("\n") || "geen meldingen";
 
   const deel = async () => {
     const tekst = `Pollepel foutlogboek\n${new Date().toLocaleString("nl-NL")}\n\n${alsTekst()}`;
@@ -4978,6 +4985,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       setWeekmenu(w);
       setCooks(c);
       setLoading(false);
+      kookverslag(`App gestart (${navigator.standalone ? "beginscherm" : "browser"})`);
       if (hasDataAPI && window.dataAPI.cooking) {
         try { setCookingSessions(await window.dataAPI.cooking.active()); } catch (e) { /* niet kritiek */ }
       }
@@ -5099,7 +5107,11 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       } else {
         await saveKey(key, value);
       }
-      setSaveError(null);
+      // Alleen de eigen melding opruimen. Eerder wiste elke geslaagde opslag
+      // de melding, ook die van iets anders: bij koken gaan voorraad,
+      // verbruik, kookgeschiedenis en weekmenu vlak na elkaar, en mislukte het
+      // verbruik dan was de melding al weg voordat je hem kon zien.
+      setSaveError((vorige) => (vorige && vorige.key === key ? null : vorige));
     } catch (e) {
       console.error(`Opslaan van "${key}" mislukt:`, e);
       if (terugrolWaarde !== undefined) setter(terugrolWaarde);
@@ -5121,15 +5133,19 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       const prevIds = new Set(prev.map((i) => i.id));
       const nextIds = new Set(value.map((i) => i.id));
       await Promise.all(prev.filter((i) => !nextIds.has(i.id)).map((i) => window.dataAPI.inventory.remove(i.id)));
+      const verstuurd = [];
       for (const item of value) {
         const before = prev.find((i) => i.id === item.id);
         if (!before) {
           const newId = await window.dataAPI.inventory.create(item);
           item.id = newId;
+          verstuurd.push(`+${item.name}`);
         } else if (JSON.stringify(before) !== JSON.stringify(item)) {
           await window.dataAPI.inventory.update(item.id, item);
+          verstuurd.push(`${item.name} ${before.current}→${item.current}`);
         }
       }
+      if (verstuurd.length) kookverslag(`Voorraad opgeslagen: ${verstuurd.join("; ")}`.slice(0, 400));
       return;
     }
     if (key === "shoppingList") {
@@ -5188,7 +5204,9 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       // stilletjes niets meer opgeslagen.
       const oud = new Set(consumptionLog);
       const nieuw = value.filter((e) => !oud.has(e));
+      kookverslag(`Verbruik opslaan: ${nieuw.length} nieuw (lijst ${consumptionLog.length} → ${value.length})`);
       if (nieuw.length) await window.dataAPI.consumptionLog.addMany(nieuw);
+      if (nieuw.length) kookverslag(`Verbruik opgeslagen: ${nieuw.length}`);
       return;
     }
     if (key === "preferences") {
@@ -6272,12 +6290,21 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
 
   const saveRecipe = async (recipe) => {
     if (hasDataAPI) {
-      if (recipe.id) {
-        await window.dataAPI.recipes.update(recipe.id, recipe);
-        setRecipes(recipes.map((r) => (r.id === recipe.id ? recipe : r)));
-      } else {
-        const newId = await window.dataAPI.recipes.create({ ...recipe, favorite: false, community: false });
-        setRecipes([...recipes, { ...recipe, id: newId, favorite: false, community: false }]);
+      // Mislukt het opslaan, dan blijft het formulier open met jouw invoer en
+      // zeg je het. Eerder bleef het formulier zonder uitleg open staan.
+      try {
+        if (recipe.id) {
+          await window.dataAPI.recipes.update(recipe.id, recipe);
+          setRecipes(recipes.map((r) => (r.id === recipe.id ? recipe : r)));
+        } else {
+          const newId = await window.dataAPI.recipes.create({ ...recipe, favorite: false, community: false });
+          setRecipes([...recipes, { ...recipe, id: newId, favorite: false, community: false }]);
+        }
+        setSaveError((v) => (v && v.key === "receptOpslaan" ? null : v));
+      } catch (e) {
+        console.error("Recept opslaan mislukt:", e);
+        setSaveError({ key: "receptOpslaan", tekst: `"${recipe.name || "Recept"}" is niet opgeslagen. Je invoer staat nog in het formulier.`, opnieuw: () => saveRecipe(recipe) });
+        return;
       }
     } else {
       let next;
@@ -6389,8 +6416,18 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   };
 
   const deleteRecipe = (id) => {
+    const weg = recipes.find((r) => r.id === id);
+    const plek = recipes.findIndex((r) => r.id === id);
     setRecipes(recipes.filter((r) => r.id !== id));
-    if (hasDataAPI) window.dataAPI.recipes.remove(id).catch(() => {});
+    // Mislukt het verwijderen, dan komt het recept terug in beeld en zeg je
+    // het. Eerder verdween het alleen van je scherm en stond het er na het
+    // herladen gewoon weer.
+    if (hasDataAPI) window.dataAPI.recipes.remove(id).catch((e) => {
+      console.error("Recept verwijderen mislukt:", e);
+      if (weg) setRecipes((huidig) => (huidig.some((r) => r.id === id) ? huidig
+        : [...huidig.slice(0, plek), weg, ...huidig.slice(plek)]));
+      setSaveError({ key: "recept", tekst: `"${weg ? weg.name : "Recept"}" is niet verwijderd.`, opnieuw: () => deleteRecipe(id) });
+    });
     else persist("recipes", recipes.filter((r) => r.id !== id), setRecipes);
     openRecipeVanuit(null);
   };
@@ -6467,6 +6504,9 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       }
     }
 
+    kookverslag(`Gekookt: ${recipe.name}${dagSleutel ? ` (avond ${dagSleutel})` : ""} — afgeboekt ${afgeboekt.length}: `
+      + afgeboekt.map((d) => `${d.name} ${d.amount} ${d.unit}`).join(", ")
+      + ` · verbruiksregels ${newConsumptionEntries.length} · lijst nu ${consumptionLog.length}`);
     const logEntry = {
       id: uid(), recipeId: recipe.id, recipeName: recipe.name, emoji: recipe.emoji,
       date: nu, servings: Math.round(recipe.servings * scale),
@@ -6544,6 +6584,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
         if (hit) { gevonden.add(hit); verbruikWeg.push(hit); }
       });
     }
+    kookverslag(`Terugdraaien: ${regel ? regel.recipeName : "geen kookregel gevonden"} — terug ${terug.length}, verbruiksregels gevonden ${verbruikWeg.length} van ${(consumptionLog || []).length}`);
     let hersteld = 0;
     let nextInventory = inventory.map((i) => ({ ...i }));
     let voorraadGewijzigd = false;
@@ -6597,8 +6638,15 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       const weg = new Set(verbruikWeg);
       if (hasDataAPI) {
         setConsumptionLog((huidig) => huidig.filter((e) => !weg.has(e)));
-        window.dataAPI.consumptionLog.removeEntries(verbruikWeg)
-          .catch((e) => console.error("Verbruik terugdraaien mislukt:", e));
+        // Mislukt dit, dan zeggen we het en kun je het opnieuw proberen. In de
+        // app is het verbruik al weg; het gaat alleen om de database.
+        const verbruikWegHalen = () => window.dataAPI.consumptionLog.removeEntries(verbruikWeg)
+          .then(() => setSaveError((v) => (v && v.key === "verbruikTerug" ? null : v)))
+          .catch((e) => {
+            console.error("Verbruik terugdraaien mislukt:", e);
+            setSaveError({ key: "verbruikTerug", tekst: "Het verbruik van deze kookbeurt is nog niet uit de database gehaald.", opnieuw: verbruikWegHalen });
+          });
+        verbruikWegHalen();
       } else {
         persist("consumptionLog", consumptionLog.filter((e) => !weg.has(e)), setConsumptionLog);
       }
@@ -8203,7 +8251,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
         >
           <AlertTriangle size={17} style={{ flexShrink: 0 }} />
           <span style={{ flex: 1, fontSize: 14, lineHeight: 1.4 }}>
-            Niet opgeslagen — je laatste wijziging is teruggedraaid.
+            {saveError.tekst || "Niet opgeslagen — je laatste wijziging is teruggedraaid."}
           </span>
           <button
             onClick={() => { const fn = saveError.opnieuw; setSaveError(null); fn(); }}

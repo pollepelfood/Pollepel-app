@@ -74,12 +74,17 @@
             if (typeof a === "object") { try { return JSON.stringify(a).slice(0, 400); } catch (e) { return String(a); } }
             return String(a);
           }).join(" ");
+          // Van "info" alleen het eigen kookverslag; de rest is ruis van
+          // bibliotheken en zou de echte meldingen uit het logboek drukken.
+          if (soort === "info" && !/^\[[a-z0-9]{4} v\d+\]/.test(tekst)) return;
           window.pollepelLog.push({ tijd: new Date().toISOString(), soort, tekst: tekst.slice(0, 600) });
-          if (window.pollepelLog.length > 80) window.pollepelLog.shift();
+          if (window.pollepelLog.length > 150) window.pollepelLog.shift();
           opslaan();
         } catch (e) { /* logboek mag nooit zelf stukgaan */ }
       };
-      ["error", "warn"].forEach((soort) => {
+      // "info" voor het kookverslag: geen fout, maar wel nodig om te zien wat
+      // er bij het koken is opgeslagen.
+      ["error", "warn", "info"].forEach((soort) => {
         const origineel = console[soort].bind(console);
         console[soort] = function () { bewaar(soort, arguments); origineel.apply(console, arguments); };
       });
@@ -405,6 +410,11 @@
       // avond ook het woord "geen" voor "er bleef niets over"; dat weigert de
       // database in een uuid-kolom, en dan ging de hele wijziging verloren.
       // Dat woord krijgt nu een eigen kolom (leftover_none).
+      // Een schrijfactie die de database weigert of die onderweg mislukt, moet
+      // een fout worden. Stil doorgaan betekent: in beeld staat iets wat de
+      // database niet heeft, en dat merk je pas bij het volgende openen.
+      const moet = (res) => { if (res && res.error) throw res.error; return res; };
+
       const alsId = (v) =>
         (typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) ? v : null;
 
@@ -479,15 +489,23 @@
               notes: recipe.notes || null, diets: recipe.diets || [],
             }).select().single();
             if (error) throw error;
+            // Lukt het opslaan van ingrediënten of stappen niet, dan het recept
+            // weer weghalen: anders staat er een leeg recept in je kookboek, en
+            // levert "Opnieuw" er een tweede bij.
+            try {
             if (recipe.ingredients && recipe.ingredients.length) {
-              await supabase.from("recipe_ingredients").insert(recipe.ingredients.map((ing, idx) => ({
+              moet(await supabase.from("recipe_ingredients").insert(recipe.ingredients.map((ing, idx) => ({
                 recipe_id: data.id, sort_order: idx, name: ing.name, amount: ing.amount, unit: ing.unit, inventory_item_id: ing.inventoryItemId || null,
-              })));
+              }))));
             }
             if (recipe.steps && recipe.steps.length) {
-              await supabase.from("recipe_steps").insert(recipe.steps.map((content, idx) => ({
+              moet(await supabase.from("recipe_steps").insert(recipe.steps.map((content, idx) => ({
                 recipe_id: data.id, step_number: idx + 1, content,
-              })));
+              }))));
+            }
+            } catch (fout) {
+              await supabase.from("recipes").delete().eq("id", data.id);
+              throw fout;
             }
             return data.id;
           },
@@ -499,19 +517,19 @@
             }).eq("id", id);
             if (error) throw error;
             if (recipe.ingredients) {
-              await supabase.from("recipe_ingredients").delete().eq("recipe_id", id);
+              moet(await supabase.from("recipe_ingredients").delete().eq("recipe_id", id));
               if (recipe.ingredients.length) {
-                await supabase.from("recipe_ingredients").insert(recipe.ingredients.map((ing, idx) => ({
+                moet(await supabase.from("recipe_ingredients").insert(recipe.ingredients.map((ing, idx) => ({
                   recipe_id: id, sort_order: idx, name: ing.name, amount: ing.amount, unit: ing.unit, inventory_item_id: ing.inventoryItemId || null,
-                })));
+                }))));
               }
             }
             if (recipe.steps) {
-              await supabase.from("recipe_steps").delete().eq("recipe_id", id);
+              moet(await supabase.from("recipe_steps").delete().eq("recipe_id", id));
               if (recipe.steps.length) {
-                await supabase.from("recipe_steps").insert(recipe.steps.map((content, idx) => ({
+                moet(await supabase.from("recipe_steps").insert(recipe.steps.map((content, idx) => ({
                   recipe_id: id, step_number: idx + 1, content,
-                })));
+                }))));
               }
             }
           },
@@ -543,7 +561,8 @@
             } catch (e) {
               console.warn("Foto bij het recept kon niet worden opgeruimd:", e);
             }
-            await supabase.from("recipes").delete().eq("id", id);
+            const { error } = await supabase.from("recipes").delete().eq("id", id);
+            if (error) throw error;
           },
           async listCommunity() {
             const { data: recs, error } = await supabase.from("recipes").select("*").eq("community", true).order("created_at", { ascending: false });
@@ -630,7 +649,8 @@
             if (error) throw error;
           },
           async remove(id) {
-            await supabase.from("weekmenu_extras").delete().eq("id", id);
+            const { error } = await supabase.from("weekmenu_extras").delete().eq("id", id);
+            if (error) throw error;
           },
         },
 
@@ -1105,7 +1125,8 @@
             if (error) throw error;
           },
           async remove(id) {
-            await supabase.from("inventory_items").delete().eq("id", id);
+            const { error } = await supabase.from("inventory_items").delete().eq("id", id);
+            if (error) throw error;
           },
           // Eén kolom bijwerken, niet het hele product. Een tik op de reden
           // mag niet de naam, de maten en de bakjes opnieuw wegschrijven
@@ -1146,14 +1167,17 @@
             return data.id;
           },
           async patch(id, fields) {
-            await supabase.from("shopping_list_items").update(fields).eq("id", id);
+            const { error } = await supabase.from("shopping_list_items").update(fields).eq("id", id);
+            if (error) throw error;
           },
           async remove(id) {
-            await supabase.from("shopping_list_items").delete().eq("id", id);
+            const { error } = await supabase.from("shopping_list_items").delete().eq("id", id);
+            if (error) throw error;
           },
           async removeMany(ids) {
             if (!ids.length) return;
-            await supabase.from("shopping_list_items").delete().in("id", ids);
+            const { error } = await supabase.from("shopping_list_items").delete().in("id", ids);
+            if (error) throw error;
           },
         },
 
@@ -1206,12 +1230,13 @@
           },
           async clearDay(datum, table) {
             const t = table || "weekmenu_days";
-            await supabase.from(t).delete().eq("household_id", householdId).eq("menu_date", datum);
+            const { error } = await supabase.from(t).delete().eq("household_id", householdId).eq("menu_date", datum);
+            if (error) throw error;
           },
           async replaceAll(days, table) {
             const t = table || "weekmenu_days";
             const houdtGekooktBij = t === "weekmenu_days";
-            await supabase.from(t).delete().eq("household_id", householdId);
+            moet(await supabase.from(t).delete().eq("household_id", householdId));
             // Niet alleen op recipeId of offNight filteren: een dag waarop
             // alleen al bekend is wie kookt, wie mee-eet of welk kliekje er
             // gepland staat hoort ook bewaard te worden. Die filter gooide dat
@@ -1238,7 +1263,7 @@
                   cook_skipped: !!v.cookSkipped,
                 } : {}),
               }));
-            if (rows.length) await supabase.from(t).insert(rows);
+            if (rows.length) moet(await supabase.from(t).insert(rows));
           },
 
           // Periodes die allang voorbij zijn hoeven we niet te bewaren.
@@ -1254,10 +1279,12 @@
             return (data || []).map((c) => c.name);
           },
           async add(name) {
-            await supabase.from("cooks").upsert({ household_id: householdId, name }, { onConflict: "household_id,name" });
+            const { error } = await supabase.from("cooks").upsert({ household_id: householdId, name }, { onConflict: "household_id,name" });
+            if (error) throw error;
           },
           async remove(name) {
-            await supabase.from("cooks").delete().eq("household_id", householdId).eq("name", name);
+            const { error } = await supabase.from("cooks").delete().eq("household_id", householdId).eq("name", name);
+            if (error) throw error;
           },
         },
 
@@ -1268,12 +1295,13 @@
             return (data || []).map((e) => ({ id: e.id, recipeId: e.recipe_id, recipeName: e.recipe_name, emoji: e.emoji, servings: e.servings, date: e.cooked_at, leftover: !!e.leftover, dayKey: e.day_key || null, deducted: e.deducted || [] }));
           },
           async add(entry) {
-            await supabase.from("cook_log").insert({
+            const { error } = await supabase.from("cook_log").insert({
               household_id: householdId, recipe_id: entry.recipeId || null, recipe_name: entry.recipeName,
               emoji: entry.emoji, servings: entry.servings, cooked_at: entry.date || new Date().toISOString(),
               leftover: !!entry.leftover,
               day_key: entry.dayKey || null, deducted: entry.deducted || [],
             });
+            if (error) throw error;
           },
           // Een teruggedraaide kookbeurt hoort ook uit de geschiedenis.
           // Zoeken op tijdstip en niet op id: de database geeft bij het
@@ -1286,7 +1314,8 @@
               .eq("household_id", householdId)
               .eq("cooked_at", entry.date);
             if (entry.recipeId) q = q.eq("recipe_id", entry.recipeId);
-            await q;
+            const { error } = await q;
+            if (error) throw error;
           },
         },
 
@@ -1298,9 +1327,10 @@
           },
           async addMany(entries) {
             if (!entries.length) return;
-            await supabase.from("consumption_log").insert(entries.map((e) => ({
+            const { error } = await supabase.from("consumption_log").insert(entries.map((e) => ({
               household_id: householdId, name: e.name, unit: e.unit, amount: e.amount, logged_at: e.date || new Date().toISOString(),
             })));
+            if (error) throw error;
           },
           // Het verbruik van een teruggedraaide kookbeurt. Op naam, eenheid,
           // hoeveelheid en tijdstip: een id heeft de app in het geheugen niet,
