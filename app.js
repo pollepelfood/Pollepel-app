@@ -361,7 +361,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v97 \xB7 17 oktober 2026";
+const APP_VERSIE = "v98 \xB7 18 oktober 2026";
 const SESSIE = Math.random().toString(36).slice(2, 6);
 const kookverslag = (tekst) => {
   try {
@@ -3500,6 +3500,52 @@ const inputStyle = {
     return C.ink;
   }
 };
+function WeekvoorstelModal({ voorstel = [], recipes = [], inventory = [], onAnder, onAndereWeek, onOvernemen, onClose }) {
+  const aantal = voorstel.filter((x) => x.recipeId).length;
+  return /* @__PURE__ */ jsxs(Modal, { title: "Zoals wij normaal eten", onClose, children: [
+    /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.inkSoft, margin: "0 0 12px", lineHeight: 1.45 }, children: "Uit wat jullie de afgelopen 10 weken aten. Wat vaker op tafel stond, komt vaker terug." }),
+    /* @__PURE__ */ jsx("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: voorstel.map((x) => {
+      const d = parseDateKey(x.dag);
+      const recept = recipes.find((r) => r.id === x.recipeId);
+      const kliekje = x.leftoverItemId ? inventory.find((i) => i.id === x.leftoverItemId) : null;
+      return /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, background: C.cardBg, border: `1px solid ${C.ceramicDark}`, borderRadius: 12, padding: "9px 10px" }, children: [
+        /* @__PURE__ */ jsxs("div", { style: { width: 38, textAlign: "center", flexShrink: 0 }, children: [
+          /* @__PURE__ */ jsx("div", { style: { fontSize: 11, color: C.inkSoft, textTransform: "uppercase", letterSpacing: 0.4 }, children: DAG_KORT[d.getDay()] }),
+          /* @__PURE__ */ jsx("div", { style: { fontSize: 17, fontWeight: 600, color: C.ink }, children: d.getDate() })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
+          /* @__PURE__ */ jsx("div", { style: { fontSize: 14, color: C.ink, fontWeight: 600, lineHeight: 1.3 }, children: recept ? /* @__PURE__ */ jsxs(Fragment, { children: [
+            kliekje ? "\u{1F371} " : `${recept.emoji || "\u{1F37D}\uFE0F"} `,
+            recept.name
+          ] }) : /* @__PURE__ */ jsx("span", { style: { color: C.inkSoft, fontWeight: 400 }, children: "Niets gevonden" }) }),
+          /* @__PURE__ */ jsx("div", { style: { fontSize: 12, color: C.inkSoft, marginTop: 2 }, children: x.reden })
+        ] }),
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            onClick: () => onAnder(x.dag),
+            "aria-label": `Ander gerecht voor ${DAG_LANG[d.getDay()]}`,
+            style: { display: "flex", alignItems: "center", gap: 5, background: "none", border: `1px solid ${C.ceramicDark}`, borderRadius: 18, padding: "6px 10px", cursor: "pointer", color: C.blue, fontSize: 12, fontWeight: 600, fontFamily: FONT_BODY, flexShrink: 0, minHeight: 34 },
+            children: [
+              /* @__PURE__ */ jsx(Shuffle, { size: 13 }),
+              " Ander"
+            ]
+          }
+        )
+      ] }, x.dag);
+    }) }),
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, marginTop: 14 }, children: [
+      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(GhostButton, { full: true, onClick: onAndereWeek, children: [
+        /* @__PURE__ */ jsx(Shuffle, { size: 14 }),
+        " Andere week"
+      ] }) }),
+      /* @__PURE__ */ jsx("div", { style: { flex: 1 }, children: /* @__PURE__ */ jsxs(PrimaryButton, { full: true, onClick: onOvernemen, disabled: !aantal, children: [
+        /* @__PURE__ */ jsx(Check, { size: 16 }),
+        " Overnemen"
+      ] }) })
+    ] })
+  ] });
+}
 function Modal({ title, onClose, children, wide }) {
   return /* @__PURE__ */ jsx(
     "div",
@@ -5121,7 +5167,7 @@ function AppInner({ household = null, members = [], onLogout = null, onRenameHou
       }
       if (hasDataAPI && window.dataAPI.weekmenu.opruimen) {
         const grens = /* @__PURE__ */ new Date();
-        grens.setMonth(grens.getMonth() - 2);
+        grens.setMonth(grens.getMonth() - 6);
         window.dataAPI.weekmenu.opruimen(dateKey(grens)).catch(() => {
         });
       }
@@ -6060,9 +6106,12 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   const lowStockCount = inventory.filter((i) => i.current < i.min).length;
   const shoppingCount = shoppingList.length;
   const toggleFavorite = (id) => {
-    const next = recipes.map((r) => r.id === id ? { ...r, favorite: !r.favorite } : r);
+    const next = recipes.map((r) => r.id === id ? { ...r, favorite: !r.favorite, favoritedAt: !r.favorite ? (/* @__PURE__ */ new Date()).toISOString() : null } : r);
     setRecipes(next);
-    if (hasDataAPI) window.dataAPI.recipes.patch(id, { favorite: !recipes.find((r) => r.id === id)?.favorite }).catch(() => {
+    if (hasDataAPI) window.dataAPI.recipes.patch(id, { favorite: !recipes.find((r) => r.id === id)?.favorite }).catch((e) => {
+      console.error("Favoriet opslaan mislukt:", e);
+      setRecipes(recipes);
+      setSaveError({ key: "favoriet", tekst: "De ster is niet opgeslagen.", opnieuw: () => toggleFavorite(id) });
     });
     else persist("recipes", next, setRecipes);
   };
@@ -7418,45 +7467,77 @@ Schrijf ingredi\xEBntnamen voluit en correct gespeld: jasmijnrijst (niet jasrijs
 Houd het compact: maximaal 6 bereidingsstappen (kort, ~12 woorden per stap) en maximaal 9 ingredi\xEBnten. Basis zoals zout, peper en olie hoef je niet op te sommen.
 
 CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingredi\xEBntenlijst na en vraag je bij elk product af: bestaat dit echt, en kan ik dit zo in een Nederlandse supermarkt vragen? Plak nooit twee producten aan elkaar tot een woord dat niet bestaat \u2014 "eendenaardappel", "kipbroccoli" en "roomspinazie" zijn geen producten. Zijn het er twee, schrijf ze dan als twee losse ingredi\xEBnten. Twijfel je over een naam, kies dan het gewonere woord.`;
+  const [weekvoorstel, setWeekvoorstel] = useState(null);
+  const voorstelContext = () => ({
+    cookLog,
+    weekmenu,
+    recipes,
+    inventory,
+    preferences,
+    personen: (cooks || []).length || 1,
+    vandaag: dateKey(/* @__PURE__ */ new Date())
+  });
+  const voorstelVast = (dagen) => {
+    const sleutels = new Set(dagen);
+    return Object.keys(weekmenu || {}).filter((k) => /^\d{4}-\d{2}-\d{2}$/.test(k) && !sleutels.has(k) && Math.abs((parseDateKey(k) - parseDateKey(dagen[0])) / 864e5) <= 10).map((k) => ({ dag: k, recipeId: (weekmenu[k] || {}).recipeId || null, leftoverItemId: (weekmenu[k] || {}).leftoverItemId || null })).filter((x) => x.recipeId);
+  };
   const generatePatternWeekmenu = ({ scope }) => {
-    const days = scope === "empty" ? periodDays.filter((d) => isDayEmpty(d.key)) : periodDays;
+    const days = (scope === "empty" ? periodDays.filter((d) => isDayEmpty(d.key)) : periodDays).filter((d) => !d.isVerleden);
     if (!days.length) {
-      showToast("Alle dagen zijn al ingevuld. Kies 'hele week' om ze te vervangen, of maak eerst dagen leeg.");
+      showToast("Alle dagen zijn al ingevuld. Maak eerst een paar dagen leeg.");
       return;
     }
-    if (!cookLog.length && !recipes.some((r) => r.favorite)) {
-      showToast("Nog geen kookgeschiedenis of favorieten bekend \u2014 kook eerst een paar keer, of markeer favorieten, voor deze functie iets kan voorstellen.");
+    const dagen = days.map((d) => d.key);
+    const ctx = voorstelContext();
+    if (!voorstelBasis(ctx).length) {
+      showToast("Nog te weinig kookgeschiedenis. Kook eerst een paar keer, of geef recepten die jullie vaak eten een ster.");
       return;
     }
-    const dutchDayIndex = { zo: 0, ma: 1, di: 2, wo: 3, do: 4, vr: 5, za: 6 };
-    const next = { ...weekmenu };
-    const usedThisRun = [];
-    days.forEach((day) => {
-      const sameDayCounts = /* @__PURE__ */ new Map();
-      cookLog.forEach((entry) => {
-        if (!entry.recipeId) return;
-        const dow = new Date(entry.date).getDay();
-        if (dutchDayIndex[day.key] === dow) {
-          sameDayCounts.set(entry.recipeId, (sameDayCounts.get(entry.recipeId) || 0) + 1);
-        }
-      });
-      let candidates = Array.from(sameDayCounts.entries()).filter(([id]) => recipes.some((r) => r.id === id) && !usedThisRun.includes(id)).sort((a, b) => b[1] - a[1]).map(([id]) => id);
-      if (!candidates.length) {
-        const overallCounts = /* @__PURE__ */ new Map();
-        cookLog.forEach((entry) => {
-          if (entry.recipeId && !entry.leftover) overallCounts.set(entry.recipeId, (overallCounts.get(entry.recipeId) || 0) + 1);
-        });
-        const byFrequency = Array.from(overallCounts.entries()).filter(([id]) => recipes.some((r) => r.id === id) && !usedThisRun.includes(id)).sort((a, b) => b[1] - a[1]).map(([id]) => id);
-        const favorites = recipes.filter((r) => r.favorite && !usedThisRun.includes(r.id)).map((r) => r.id);
-        candidates = [...byFrequency, ...favorites];
-      }
-      if (!candidates.length) return;
-      const pick = candidates[0];
-      usedThisRun.push(pick);
-      next[day.key] = { ...dayEntry(day.key), recipeId: pick, cookedAt: null, eatenAt: null, producedLeftoverId: null, cookSkipped: false };
+    const vast = voorstelVast(dagen);
+    const voorstel = stelWeekVoor({ ...ctx, dagen, vast });
+    setWeekvoorstel({ dagen, vast, voorstel, uitgesloten: {} });
+  };
+  const anderGerechtVoorDag = (dag) => {
+    if (!weekvoorstel) return;
+    const huidig = weekvoorstel.voorstel.find((x) => x.dag === dag);
+    const uit = new Set(weekvoorstel.uitgesloten[dag] || []);
+    if (huidig && huidig.leftoverItemId) uit.add("k:" + huidig.leftoverItemId);
+    else if (huidig && huidig.recipeId) uit.add(huidig.recipeId);
+    const nieuw = stelDagOpnieuwVoor({ ...voorstelContext(), dag, voorstel: weekvoorstel.voorstel, vast: weekvoorstel.vast, uitgesloten: uit });
+    setWeekvoorstel({
+      ...weekvoorstel,
+      voorstel: weekvoorstel.voorstel.map((x) => x.dag === dag ? nieuw : x),
+      uitgesloten: { ...weekvoorstel.uitgesloten, [dag]: uit }
     });
+  };
+  const andereWeekVoorstellen = () => {
+    if (!weekvoorstel) return;
+    const voorstel = stelWeekVoor({ ...voorstelContext(), dagen: weekvoorstel.dagen, vast: weekvoorstel.vast });
+    setWeekvoorstel({ ...weekvoorstel, voorstel, uitgesloten: {} });
+  };
+  const weekvoorstelOvernemen = () => {
+    if (!weekvoorstel) return;
+    const next = { ...weekmenu };
+    let n = 0, k = 0;
+    weekvoorstel.voorstel.forEach((x) => {
+      if (!x.recipeId) return;
+      next[x.dag] = {
+        ...dayEntry(x.dag),
+        recipeId: x.recipeId,
+        offNight: false,
+        leftoverItemId: x.leftoverItemId || null,
+        cookedAt: null,
+        eatenAt: null,
+        producedLeftoverId: null,
+        cookSkipped: false
+      };
+      n++;
+      if (x.leftoverItemId) k++;
+    });
+    setWeekvoorstel(null);
+    if (!n) return;
     persist("weekmenu", next, setWeekmenu);
-    showToast("Weekmenu ingevuld op basis van jullie eigen kookritme.");
+    showToast(`${n} ${n === 1 ? "dag" : "dagen"} ingevuld${k ? `, waarvan ${k} met een kliekje` : ""}.`);
   };
   const generateAIWeekmenu = async ({ styleId, scope }) => {
     const gevarieerd = styleId === "gevarieerd";
@@ -8335,6 +8416,18 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingredi\xEBntenlijst na en vraag
         onConsume: consumeInventoryItem,
         onRestock: restockInventoryItem,
         onCreate: saveInventoryItem
+      }
+    ),
+    weekvoorstel && /* @__PURE__ */ jsx(
+      WeekvoorstelModal,
+      {
+        voorstel: weekvoorstel.voorstel,
+        recipes,
+        inventory,
+        onAnder: anderGerechtVoorDag,
+        onAndereWeek: andereWeekVoorstellen,
+        onOvernemen: weekvoorstelOvernemen,
+        onClose: () => setWeekvoorstel(null)
       }
     ),
     aiWeekOpen && /* @__PURE__ */ jsx(
@@ -12285,6 +12378,212 @@ function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose
 }
 function kliekjesInVoorraad(inventory, recipes) {
   return (inventory || []).filter((i) => i && i.sourceRecipeId && Number(i.current) > 0).map((i) => ({ item: i, recipe: (recipes || []).find((r) => r.id === i.sourceRecipeId), daysLeft: daysUntil(i.expiryDate) })).filter((l) => l.recipe).sort((a, b) => (a.daysLeft == null ? 1e9 : a.daysLeft) - (b.daysLeft == null ? 1e9 : b.daysLeft));
+}
+const VOORSTEL_VENSTER_DAGEN = 70;
+const VOORSTEL_RECENT_DAGEN = 10;
+const VOORSTEL_RUST_DAGEN = 4;
+const GERECHTSOORTEN = [
+  { id: "soep", woorden: /soep/ },
+  { id: "stamppot", woorden: /stamppot|hutspot|zuurkool|boerenkool|stoemp/ },
+  { id: "pasta", woorden: /pasta|spaghetti|macaroni|penne|orzo|tortellini|tortelloni|lasagne|gnocchi|tagliatelle|fusilli|noedel|mie\b|bami|ravioli/ },
+  { id: "rijst", woorden: /rijst|nasi|paella|risotto|biryani/ },
+  { id: "curry", woorden: /curry|tikka|masala|tajine|korma|dahl|dal\b/ },
+  { id: "ovenschotel", woorden: /ovenschotel|uit de oven|lasagne|gratin/ },
+  { id: "salade", woorden: /salade/ }
+];
+function gerechtSoort(recept) {
+  const naam = norm(recept && recept.name);
+  const s = GERECHTSOORTEN.find((g) => g.woorden.test(naam));
+  return s ? s.id : null;
+}
+function receptPastBijDagsoort(recept, soortId) {
+  if (!soortId || soortId === "alles") return true;
+  const namen = [recept.name, ...(recept.ingredients || []).map((i) => i.name)];
+  const heeft = (familie) => namen.some((n) => valtOnderAfkeur(n, familie));
+  if (soortId === "geenvis") return !heeft("vis");
+  if (soortId === "vega") return !heeft("vis") && !heeft("vlees");
+  if (soortId === "vis") return heeft("vis");
+  if (soortId === "vlees") return heeft("vlees");
+  return true;
+}
+const dagVerschil = (a, b) => Math.round((parseDateKey(a) - parseDateKey(b)) / 864e5);
+function maaltijdHistorie({ cookLog = [], weekmenu = {}, vandaag }) {
+  const ruw = [];
+  (cookLog || []).forEach((e) => {
+    if (!e || !e.recipeId || e.leftover || !e.date) return;
+    ruw.push({ recipeId: e.recipeId, dag: dateKey(new Date(e.date)) });
+  });
+  Object.keys(weekmenu || {}).forEach((sleutel) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(sleutel) || sleutel >= vandaag) return;
+    const d = weekmenu[sleutel];
+    if (!d || !d.recipeId || d.offNight || d.cookSkipped || d.leftoverItemId || d.eatenAt) return;
+    ruw.push({ recipeId: d.recipeId, dag: sleutel });
+  });
+  const binnen = ruw.filter((m) => {
+    const oud = dagVerschil(vandaag, m.dag);
+    return oud >= 0 && oud <= VOORSTEL_VENSTER_DAGEN;
+  }).sort((a, b) => a.dag < b.dag ? -1 : a.dag > b.dag ? 1 : 0);
+  const uit = [];
+  binnen.forEach((m) => {
+    const vorige = uit.filter((x) => x.recipeId === m.recipeId).pop();
+    if (vorige && Math.abs(dagVerschil(m.dag, vorige.dag)) <= 3) return;
+    uit.push(m);
+  });
+  return uit;
+}
+function voorstelBasis({ cookLog, weekmenu, recipes, vandaag }) {
+  const historie = maaltijdHistorie({ cookLog, weekmenu, vandaag });
+  const per = /* @__PURE__ */ new Map();
+  (recipes || []).forEach((r) => {
+    if (!r || !r.id) return;
+    per.set(r.id, { recept: r, punten: 0, keer: 0, dagen: [], laatst: null, favoriet: !!(r.favorite && r.favoritedAt) });
+  });
+  historie.forEach((m) => {
+    const p = per.get(m.recipeId);
+    if (!p) return;
+    const oud = dagVerschil(vandaag, m.dag);
+    p.punten += oud <= VOORSTEL_RECENT_DAGEN ? 0.5 : 1;
+    p.keer += 1;
+    p.dagen.push(m.dag);
+    if (!p.laatst || m.dag > p.laatst) p.laatst = m.dag;
+  });
+  per.forEach((p) => {
+    if (p.favoriet) p.punten += 1;
+  });
+  return [...per.values()].filter((p) => p.punten > 0);
+}
+function weekdagFactor(p, weekdag) {
+  const keer = p.dagen.filter((d) => parseDateKey(d).getDay() === weekdag).length;
+  return { factor: 1 + 0.25 * Math.min(keer, 2), keer };
+}
+function trek(kandidaten, rnd) {
+  const totaal = kandidaten.reduce((s, k) => s + k.gewicht, 0);
+  if (!(totaal > 0)) return null;
+  let r = rnd() * totaal;
+  for (const k of kandidaten) {
+    r -= k.gewicht;
+    if (r <= 0) return k;
+  }
+  return kandidaten[kandidaten.length - 1];
+}
+function kiesVoorDag({
+  dag,
+  basis,
+  rondom = [],
+  uitgesloten = /* @__PURE__ */ new Set(),
+  snel = false,
+  dagsoort = "alles",
+  kliekjes = [],
+  personen = 1,
+  personenPerPortie = 1,
+  vandaag,
+  rnd = Math.random
+}) {
+  const weekdag = parseDateKey(dag).getDay();
+  const dagnaam = DAG_LANG[weekdag];
+  if (snel) {
+    const bezet = new Set(rondom.map((x) => x.leftoverItemId).filter(Boolean));
+    const kliekje = (kliekjes || []).find((k) => {
+      if (bezet.has(k.item.id) || uitgesloten.has("k:" + k.item.id)) return false;
+      if (rondom.some((x) => x.recipeId === k.recipe.id)) return false;
+      const ks = gerechtSoort(k.recipe);
+      if (ks && rondom.some((x) => x.gerechtSoort === ks && Math.abs(dagVerschil(x.dag, dag)) === 1)) return false;
+      if ((Number(k.item.current) || 0) * (Number(personenPerPortie) || 1) < personen) return false;
+      if (k.item.expiryDate && k.item.expiryDate < dag) return false;
+      return receptPastBijDagsoort(k.recipe, dagsoort);
+    });
+    if (kliekje) {
+      const b = kliekje.item.containers || [];
+      return {
+        dag,
+        soort: "kliekje",
+        recipeId: kliekje.recipe.id,
+        leftoverItemId: kliekje.item.id,
+        gerechtSoort: gerechtSoort(kliekje.recipe),
+        reden: `kliekje \xB7 werkdag \xB7 ${kliekje.item.current} ${Number(kliekje.item.current) === 1 ? "portie" : "porties"}` + (b.length ? ` \xB7 bakje ${bakjesTekst(b)}` : "")
+      };
+    }
+  }
+  const gekozen = rondom.filter((x) => x.recipeId);
+  const kandidaten = basis.filter((p2) => {
+    const id = p2.recept.id;
+    if (uitgesloten.has(id)) return false;
+    if (gekozen.some((x) => x.recipeId === id)) return false;
+    if (p2.laatst && Math.abs(dagVerschil(dag, p2.laatst)) < VOORSTEL_RUST_DAGEN) return false;
+    if (!receptPastBijDagsoort(p2.recept, dagsoort)) return false;
+    const soort = gerechtSoort(p2.recept);
+    if (soort) {
+      const zelfde = gekozen.filter((x) => x.gerechtSoort === soort);
+      if (zelfde.length >= 2) return false;
+      if (zelfde.some((x) => Math.abs(dagVerschil(x.dag, dag)) === 1)) return false;
+    }
+    return true;
+  }).map((p2) => {
+    const w = weekdagFactor(p2, weekdag);
+    return { p: p2, w, gewicht: Math.pow(p2.punten * w.factor, 2) };
+  });
+  const snelle = snel ? kandidaten.filter((k) => Number(k.p.recept.cookTime) > 0 && Number(k.p.recept.cookTime) <= 30) : [];
+  const keuze = trek(snelle.length ? snelle : kandidaten, rnd);
+  if (!keuze) return null;
+  const p = keuze.p;
+  const delen = [];
+  if (snel && snelle.length) delen.push(`snel (${p.recept.cookTime} min) \xB7 werkdag`);
+  if (p.keer) delen.push(`${p.keer}\xD7 in 10 weken`);
+  if (keuze.w.keer) delen.push(`${keuze.w.keer}\xD7 op een ${dagnaam}`);
+  if (p.favoriet) delen.push("favoriet");
+  return { dag, soort: "recept", recipeId: p.recept.id, leftoverItemId: null, gerechtSoort: gerechtSoort(p.recept), reden: delen.join(" \xB7 ") };
+}
+function stelWeekVoor({ dagen = [], vast = [], cookLog, weekmenu, recipes, inventory, preferences = {}, personen = 1, vandaag, rnd = Math.random, uitgesloten = {} }) {
+  const basis = voorstelBasis({ cookLog, weekmenu, recipes, vandaag });
+  const kliekjes = kliekjesInVoorraad(inventory, recipes);
+  const stijlen = Array.isArray(preferences.weekdayStyles) && preferences.weekdayStyles.length === 7 ? preferences.weekdayStyles : null;
+  const soorten = Array.isArray(preferences.weekdaySoorten) && preferences.weekdaySoorten.length === 7 ? preferences.weekdaySoorten : null;
+  const metSoort = (x) => ({ ...x, gerechtSoort: x.gerechtSoort !== void 0 ? x.gerechtSoort : gerechtSoort((recipes || []).find((r) => r.id === x.recipeId)) });
+  const rondom = vast.map(metSoort);
+  const voorstel = [];
+  dagen.forEach((dag) => {
+    const wd = parseDateKey(dag).getDay();
+    const keuze = kiesVoorDag({
+      dag,
+      basis,
+      rondom,
+      uitgesloten: uitgesloten[dag] || /* @__PURE__ */ new Set(),
+      snel: !!(stijlen && stijlen[wd] === "snel"),
+      dagsoort: soorten ? soorten[wd] : "alles",
+      kliekjes,
+      personen,
+      personenPerPortie: preferences.personsPerPortion || 1,
+      vandaag,
+      rnd
+    });
+    if (keuze) {
+      voorstel.push(keuze);
+      rondom.push(keuze);
+    } else voorstel.push({ dag, soort: "leeg", recipeId: null, leftoverItemId: null, reden: "niets passends gevonden" });
+  });
+  return voorstel;
+}
+function stelDagOpnieuwVoor({ dag, voorstel = [], vast = [], uitgesloten = /* @__PURE__ */ new Set(), cookLog, weekmenu, recipes, inventory, preferences = {}, personen = 1, vandaag, rnd = Math.random }) {
+  const basis = voorstelBasis({ cookLog, weekmenu, recipes, vandaag });
+  const kliekjes = kliekjesInVoorraad(inventory, recipes);
+  const wd = parseDateKey(dag).getDay();
+  const stijlen = Array.isArray(preferences.weekdayStyles) && preferences.weekdayStyles.length === 7 ? preferences.weekdayStyles : null;
+  const soorten = Array.isArray(preferences.weekdaySoorten) && preferences.weekdaySoorten.length === 7 ? preferences.weekdaySoorten : null;
+  const metSoort = (x) => ({ ...x, gerechtSoort: x.gerechtSoort !== void 0 ? x.gerechtSoort : gerechtSoort((recipes || []).find((r) => r.id === x.recipeId)) });
+  const rondom = [...vast, ...voorstel.filter((x) => x.dag !== dag && x.soort !== "leeg")].map(metSoort);
+  return kiesVoorDag({
+    dag,
+    basis,
+    rondom,
+    uitgesloten,
+    snel: !!(stijlen && stijlen[wd] === "snel"),
+    dagsoort: soorten ? soorten[wd] : "alles",
+    kliekjes,
+    personen,
+    personenPerPortie: preferences.personsPerPortion || 1,
+    vandaag,
+    rnd
+  }) || { dag, soort: "leeg", recipeId: null, leftoverItemId: null, reden: "niets anders gevonden" };
 }
 function daysUntil(dateStr) {
   if (!dateStr) return null;

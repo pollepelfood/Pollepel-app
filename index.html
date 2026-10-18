@@ -467,6 +467,9 @@
               cookTime: r.cook_time,
               servings: r.servings,
               favorite: r.favorite,
+              // Sinds wanneer (v98). Leeg bij een ster van daarvoor: die telt
+              // in het weekvoorstel niet zwaarder mee.
+              favoritedAt: r.favorited_at || null,
               community: r.community,
               notes: r.notes || "",
               diets: r.diets || [],
