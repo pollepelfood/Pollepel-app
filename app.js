@@ -361,7 +361,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v98 \xB7 18 oktober 2026";
+const APP_VERSIE = "v99 \xB7 20 oktober 2026";
 const SESSIE = Math.random().toString(36).slice(2, 6);
 const kookverslag = (tekst) => {
   try {
@@ -4251,7 +4251,7 @@ function stelMinimumVoor(item, consumptionLog) {
     periodeDagen: Math.round(dagen)
   };
 }
-function controleerGegevens({ inventory = [], weekmenu = {}, extras = [], recipes = [], shoppingList = [], categories = CATEGORIES }) {
+function controleerGegevens({ inventory = [], weekmenu = {}, extras = [], recipes = [], shoppingList = [], categories = CATEGORIES, nummertBakjes = false, aantalBakjes = 40 }) {
   const bevindingen = [];
   const vandaag = dateKey(/* @__PURE__ */ new Date());
   inventory.forEach((i) => {
@@ -4398,6 +4398,38 @@ function controleerGegevens({ inventory = [], weekmenu = {}, extras = [], recipe
       });
     }
   });
+  if (nummertBakjes) {
+    const bezet = bezetteBakjes(inventory);
+    inventory.forEach((i) => {
+      if (!i || !i.sourceRecipeId || kliekjePlek(i) !== "vriezer") return;
+      const porties = Math.ceil(Number(i.current) || 0);
+      const bakjes = i.containers || [];
+      if (porties <= 0) return;
+      if (!bakjes.length) {
+        const vrij = [];
+        for (let n = 1; n <= aantalBakjes && vrij.length < porties; n++) if (!bezet.has(n)) {
+          vrij.push(n);
+          bezet.add(n);
+        }
+        bevindingen.push({
+          soort: "bakje",
+          ernst: "midden",
+          itemId: i.id,
+          tekst: `${i.name}: ${porties} ${porties === 1 ? "portie" : "porties"} zonder bakjenummer.`,
+          gevolg: vrij.length ? `Rechtzetten geeft ${vrij.length === 1 ? "bakje" : "bakjes"} ${bakjesTekst(vrij)}. Schrijf ${vrij.length === 1 ? "dat nummer" : "die nummers"} op de stickers.` : "Er zijn geen vrije nummers meer; geef het zelf een nummer via de voorraad.",
+          ...vrij.length ? { herstel: { containers: vrij } } : {}
+        });
+      } else if (bakjes.length < porties) {
+        bevindingen.push({
+          soort: "bakje",
+          ernst: "laag",
+          itemId: i.id,
+          tekst: `${i.name}: ${porties} porties, maar ${bakjes.length === 1 ? "\xE9\xE9n bakje" : `${bakjes.length} bakjes`} (${bakjesTekst(bakjes)}).`,
+          gevolg: "Zitten ze samen in \xE9\xE9n bakje, dan is het goed. Anders geef je het andere bakje een nummer via de voorraad."
+        });
+      }
+    });
+  }
   const volgorde = { hoog: 0, midden: 1, laag: 2 };
   return bevindingen.sort((a, b) => volgorde[a.ernst] - volgorde[b.ernst]);
 }
@@ -6615,8 +6647,17 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     updatePreferences({ premium: { ...current, [key]: !current[key] } });
   };
   const bevindingen = useMemo(
-    () => loading ? [] : controleerGegevens({ inventory, weekmenu, extras, recipes, shoppingList, categories: CATEGORIES }),
-    [loading, inventory, weekmenu, extras, recipes, shoppingList]
+    () => loading ? [] : controleerGegevens({
+      inventory,
+      weekmenu,
+      extras,
+      recipes,
+      shoppingList,
+      categories: CATEGORIES,
+      nummertBakjes: !!preferences?.containerNumbering,
+      aantalBakjes: Number(preferences?.containerCount) || 40
+    }),
+    [loading, inventory, weekmenu, extras, recipes, shoppingList, preferences?.containerNumbering, preferences?.containerCount]
   );
   const winkelrondes = useMemo(
     () => winkelRondes(shoppingDay, preferences.shoppingDaysExtra),
@@ -8037,6 +8078,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingredi\xEBntenlijst na en vraag
           onNew: () => setEditingItem({}),
           onDelete: deleteInventoryItem,
           kliekjePlanning: (id) => kliekjeVerwijzingen(id, weekmenu, extras),
+          nummertBakjes: !!preferences.containerNumbering,
           onScan: () => setScanOpen(true),
           onOpenRecipe: openVanuitWeekmenu,
           ernstigeBevindingen: bevindingen.filter((b) => b.ernst === "hoog").length,
@@ -12337,8 +12379,8 @@ function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose
                 item.unit,
                 " restje",
                 item.current > 1 ? "s" : "",
-                " \xB7 ",
-                daysLeft !== null && daysLeft <= 0 ? "vandaag over datum" : daysLeft !== null ? `nog ${daysLeft}d houdbaar` : ""
+                (item.containers || []).length ? ` \xB7 bakje ${bakjesTekst(item.containers)}` : "",
+                daysLeft !== null && daysLeft <= 0 ? " \xB7 vandaag over datum" : daysLeft !== null ? ` \xB7 nog ${daysLeft}d houdbaar` : ""
               ] })
             ] })
           ]
@@ -12695,7 +12737,7 @@ function getExpirySuggestions(inventory, recipes) {
     return { item, daysLeft, recipes: matchedRecipes };
   }).sort((a, b) => a.daysLeft - b.daysLeft);
 }
-function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiumOn, ernstigeBevindingen = 0, onOpenControle, onEdit, onNew, onDelete, onScan, onOpenRecipe, onOpenShelfPhoto, onOpenListPhoto, kliekjePlanning = null }) {
+function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiumOn, ernstigeBevindingen = 0, onOpenControle, onEdit, onNew, onDelete, onScan, onOpenRecipe, onOpenShelfPhoto, onOpenListPhoto, kliekjePlanning = null, nummertBakjes = false }) {
   const cats = categories && categories.length ? categories : CATEGORIES;
   const [zoek, setZoek] = useState("");
   const [teVerwijderen, setTeVerwijderen] = useState(null);
@@ -12967,11 +13009,31 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
         /* @__PURE__ */ jsx("div", { style: { background: C.cardBg, borderRadius: 12, border: `1px solid ${C.ceramicDark}` }, children: items.map((item, idx) => {
           const low = item.current < item.min;
           const expDays = item.expiryDate ? daysUntil(item.expiryDate) : null;
+          const bakjes = item.sourceRecipeId ? item.containers || [] : [];
+          const zonderNummer = nummertBakjes && item.sourceRecipeId && kliekjePlek(item) === "vriezer" && !bakjes.length && Number(item.current) > 0;
           return /* @__PURE__ */ jsxs("div", { onClick: () => onEdit(item), style: { padding: "10px 12px", borderBottom: idx < items.length - 1 ? `1px solid ${C.ceramic}` : "none", cursor: "pointer" }, children: [
             /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" }, children: [
-              /* @__PURE__ */ jsxs("span", { style: { fontSize: 14, color: C.ink, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }, children: [
+              /* @__PURE__ */ jsxs("span", { style: { fontSize: 14, color: C.ink, fontWeight: 500, display: "block", lineHeight: 1.6 }, children: [
+                bakjes.map((n) => /* @__PURE__ */ jsx("span", { "aria-label": `bakje ${n}`, style: {
+                  fontFamily: FONT_MONO,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: C.blue,
+                  border: `1.5px solid ${C.blue}`,
+                  borderRadius: 7,
+                  minWidth: 24,
+                  height: 21,
+                  padding: "0 5px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: C.cardBg,
+                  marginRight: 5,
+                  verticalAlign: "1px",
+                  lineHeight: 1
+                }, children: n }, n)),
                 item.name,
-                item.onSale && /* @__PURE__ */ jsx(Tag, { size: 12, color: C.mustardDeep })
+                item.onSale && /* @__PURE__ */ jsx(Tag, { size: 12, color: C.mustardDeep, style: { marginLeft: 6, verticalAlign: "-1px" } })
               ] }),
               low && /* @__PURE__ */ jsx(AlertTriangle, { size: 14, color: C.brick })
             ] }),
@@ -12987,7 +13049,8 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
                   " \xB7 max ",
                   item.max,
                   ")"
-                ] })
+                ] }),
+                zonderNummer && /* @__PURE__ */ jsx("span", { style: { display: "block", fontFamily: FONT_BODY, fontSize: 12, color: C.mustardDeep, marginTop: 2 }, children: "Nog geen bakjenummer \u2014 tik om te nummeren" })
               ] }),
               /* @__PURE__ */ jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
                 expDays !== null && expDays <= 5 && /* @__PURE__ */ jsxs(Pill, { tone: expDays <= 0 ? "warn" : "auto", children: [

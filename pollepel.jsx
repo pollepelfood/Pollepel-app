@@ -345,7 +345,7 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v98 · 18 oktober 2026";
+const APP_VERSIE = "v99 · 20 oktober 2026";
 // Kort kenmerk van dit geopende exemplaar van de app. Staat de app op één
 // telefoon twee keer open (beginscherm én Safari), dan zie je dat in het
 // foutlogboek aan twee verschillende kenmerken.
@@ -4025,7 +4025,7 @@ function stelMinimumVoor(item, consumptionLog) {
   };
 }
 
-function controleerGegevens({ inventory = [], weekmenu = {}, extras = [], recipes = [], shoppingList = [], categories = CATEGORIES }) {
+function controleerGegevens({ inventory = [], weekmenu = {}, extras = [], recipes = [], shoppingList = [], categories = CATEGORIES, nummertBakjes = false, aantalBakjes = 40 }) {
   const bevindingen = [];
   const vandaag = dateKey(new Date());
 
@@ -4201,6 +4201,39 @@ function controleerGegevens({ inventory = [], weekmenu = {}, extras = [], recipe
       });
     }
   });
+
+  // Bakjenummers bij vriezerkliekjes. Zonder nummer moet je het kliekje
+  // openen of de vriezer doorzoeken; met minder nummers dan porties weet je
+  // niet waar de rest ligt. Alleen als je bakjes nummert.
+  if (nummertBakjes) {
+    // Bijhouden wat hier al wordt voorgesteld, zodat twee kliekjes zonder
+    // nummer niet dezelfde vrije nummers krijgen.
+    const bezet = bezetteBakjes(inventory);
+    inventory.forEach((i) => {
+      if (!i || !i.sourceRecipeId || kliekjePlek(i) !== "vriezer") return;
+      const porties = Math.ceil(Number(i.current) || 0);
+      const bakjes = i.containers || [];
+      if (porties <= 0) return;
+      if (!bakjes.length) {
+        const vrij = [];
+        for (let n = 1; n <= aantalBakjes && vrij.length < porties; n++) if (!bezet.has(n)) { vrij.push(n); bezet.add(n); }
+        bevindingen.push({
+          soort: "bakje", ernst: "midden", itemId: i.id,
+          tekst: `${i.name}: ${porties} ${porties === 1 ? "portie" : "porties"} zonder bakjenummer.`,
+          gevolg: vrij.length
+            ? `Rechtzetten geeft ${vrij.length === 1 ? "bakje" : "bakjes"} ${bakjesTekst(vrij)}. Schrijf ${vrij.length === 1 ? "dat nummer" : "die nummers"} op de stickers.`
+            : "Er zijn geen vrije nummers meer; geef het zelf een nummer via de voorraad.",
+          ...(vrij.length ? { herstel: { containers: vrij } } : {}),
+        });
+      } else if (bakjes.length < porties) {
+        bevindingen.push({
+          soort: "bakje", ernst: "laag", itemId: i.id,
+          tekst: `${i.name}: ${porties} porties, maar ${bakjes.length === 1 ? "één bakje" : `${bakjes.length} bakjes`} (${bakjesTekst(bakjes)}).`,
+          gevolg: "Zitten ze samen in één bakje, dan is het goed. Anders geef je het andere bakje een nummer via de voorraad.",
+        });
+      }
+    });
+  }
 
   const volgorde = { hoog: 0, midden: 1, laag: 2 };
   return bevindingen.sort((a, b) => volgorde[a.ernst] - volgorde[b.ernst]);
@@ -6816,8 +6849,11 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   // shoppingList, en die moeten eerst bestaan. Stond hij eerder, dan crasht de
   // app bij het openen.
   const bevindingen = useMemo(
-    () => (loading ? [] : controleerGegevens({ inventory, weekmenu, extras, recipes, shoppingList, categories: CATEGORIES })),
-    [loading, inventory, weekmenu, extras, recipes, shoppingList]
+    () => (loading ? [] : controleerGegevens({
+      inventory, weekmenu, extras, recipes, shoppingList, categories: CATEGORIES,
+      nummertBakjes: !!preferences?.containerNumbering, aantalBakjes: Number(preferences?.containerCount) || 40,
+    })),
+    [loading, inventory, weekmenu, extras, recipes, shoppingList, preferences?.containerNumbering, preferences?.containerCount]
   );
 
   // De streep door de boodschappenlijst. Staat hier om dezelfde reden als
@@ -8521,6 +8557,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             onNew={() => setEditingItem({})}
             onDelete={deleteInventoryItem}
             kliekjePlanning={(id) => kliekjeVerwijzingen(id, weekmenu, extras)}
+            nummertBakjes={!!preferences.containerNumbering}
             onScan={() => setScanOpen(true)}
             onOpenRecipe={openVanuitWeekmenu}
             ernstigeBevindingen={bevindingen.filter((b) => b.ernst === "hoog").length}
@@ -13078,7 +13115,9 @@ function RecipePickerModal({ recipes, inventory, onPick, onPickOffNight, onClose
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 14, color: C.ink, fontWeight: 500 }}>{recipe.name}</div>
                 <div style={{ fontSize: 11, color: C.mustardDeep, fontFamily: FONT_MONO }}>
-                  {item.current} {item.unit} restje{item.current > 1 ? "s" : ""} · {daysLeft !== null && daysLeft <= 0 ? "vandaag over datum" : daysLeft !== null ? `nog ${daysLeft}d houdbaar` : ""}
+                  {item.current} {item.unit} restje{item.current > 1 ? "s" : ""}
+                  {(item.containers || []).length ? ` · bakje ${bakjesTekst(item.containers)}` : ""}
+                  {daysLeft !== null && daysLeft <= 0 ? " · vandaag over datum" : daysLeft !== null ? ` · nog ${daysLeft}d houdbaar` : ""}
                 </div>
               </div>
             </button>
@@ -13528,7 +13567,7 @@ function getExpirySuggestions(inventory, recipes) {
     .sort((a, b) => a.daysLeft - b.daysLeft);
 }
 
-function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiumOn, ernstigeBevindingen = 0, onOpenControle, onEdit, onNew, onDelete, onScan, onOpenRecipe, onOpenShelfPhoto, onOpenListPhoto, kliekjePlanning = null }) {
+function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiumOn, ernstigeBevindingen = 0, onOpenControle, onEdit, onNew, onDelete, onScan, onOpenRecipe, onOpenShelfPhoto, onOpenListPhoto, kliekjePlanning = null, nummertBakjes = false }) {
   const cats = categories && categories.length ? categories : CATEGORIES;
   const [zoek, setZoek] = useState("");
   const [teVerwijderen, setTeVerwijderen] = useState(null);
@@ -13811,18 +13850,39 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
               {items.map((item, idx) => {
                 const low = item.current < item.min;
                 const expDays = item.expiryDate ? daysUntil(item.expiryDate) : null;
+                // Het bakjenummer vooraan: in de vriezer zoek je op nummer,
+                // dus dat is wat je hier als eerste wilt zien.
+                const bakjes = item.sourceRecipeId ? (item.containers || []) : [];
+                const zonderNummer = nummertBakjes && item.sourceRecipeId && kliekjePlek(item) === "vriezer"
+                  && !bakjes.length && Number(item.current) > 0;
                 return (
                   <div key={item.id} onClick={() => onEdit(item)} style={{ padding: "10px 12px", borderBottom: idx < items.length - 1 ? `1px solid ${C.ceramic}` : "none", cursor: "pointer" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: 14, color: C.ink, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 14, color: C.ink, fontWeight: 500, display: "block", lineHeight: 1.6 }}>
+                        {/* Gewone tekstregel met de nummers ervoor: een lange
+                            naam loopt dan door naast de stickers in plaats van
+                            eronder op een eigen regel te beginnen. */}
+                        {bakjes.map((n) => (
+                          <span key={n} aria-label={`bakje ${n}`} style={{
+                            fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, color: C.blue,
+                            border: `1.5px solid ${C.blue}`, borderRadius: 7, minWidth: 24, height: 21,
+                            padding: "0 5px", display: "inline-flex", alignItems: "center", justifyContent: "center",
+                            background: C.cardBg, marginRight: 5, verticalAlign: "1px", lineHeight: 1,
+                          }}>{n}</span>
+                        ))}
                         {item.name}
-                        {item.onSale && <Tag size={12} color={C.mustardDeep} />}
+                        {item.onSale && <Tag size={12} color={C.mustardDeep} style={{ marginLeft: 6, verticalAlign: "-1px" }} />}
                       </span>
                       {low && <AlertTriangle size={14} color={C.brick} />}
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4, flexWrap: "wrap", gap: 4 }}>
                       <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: low ? C.brick : C.inkSoft }}>
                         {item.current} {item.unit} <span style={{ opacity: 0.6 }}>(min {item.min} · max {item.max})</span>
+                        {zonderNummer && (
+                          <span style={{ display: "block", fontFamily: FONT_BODY, fontSize: 12, color: C.mustardDeep, marginTop: 2 }}>
+                            Nog geen bakjenummer — tik om te nummeren
+                          </span>
+                        )}
                       </span>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         {expDays !== null && expDays <= 5 && (
