@@ -361,7 +361,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v99 \xB7 20 oktober 2026";
+const APP_VERSIE = "v100 \xB7 23 oktober 2026";
 const SESSIE = Math.random().toString(36).slice(2, 6);
 const kookverslag = (tekst) => {
   try {
@@ -565,6 +565,10 @@ function vindVoorraadKandidaten(naam, inventory, eenheid = null) {
     }
     if (itemNaam === gevraagd) {
       sterk.push({ item, reden: "precies dezelfde naam", score: 300 + eenheidBonus(item) });
+      return;
+    }
+    if (namesMatch(item.name, naam) && !pastBijRecept(item.name, { name: naam, unit: eenheid })) {
+      zwak.push({ item, reden: "lijkt erop, maar ander product", score: 30 });
       return;
     }
     if (namesMatch(item.name, naam)) {
