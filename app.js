@@ -361,7 +361,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v100 \xB7 23 oktober 2026";
+const APP_VERSIE = "v101 \xB7 23 oktober 2026";
 const SESSIE = Math.random().toString(36).slice(2, 6);
 const kookverslag = (tekst) => {
   try {
@@ -3821,6 +3821,216 @@ function KoppelModal({ ingredientNaam, inventory, onKies, onClose }) {
     /* @__PURE__ */ jsx("div", { style: { marginTop: 12 }, children: /* @__PURE__ */ jsx(GhostButton, { full: true, onClick: onClose, children: "Annuleren" }) })
   ] });
 }
+function NakijkModal({ regel, inventory, onKlopt, onVerplaats, onBoekIn, onHerzie, onClose }) {
+  const item = regel.bookedItemId ? inventory.find((i) => i.id === regel.bookedItemId) : null;
+  const nietOmgerekend = !!item && regel.bookedAmount == null;
+  const nieuw = !!item && !nietOmgerekend && norm(item.name) === norm(regel.name) && Number(item.min || 0) === 0 && Number(item.max || 0) === 0;
+  const [zoek, setZoek] = useState("");
+  const [stap, setStap] = useState(nietOmgerekend ? "omrekenen" : "kies");
+  const [doel, setDoel] = useState(nietOmgerekend ? item : null);
+  const [getal, setGetal] = useState(nietOmgerekend ? "" : String(regel.amount ?? ""));
+  const winkel = inventory.filter((i) => (!item || i.id !== item.id) && !isKliekjeProduct(i) && !/^vriezer\s*:/i.test(i.name || ""));
+  const { kandidaten = [] } = vindVoorraadKandidaten(regel.name, winkel, regel.unit) || {};
+  const waarschijnlijk = kandidaten.map((k) => k.item).slice(0, 4);
+  const lijst = zoek.trim() ? koppelSuggesties(regel.name, winkel, zoek).map((s) => s.item).slice(0, 12) : waarschijnlijk;
+  const productKnop = (p, opvallend) => /* @__PURE__ */ jsxs(
+    "button",
+    {
+      onClick: () => {
+        const gelukt = onVerplaats(regel, p);
+        if (gelukt === false) {
+          setDoel(p);
+          setGetal("");
+          setStap("omrekenen");
+          return;
+        }
+        onClose();
+      },
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        width: "100%",
+        textAlign: "left",
+        background: C.cardBg,
+        border: `1.5px solid ${opvallend ? C.sage : C.borderTint}`,
+        borderRadius: 12,
+        padding: "9px 11px",
+        marginBottom: 6,
+        cursor: "pointer",
+        fontFamily: FONT_BODY,
+        minHeight: 44
+      },
+      children: [
+        /* @__PURE__ */ jsxs("span", { style: { flex: 1, minWidth: 0 }, children: [
+          /* @__PURE__ */ jsx("span", { style: { display: "block", fontSize: 14, color: C.ink }, children: p.name }),
+          /* @__PURE__ */ jsxs("span", { style: { display: "block", fontSize: 11, color: C.inkSoft, fontFamily: FONT_MONO }, children: [
+            "nu ",
+            p.current,
+            " ",
+            p.unit
+          ] })
+        ] }),
+        opvallend && /* @__PURE__ */ jsx(Pill, { tone: "ok", children: "lijkt erop" })
+      ]
+    },
+    p.id
+  );
+  let uitleg;
+  if (!item) uitleg = /* @__PURE__ */ jsxs(Fragment, { children: [
+    "Er staat nog niets van ",
+    /* @__PURE__ */ jsx("strong", { children: regel.name }),
+    " in je voorraad. Bij welk product hoort het?"
+  ] });
+  else if (nietOmgerekend) uitleg = /* @__PURE__ */ jsxs(Fragment, { children: [
+    "Je kocht ",
+    /* @__PURE__ */ jsxs("strong", { children: [
+      regel.amount,
+      " ",
+      regel.unit,
+      " ",
+      regel.name
+    ] }),
+    ", maar ",
+    /* @__PURE__ */ jsx("strong", { children: item.name }),
+    " houdt je bij in ",
+    item.unit,
+    ". Dat kan de app niet omrekenen, dus er is nog niets bijgeboekt."
+  ] });
+  else if (nieuw) uitleg = /* @__PURE__ */ jsxs(Fragment, { children: [
+    /* @__PURE__ */ jsx("strong", { children: regel.name }),
+    " stond nog niet in je voorraad. De app heeft het als nieuw product toegevoegd, met ",
+    regel.bookedAmount,
+    " ",
+    regel.bookedUnit,
+    ". Klopt dat, of heb je het al onder een andere naam?"
+  ] });
+  else uitleg = /* @__PURE__ */ jsxs(Fragment, { children: [
+    "De app twijfelde en heeft ",
+    /* @__PURE__ */ jsxs("strong", { children: [
+      regel.bookedAmount,
+      " ",
+      regel.bookedUnit
+    ] }),
+    " bij ",
+    /* @__PURE__ */ jsx("strong", { children: item.name }),
+    " gezet. Klopt dat?"
+  ] });
+  return /* @__PURE__ */ jsxs(Modal, { title: `Nakijken: ${regel.name}`, onClose, children: [
+    /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.ink, marginTop: 0, lineHeight: 1.5 }, children: uitleg }),
+    stap === "omrekenen" && doel && /* @__PURE__ */ jsxs("div", { style: { marginBottom: 12 }, children: [
+      /* @__PURE__ */ jsxs("label", { style: { display: "block", fontSize: 13, color: C.ink, marginBottom: 6 }, children: [
+        "Hoeveel ",
+        doel.unit,
+        " ",
+        doel.name,
+        " is het?"
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            type: "number",
+            inputMode: "decimal",
+            autoFocus: true,
+            style: { ...inputStyle, flex: 1 },
+            value: getal,
+            onChange: (e) => setGetal(e.target.value),
+            placeholder: `aantal ${doel.unit}`
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          PrimaryButton,
+          {
+            tone: "sage",
+            disabled: !(Number(getal) > 0),
+            onClick: () => {
+              onBoekIn(regel, doel, Number(getal));
+              onClose();
+            },
+            children: "Bijboeken"
+          }
+        )
+      ] }),
+      nietOmgerekend && /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: () => {
+            setStap("ander");
+            setDoel(null);
+          },
+          style: { marginTop: 8, background: "none", border: "none", color: C.blue, fontSize: 13, cursor: "pointer", padding: 0, fontFamily: FONT_BODY },
+          children: "Hoort bij een ander product"
+        }
+      )
+    ] }),
+    stap === "kies" && item && /* @__PURE__ */ jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }, children: [
+      /* @__PURE__ */ jsxs(PrimaryButton, { tone: "sage", full: true, onClick: () => {
+        onKlopt(regel);
+        onClose();
+      }, children: [
+        /* @__PURE__ */ jsx(Check, { size: 16 }),
+        " Klopt"
+      ] }),
+      /* @__PURE__ */ jsx(GhostButton, { full: true, onClick: () => setStap("ander"), children: "Hoort bij een ander product" }),
+      /* @__PURE__ */ jsx(GhostButton, { full: true, onClick: () => setStap("hoeveel"), children: "Andere hoeveelheid" })
+    ] }),
+    stap === "hoeveel" && /* @__PURE__ */ jsxs("div", { style: { marginBottom: 12 }, children: [
+      /* @__PURE__ */ jsxs("label", { style: { display: "block", fontSize: 13, color: C.ink, marginBottom: 6 }, children: [
+        "Hoeveel ",
+        regel.unit,
+        " heb je gekocht?"
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            type: "number",
+            inputMode: "decimal",
+            autoFocus: true,
+            style: { ...inputStyle, flex: 1 },
+            value: getal,
+            onChange: (e) => setGetal(e.target.value)
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          PrimaryButton,
+          {
+            tone: "sage",
+            disabled: !(Number(getal) > 0),
+            onClick: () => {
+              onHerzie(regel, Number(getal), regel.unit);
+              onClose();
+            },
+            children: "Opslaan"
+          }
+        )
+      ] })
+    ] }),
+    (stap === "ander" || !item) && /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsxs("p", { style: { fontSize: 12, color: C.inkSoft, margin: "0 0 8px", lineHeight: 1.45 }, children: [
+        "De hoeveelheid gaat naar het product dat je kiest",
+        nieuw ? `, en het lege "${item.name}" verdwijnt` : "",
+        ". De app onthoudt het voor de volgende keer."
+      ] }),
+      /* @__PURE__ */ jsx(
+        "input",
+        {
+          autoComplete: "off",
+          style: { ...inputStyle, marginBottom: 10 },
+          placeholder: "Zoeken in je voorraad\u2026",
+          value: zoek,
+          onChange: (e) => setZoek(e.target.value)
+        }
+      ),
+      /* @__PURE__ */ jsxs("div", { style: { maxHeight: "40vh", overflowY: "auto" }, children: [
+        lijst.length === 0 && /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.inkSoft }, children: zoek.trim() ? "Niets gevonden in je voorraad." : "Niets dat erop lijkt. Zoek hierboven op naam." }),
+        lijst.map((p) => productKnop(p, !zoek.trim() || waarschijnlijk.includes(p)))
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx("div", { style: { marginTop: 8 }, children: /* @__PURE__ */ jsx(GhostButton, { full: true, onClick: onClose, children: stap === "kies" ? "Later" : "Annuleren" }) })
+  ] });
+}
 function AgendaModal({ token, onClose, onDownload }) {
   const [gekopieerd, setGekopieerd] = useState(false);
   if (!token) {
@@ -7123,6 +7333,65 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       meta: { eerder: Number(regel.bookedAmount) || null, eerderEenheid: regel.bookedUnit || null }
     }]);
   };
+  const keurBoekingGoed = (regel) => {
+    persist("shoppingList", shoppingList.map((s) => s.id === regel.id ? { ...s, bookedReview: false } : s), setShoppingList);
+    showToast(`${regel.name} klopt. Hij gaat bij "Klaar met winkelen" van de lijst.`);
+  };
+  const zonderOudeBoeking = (regel, doel) => {
+    let next = inventory.map((i) => ({ ...i }));
+    const oud = regel.bookedItemId ? inventory.find((i) => i.id === regel.bookedItemId) : null;
+    if (!oud || oud.id === doel.id) return { next, weg: null };
+    const rest = round2(Math.max(0, Number(oud.current || 0) - Number(regel.bookedAmount || 0)));
+    const netAangemaakt = norm(oud.name) === norm(regel.name) && rest <= 0 && Number(oud.min || 0) === 0 && Number(oud.max || 0) === 0 && !oud.sourceRecipeId;
+    if (netAangemaakt) return { next: next.filter((i) => i.id !== oud.id), weg: oud.name };
+    if (regel.bookedAmount != null) next = next.map((i) => i.id === oud.id ? { ...i, current: rest } : i);
+    return { next, weg: null };
+  };
+  const verplaatsBoeking = (regel, doel, hoeveelheid = regel.amount, eenheid = regel.unit) => {
+    const oud = regel.bookedItemId ? inventory.find((i) => i.id === regel.bookedItemId) : null;
+    if (oud && oud.id === doel.id) {
+      keurBoekingGoed(regel);
+      return;
+    }
+    const erbij = naarVoorraadEenheid(hoeveelheid, eenheid, doel);
+    if (erbij === null) {
+      showToast(`${hoeveelheid} ${eenheid} is niet om te rekenen naar ${doel.unit}. Vul hieronder in hoeveel ${doel.unit} het is.`);
+      return false;
+    }
+    let { next, weg } = zonderOudeBoeking(regel, doel);
+    const bijnamen = Array.isArray(doel.aliases) ? doel.aliases : [];
+    const metBijnaam = norm(regel.name) === norm(doel.name) || bijnamen.some((a) => norm(a) === norm(regel.name)) ? bijnamen : [...bijnamen, regel.name];
+    next = next.map((i) => i.id === doel.id ? { ...i, current: addToStock(i, erbij), aliases: metBijnaam } : i);
+    persist("inventory", next, setInventory);
+    persist("shoppingList", shoppingList.map((s) => s.id === regel.id ? {
+      ...s,
+      amount: hoeveelheid,
+      unit: eenheid,
+      bookedAmount: erbij,
+      bookedUnit: doel.unit,
+      bookedItemId: doel.id,
+      bookedReview: false
+    } : s), setShoppingList);
+    showToast(`${erbij} ${doel.unit} bij ${doel.name} gezet${weg ? `, en het lege "${weg}" weggehaald` : ""}. Volgende keer boekt ${regel.name} hier meteen.`);
+    return true;
+  };
+  const boekInVoorraadEenheid = (regel, item, hoeveelheid) => {
+    const erbij = round2(Number(hoeveelheid) || 0);
+    if (!(erbij > 0)) return;
+    const vorige = regel.bookedAmount != null && regel.bookedItemId === item.id ? Number(regel.bookedAmount) : 0;
+    const { next, weg } = zonderOudeBoeking(regel, item);
+    const bijnamen = Array.isArray(item.aliases) ? item.aliases : [];
+    const metBijnaam = norm(regel.name) === norm(item.name) || bijnamen.some((a) => norm(a) === norm(regel.name)) ? bijnamen : [...bijnamen, regel.name];
+    persist("inventory", next.map((i) => i.id === item.id ? { ...i, current: round2(Math.max(0, Number(i.current || 0) - vorige) + erbij), aliases: metBijnaam } : i), setInventory);
+    persist("shoppingList", shoppingList.map((s) => s.id === regel.id ? {
+      ...s,
+      bookedAmount: erbij,
+      bookedUnit: item.unit,
+      bookedItemId: item.id,
+      bookedReview: false
+    } : s), setShoppingList);
+    showToast(`${erbij} ${item.unit} bij ${item.name} gezet${weg ? `, en het lege "${weg}" weggehaald` : ""}.`);
+  };
   const addManualItem = (item) => {
     persist("shoppingList", [...shoppingList, { ...item, id: uid(), auto: false, checked: false }], setShoppingList);
   };
@@ -7203,7 +7472,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     const klaar = afgevinkt.filter((s) => !s.bookedReview);
     persist("shoppingList", shoppingList.filter((s) => !s.checked || s.bookedReview), setShoppingList);
     if (naTeKijken.length) {
-      showToast(`${klaar.length} van de lijst gehaald. ${naTeKijken.length} regel${naTeKijken.length > 1 ? "s vragen" : " vraagt"} nog even aandacht \u2014 die ${naTeKijken.length > 1 ? "blijven" : "blijft"} staan.`);
+      showToast(`${klaar.length} van de lijst gehaald. ${naTeKijken.length} regel${naTeKijken.length > 1 ? "s vragen" : " vraagt"} nog even aandacht. Tik op "nakijken" om te zeggen wat klopt.`);
     } else {
       showToast(`${klaar.length} artikel${klaar.length > 1 ? "en" : ""} van de lijst gehaald. Je voorraad was al bijgewerkt tijdens het afvinken.`);
     }
@@ -8114,6 +8383,9 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingredi\xEBntenlijst na en vraag
           onAddManual: addManualItem,
           onChangeAmount: changeShoppingAmount,
           onHerzie: herzieGeboekt,
+          onKeurGoed: keurBoekingGoed,
+          onVerplaats: verplaatsBoeking,
+          onBoekIn: boekInVoorraadEenheid,
           onSetAmount: setShoppingAmount,
           onProcess: processChecked
         }
@@ -13367,7 +13639,9 @@ const stepVlak = {
     return C.cardBg;
   }
 };
-function BoodschappenView({ list, categories, inventory = [], indeling = null, rondes = null, onKiesRonde = null, onToggle, onRemove, onAddManual, onProcess, onChangeAmount, onSetAmount, onHerzie }) {
+function BoodschappenView({ list, categories, inventory = [], indeling = null, rondes = null, onKiesRonde = null, onToggle, onRemove, onAddManual, onProcess, onChangeAmount, onSetAmount, onHerzie, onKeurGoed, onVerplaats, onBoekIn }) {
+  const [nakijkId, setNakijkId] = useState(null);
+  const nakijkRegel = nakijkId ? list.find((s) => s.id === nakijkId) : null;
   const [alleenNu, setAlleenNu] = useState(false);
   const streep = useMemo(() => {
     const m = /* @__PURE__ */ new Map();
@@ -13720,7 +13994,15 @@ ${body}
                 )
               ] })
             ] }),
-            item.checked && item.bookedReview && /* @__PURE__ */ jsx(Pill, { tone: "warn", children: "nakijken" }),
+            item.checked && item.bookedReview && /* @__PURE__ */ jsx(
+              "button",
+              {
+                onClick: () => setNakijkId(item.id),
+                "aria-label": `${item.name} nakijken`,
+                style: { background: "none", border: "none", padding: 0, cursor: "pointer", minHeight: 32 },
+                children: /* @__PURE__ */ jsx(Pill, { tone: "warn", children: "nakijken \u203A" })
+              }
+            ),
             !item.checked && item.auto && /* @__PURE__ */ jsx(Pill, { tone: "auto", children: "via voorraad" }),
             /* @__PURE__ */ jsx("button", { onClick: () => onRemove(item.id), style: { background: "none", border: "none", cursor: "pointer" }, children: /* @__PURE__ */ jsx(X, { size: 15, color: C.inkSoft }) })
           ] }, item.id);
@@ -13731,6 +14013,18 @@ ${body}
       /* @__PURE__ */ jsx(Plus, { size: 14 }),
       " Zelf iets toevoegen"
     ] }),
+    nakijkRegel && /* @__PURE__ */ jsx(
+      NakijkModal,
+      {
+        regel: nakijkRegel,
+        inventory,
+        onKlopt: onKeurGoed,
+        onVerplaats,
+        onBoekIn,
+        onHerzie,
+        onClose: () => setNakijkId(null)
+      }
+    ),
     checkedCount > 0 && /* @__PURE__ */ jsxs("div", { style: { marginTop: 14 }, children: [
       /* @__PURE__ */ jsxs(PrimaryButton, { tone: "sage", full: true, onClick: onProcess, children: [
         /* @__PURE__ */ jsx(Check, { size: 16 }),
