@@ -345,7 +345,7 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v99 · 20 oktober 2026";
+const APP_VERSIE = "v102 · 24 oktober 2026";
 // Kort kenmerk van dit geopende exemplaar van de app. Staat de app op één
 // telefoon twee keer open (beginscherm én Safari), dan zie je dat in het
 // foutlogboek aan twee verschillende kenmerken.
@@ -674,6 +674,14 @@ function vindVoorraadKandidaten(naam, inventory, eenheid = null) {
     }
     if (itemNaam === gevraagd) {
       sterk.push({ item, reden: "precies dezelfde naam", score: 300 + eenheidBonus(item) });
+      return;
+    }
+    // Lijkt de naam erop maar is het een ander product (zure room tegenover
+    // kookroom, penne tegenover spaghetti), dan is het hooguit een vermoeden.
+    // Zo boekte afvinken "Zure room" op Kookroom, en dat lukte dan niet
+    // omdat grammen niet naar milliliters om te rekenen zijn.
+    if (namesMatch(item.name, naam) && !pastBijRecept(item.name, { name: naam, unit: eenheid })) {
+      zwak.push({ item, reden: "lijkt erop, maar ander product", score: 30 });
       return;
     }
     if (namesMatch(item.name, naam)) {
@@ -1444,6 +1452,88 @@ function isPantryBasic(name) {
   return PANTRY_BASICS.some((b) => n === b || namesMatch(n, b));
 }
 
+// ---- Vervangers bij het koken (v102) ----
+//
+// Staat er sjalot in het recept en heb je alleen ui, dan biedt het recept
+// "gebruik ui" aan. Alleen voor die ene keer koken: er wordt niets gekoppeld,
+// want een sjalot is in het volgende recept misschien wél nodig.
+//
+// Een bewust korte lijst van vervangers die in een gewone keuken werken. Elk
+// voorstel moet je zelf aantikken; de app vervangt nooit stilletjes (regel 8).
+const KRUIDEN_VERS = "basilicum|peterselie|bladpeterselie|platte peterselie|koriander|tijm|oregano|rozemarijn|dille|bieslook|munt|salie";
+const VERVANGERS = [
+  { bron: /^sjalot(ten|jes|je)?$/, doel: /^(gele |witte |rode )?(ui|uien)$/, factor: 0.5, uitleg: "1 ui voor 2 sjalotten" },
+  { bron: /^(rode|witte|gele) (ui|uien)$/, doel: /^(ui|uien)$/ },
+  { bron: /^(kippen|kip)bouillon$/, doel: /bouillonblok.*kip|kippenbouillonblok/, blokje: true },
+  { bron: /^runderbouillon$/, doel: /bouillonblok.*rund|runderbouillonblok/, blokje: true },
+  { bron: /^(groente|vegetarische |vegeta\w*)bouillon$/, doel: /bouillonblok.*groente|groentebouillonblok/, blokje: true },
+  { bron: /^(\w+ ?)?bouillon$/, doel: /bouillonblok/, blokje: true },
+  { bron: /^bouillonblok(je|jes)?( \w+)?$/, doel: /bouillonblok/ },
+  { bron: new RegExp(`^(verse? (${KRUIDEN_VERS})|(${KRUIDEN_VERS}) \\(vers\\))$`), doel: "gedroogdKruid", factor: 1 / 3, uitleg: "gedroogd: een derde van de verse hoeveelheid" },
+  { bron: /^kookroom$/, doel: /^(slag)?room$/ },
+  { bron: /^(slag)?room$|^ongeklopte slagroom$/, doel: /^kookroom$/ },
+  { bron: /^cr[eè]me fra[iî]che$/, doel: /^zure room$/ },
+  { bron: /^zure room$/, doel: /^cr[eè]me fra[iî]che$/ },
+  { bron: /^griekse yoghurt/, doel: /^(volle |magere )?yoghurt$/ },
+  { bron: /^limoen(en)?$/, doel: /^citroen(en)?$/ },
+  { bron: /^(parmezaan|parmezaanse kaas|parmigiano|grana padano|pecorino)/, doel: /parmezaan|parmigiano|grana padano|pecorino/ },
+  { bron: /^(zonnebloemolie|neutrale olie|plantaardige olie|arachideolie|raapzaadolie)$/, doel: /^(olijfolie|zonnebloemolie)$/ },
+  { bron: /^(witte wijnazijn|appelazijn|appelciderazijn)$/, doel: /wijnazijn|appelazijn/ },
+  { bron: /^(ahornsiroop|maple syrup|agavesiroop)/, doel: /^honing$/ },
+  { bron: /^honing$/, doel: /ahornsiroop|maple syrup/ },
+  { bron: /^(palmsuiker|basterdsuiker|bruine suiker|rietsuiker)$/, doel: /^(suiker|basterdsuiker|rietsuiker|kristalsuiker)$/ },
+  { bron: /^(penne|macaroni|fusilli|rigatoni|farfalle|pipe rigate|elleboogjes)( pasta)?$/, doel: /^(penne|macaroni|fusilli|rigatoni|farfalle|pipe rigate|elleboogjes)( pasta)?$/ },
+  { bron: /^(spaghetti|tagliatelle|linguine|fettuccine|spaghettini)$/, doel: /^(spaghetti|tagliatelle|linguine|fettuccine|spaghettini)$/ },
+  { bron: /^((basmati|jasmijn|pandan|langgraan|witte) ?)?rijst$/, doel: /^((basmati|jasmijn|pandan|langgraan|witte) ?)?rijst$/ },
+  { bron: /^kip(filet|dijfilet)$|^kippendij(en|filet)?$/, doel: /^kipfilet$|^kippendij/ },
+  { bron: /^(spekjes|spekblokjes|spekreepjes|pancetta)$/, doel: /^(spekjes|spekblokjes|spekreepjes|hamblokjes|hamreepjes|pancetta)$/ },
+  { bron: /^((rode|gele|groene|oranje) )?paprika('?s)?$/, doel: /^puntpaprika|^paprika$/ },
+  { bron: /^puntpaprika('?s)?$/, doel: /^paprika$/ },
+  { bron: /^(tomatenblokjes|gehakte tomaten|gepelde tomaten)/, doel: /^(tomatenblokjes|gehakte tomaten|gepelde tomaten|passata|tomatenpassata|tomato passata|gezeefde tomaten)/ },
+];
+
+// Zoekt een vervanger in je voorraad voor een ingrediënt dat ontbreekt.
+// Geeft { item, ing, uitleg } waarbij `ing` de regel is zoals hij bij het
+// koken wordt afgeboekt, of null.
+function zoekVervanger(ing, inventory = [], scale = 1) {
+  const naam = norm(ing && ing.name).replace(/\s+/g, " ");
+  if (!naam) return null;
+  const kandidaten = (inventory || []).filter((i) => !isKliekjeProduct(i) && Number(i.current) > 0);
+  for (const regel of VERVANGERS) {
+    const m = naam.match(regel.bron);
+    if (!m) continue;
+    const past = (item) => {
+      const n = norm(item.name).replace(/\s+/g, " ");
+      if (n === naam) return false;
+      if (regel.doel === "gedroogdKruid") {
+        const kruid = (m[2] || m[3] || "").replace(/^(blad|platte) /, "");
+        return !!kruid && n.includes(kruid) && !/vers/.test(n)
+          && (normalizeCategory(item.category) === "Kruiden & specerijen" || /gedroogd/.test(n));
+      }
+      return regel.doel.test(n);
+    };
+    for (const item of kandidaten.filter(past)) {
+      let nieuw;
+      const eenheid = (ing.unit || "").toLowerCase();
+      if (regel.blokje && (eenheid === "ml" || eenheid === "l")) {
+        // Eén blokje op een halve liter water.
+        const ml = convertAmount(Number(ing.amount) || 0, eenheid, "ml");
+        nieuw = { name: item.name, amount: Math.max(1, Math.ceil(ml / 500)), unit: "stuks", inventoryItemId: item.id };
+      } else {
+        nieuw = { name: item.name, amount: round2((Number(ing.amount) || 0) * (regel.factor || 1)), unit: ing.unit, inventoryItemId: item.id };
+      }
+      // Zelfde schaal als bij het koken zelf, anders klopt "genoeg in huis" niet.
+      const cmp = stockVsNeed(item, nieuw, scale);
+      if (!cmp || cmp.have < cmp.need) continue;
+      return {
+        item, ing: { ...nieuw, vervangtVoor: ing.name },
+        uitleg: regel.blokje && (eenheid === "ml" || eenheid === "l") ? "1 blokje per halve liter" : (regel.uitleg || null),
+      };
+    }
+  }
+  return null;
+}
+
 // Bepaalt wat je van een recept in huis hebt en wat er nog ontbreekt.
 // Anders dan voorheen tellen ingrediënten die hélemaal niet in de voorraad
 // staan óók als ontbrekend — die had je immers niet.
@@ -1962,6 +2052,98 @@ function kliekjesVanAvond({ dagSleutel, weekmenu = {}, extras = [], inventory = 
 
 function kliekjePlek(item) {
   return /^vriezer\s*:/i.test((item && item.name) || "") ? "vriezer" : "koelkast";
+}
+
+// ---- Ontdooien (v102) ----
+// Welke vriezerbakjes moeten eruit? Voor morgen: altijd laten zien, dan
+// haal je ze vanavond uit de vriezer. Voor vanavond: tot 17:00, voor wie
+// het gisteren vergat. Kliekjes uit de koelkast hoeven niet te ontdooien.
+function ontdooiHerinneringen({ weekmenu = {}, extras = [], inventory = [], recipes = [], nu = new Date() }) {
+  const vandaag = dateKey(nu);
+  const morgenD = new Date(nu); morgenD.setDate(morgenD.getDate() + 1);
+  const morgen = dateKey(morgenD);
+  const uit = [];
+  const voeg = (dag, wanneer) => kliekjesVanAvond({ dagSleutel: dag, weekmenu, extras, inventory, recipes })
+    .filter((k) => kliekjePlek(k.item) === "vriezer")
+    .forEach((k) => uit.push({ dag, wanneer, ...k, sleutel: `${dag}:${k.item.id}` }));
+  if (nu.getHours() < 17) voeg(vandaag, "vanavond");
+  voeg(morgen, "morgen");
+  return uit;
+}
+
+const ONTDOOID_SLEUTEL = "pollepel.ontdooid";
+function leesOntdooid() {
+  try { return JSON.parse(window.localStorage.getItem(ONTDOOID_SLEUTEL) || "{}") || {}; } catch (e) { return {}; }
+}
+function schrijfOntdooid(map) {
+  // Alleen de laatste week bewaren; ouder heeft geen betekenis meer.
+  const grens = dateKey(new Date(Date.now() - 7 * 86400000));
+  const schoon = Object.fromEntries(Object.entries(map).filter(([k]) => k.slice(0, 10) >= grens));
+  try { window.localStorage.setItem(ONTDOOID_SLEUTEL, JSON.stringify(schoon)); } catch (e) { /* privévenster: dan alleen deze sessie */ }
+}
+
+function OntdooiStrook({ herinneringen = [], onGedaan }) {
+  if (!herinneringen.length) return null;
+  return (
+    <div style={{ marginBottom: 14 }}>
+      {herinneringen.map((h) => {
+        const b = h.item.containers || [];
+        // Het eerste bakje, net als in de vanavond-strook: daar ga je naar zoeken.
+        const welk = b.length ? `bakje ${b[0]}` : "het bakje";
+        return (
+          <div key={h.sleutel} style={{
+            display: "flex", alignItems: "center", gap: 10, background: C.noteBg, borderRadius: 12,
+            padding: "10px 12px", marginBottom: 6,
+          }}>
+            <span aria-hidden="true" style={{ fontSize: 20, flexShrink: 0 }}>{"\uD83E\uDDCA"}</span>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.ink, lineHeight: 1.4 }}>
+              {h.wanneer === "morgen"
+                ? <>Morgen eet je <strong>{h.recipe.name}</strong>. Haal {welk} vanavond uit de vriezer.</>
+                : <>Vanavond eet je <strong>{h.recipe.name}</strong>. Ligt {welk} nog in de vriezer? Haal het er nu uit.</>}
+            </span>
+            <button
+              type="button"
+              onClick={() => onGedaan(h.sleutel)}
+              style={{
+                flexShrink: 0, minHeight: 40, padding: "0 12px", borderRadius: 10, cursor: "pointer",
+                background: C.cardBg, border: `1px solid ${C.ceramicDark}`, fontFamily: FONT_BODY,
+                fontSize: 12.5, fontWeight: 600, color: C.sage,
+              }}
+            >
+              <Check size={13} style={{ verticalAlign: -2, marginRight: 3 }} />Ligt eruit
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---- Hoe lang ligt een kliekje er al (v102) ----
+// Vanaf het moment dat het in je voorraad kwam. Zonder tijdstip (net
+// aangemaakt, nog niet opnieuw geladen) is het van vandaag.
+function kliekjeLeeftijdDagen(item, nu = Date.now()) {
+  const t = item && item.createdAt ? new Date(item.createdAt).getTime() : NaN;
+  if (!Number.isFinite(t)) return 0;
+  return Math.max(0, Math.floor((nu - t) / 86400000));
+}
+function leeftijdTekst(dagen) {
+  if (dagen < 1) return "vandaag";
+  if (dagen < 14) return `${dagen} d`;
+  if (dagen < 70) return `${Math.floor(dagen / 7)} wk`;
+  return `${Math.round(dagen / 30.4)} mnd`;
+}
+// Te lang: in de vriezer na 10 weken, of als de houdbaarheid binnen 14 dagen
+// afloopt. In de koelkast na 2 dagen. Een vuistregel, geen voedselveiligheid:
+// de datum op het bakje blijft leidend.
+const KLIEKJE_LANG_VRIEZER_DAGEN = 70;
+const KLIEKJE_LANG_KOELKAST_DAGEN = 2;
+function kliekjeTeLang(item, nu = Date.now()) {
+  if (!item || !item.sourceRecipeId) return false;
+  const dagen = kliekjeLeeftijdDagen(item, nu);
+  if (kliekjePlek(item) === "koelkast") return dagen >= KLIEKJE_LANG_KOELKAST_DAGEN;
+  const nog = item.expiryDate ? Math.round((new Date(item.expiryDate + "T00:00:00").getTime() - nu) / 86400000) : null;
+  return dagen >= KLIEKJE_LANG_VRIEZER_DAGEN || (nog !== null && nog <= 14);
 }
 
 // De regel onder een gepland kliekje: hoeveel, welk bakje, hoe lang nog goed.
@@ -3570,6 +3752,143 @@ function KoppelModal({ ingredientNaam, inventory, onKies, onClose }) {
   );
 }
 
+// Tik op "nakijken" bij een afgevinkte boodschap. Zegt wat de app heeft
+// gedaan en laat je kiezen: klopt, hoort bij een ander product, of andere
+// hoeveelheid. Weghalen staat er bewust niet tussen: de voorraad blijft.
+function NakijkModal({ regel, inventory, onKlopt, onVerplaats, onBoekIn, onHerzie, onClose }) {
+  const item = regel.bookedItemId ? inventory.find((i) => i.id === regel.bookedItemId) : null;
+  const nietOmgerekend = !!item && regel.bookedAmount == null;
+  const nieuw = !!item && !nietOmgerekend && norm(item.name) === norm(regel.name)
+    && Number(item.min || 0) === 0 && Number(item.max || 0) === 0;
+  const [zoek, setZoek] = useState("");
+  const [stap, setStap] = useState(nietOmgerekend ? "omrekenen" : "kies"); // kies | ander | hoeveel | omrekenen
+  const [doel, setDoel] = useState(nietOmgerekend ? item : null);
+  const [getal, setGetal] = useState(nietOmgerekend ? "" : String(regel.amount ?? ""));
+
+  const winkel = inventory.filter((i) => (!item || i.id !== item.id) && !isKliekjeProduct(i) && !/^vriezer\s*:/i.test(i.name || ""));
+  const { kandidaten = [] } = vindVoorraadKandidaten(regel.name, winkel, regel.unit) || {};
+  const waarschijnlijk = kandidaten.map((k) => k.item).slice(0, 4);
+  const lijst = zoek.trim()
+    ? koppelSuggesties(regel.name, winkel, zoek).map((s) => s.item).slice(0, 12)
+    : waarschijnlijk;
+
+  const productKnop = (p, opvallend) => (
+    <button
+      key={p.id}
+      onClick={() => {
+        const gelukt = onVerplaats(regel, p);
+        if (gelukt === false) { setDoel(p); setGetal(""); setStap("omrekenen"); return; }
+        onClose();
+      }}
+      style={{
+        display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
+        background: C.cardBg, border: `1.5px solid ${opvallend ? C.sage : C.borderTint}`,
+        borderRadius: 12, padding: "9px 11px", marginBottom: 6, cursor: "pointer", fontFamily: FONT_BODY, minHeight: 44,
+      }}
+    >
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 14, color: C.ink }}>{p.name}</span>
+        <span style={{ display: "block", fontSize: 11, color: C.inkSoft, fontFamily: FONT_MONO }}>nu {p.current} {p.unit}</span>
+      </span>
+      {opvallend && <Pill tone="ok">lijkt erop</Pill>}
+    </button>
+  );
+
+  let uitleg;
+  if (!item) uitleg = <>Er staat nog niets van <strong>{regel.name}</strong> in je voorraad. Bij welk product hoort het?</>;
+  else if (nietOmgerekend) uitleg = <>Je kocht <strong>{regel.amount} {regel.unit} {regel.name}</strong>, maar <strong>{item.name}</strong> houdt je bij in {item.unit}. Dat kan de app niet omrekenen, dus er is nog niets bijgeboekt.</>;
+  else if (nieuw) uitleg = <><strong>{regel.name}</strong> stond nog niet in je voorraad. De app heeft het als nieuw product toegevoegd, met {regel.bookedAmount} {regel.bookedUnit}. Klopt dat, of heb je het al onder een andere naam?</>;
+  else uitleg = <>De app twijfelde en heeft <strong>{regel.bookedAmount} {regel.bookedUnit}</strong> bij <strong>{item.name}</strong> gezet. Klopt dat?</>;
+
+  return (
+    <Modal title={`Nakijken: ${regel.name}`} onClose={onClose}>
+      <p style={{ fontSize: 13, color: C.ink, marginTop: 0, lineHeight: 1.5 }}>{uitleg}</p>
+
+      {stap === "omrekenen" && doel && (
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: "block", fontSize: 13, color: C.ink, marginBottom: 6 }}>
+            Hoeveel {doel.unit} {doel.name} is het?
+          </label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="number" inputMode="decimal" autoFocus
+              style={{ ...inputStyle, flex: 1 }}
+              value={getal} onChange={(e) => setGetal(e.target.value)}
+              placeholder={`aantal ${doel.unit}`}
+            />
+            <PrimaryButton tone="sage" disabled={!(Number(getal) > 0)}
+              onClick={() => { onBoekIn(regel, doel, Number(getal)); onClose(); }}>
+              Bijboeken
+            </PrimaryButton>
+          </div>
+          {nietOmgerekend && (
+            <button onClick={() => { setStap("ander"); setDoel(null); }}
+              style={{ marginTop: 8, background: "none", border: "none", color: C.blue, fontSize: 13, cursor: "pointer", padding: 0, fontFamily: FONT_BODY }}>
+              Hoort bij een ander product
+            </button>
+          )}
+        </div>
+      )}
+
+      {stap === "kies" && item && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          <PrimaryButton tone="sage" full onClick={() => { onKlopt(regel); onClose(); }}>
+            <Check size={16} /> Klopt
+          </PrimaryButton>
+          <GhostButton full onClick={() => setStap("ander")}>Hoort bij een ander product</GhostButton>
+          <GhostButton full onClick={() => setStap("hoeveel")}>Andere hoeveelheid</GhostButton>
+        </div>
+      )}
+
+      {stap === "hoeveel" && (
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: "block", fontSize: 13, color: C.ink, marginBottom: 6 }}>
+            Hoeveel {regel.unit} heb je gekocht?
+          </label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="number" inputMode="decimal" autoFocus
+              style={{ ...inputStyle, flex: 1 }}
+              value={getal} onChange={(e) => setGetal(e.target.value)}
+            />
+            <PrimaryButton tone="sage" disabled={!(Number(getal) > 0)}
+              onClick={() => { onHerzie(regel, Number(getal), regel.unit); onClose(); }}>
+              Opslaan
+            </PrimaryButton>
+          </div>
+        </div>
+      )}
+
+      {(stap === "ander" || !item) && (
+        <>
+          <p style={{ fontSize: 12, color: C.inkSoft, margin: "0 0 8px", lineHeight: 1.45 }}>
+            De hoeveelheid gaat naar het product dat je kiest{nieuw ? `, en het lege "${item.name}" verdwijnt` : ""}. De app onthoudt het voor de volgende keer.
+          </p>
+          <input
+            autoComplete="off"
+            style={{ ...inputStyle, marginBottom: 10 }}
+            placeholder="Zoeken in je voorraad…"
+            value={zoek}
+            onChange={(e) => setZoek(e.target.value)}
+          />
+          <div style={{ maxHeight: "40vh", overflowY: "auto" }}>
+            {lijst.length === 0 && (
+              <p style={{ fontSize: 13, color: C.inkSoft }}>
+                {zoek.trim() ? "Niets gevonden in je voorraad." : "Niets dat erop lijkt. Zoek hierboven op naam."}
+              </p>
+            )}
+            {lijst.map((p) => productKnop(p, !zoek.trim() || waarschijnlijk.includes(p)))}
+          </div>
+        </>
+      )}
+
+      <div style={{ marginTop: 8 }}>
+        <GhostButton full onClick={onClose}>{stap === "kies" ? "Later" : "Annuleren"}</GhostButton>
+      </div>
+    </Modal>
+  );
+}
+
 function AgendaModal({ token, onClose, onDownload }) {
   const [gekopieerd, setGekopieerd] = useState(false);
   if (!token) {
@@ -4539,7 +4858,41 @@ function ControleModal({ bevindingen, onHerstel, onClose }) {
   );
 }
 
-function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, inventory = [], extraKliekjes = [], onOpenKliekjes = null, onOpen, onVerrasMe, onNaarWeekmenu, onKliekjeVraag, onFoto = null }) {
+// Drie knoppen: lekker, prima, niet meer. Tik je op de gekozen knop, dan
+// gaat het oordeel er weer af.
+const OORDELEN = [
+  { w: 1, emoji: "\uD83D\uDC4D", tekst: "Lekker" },
+  { w: 0, emoji: "\uD83D\uDC4C", tekst: "Prima" },
+  { w: -1, emoji: "\uD83D\uDC4E", tekst: "Niet meer" },
+];
+function OordeelKnoppen({ waarde = null, onKies }) {
+  return (
+    <div style={{ display: "flex", gap: 6 }}>
+      {OORDELEN.map((o) => {
+        const aan = waarde === o.w;
+        return (
+          <button
+            key={o.w}
+            type="button"
+            aria-pressed={aan}
+            onClick={() => onKies(aan ? null : o.w)}
+            style={{
+              flex: 1, minHeight: 44, borderRadius: 12, cursor: "pointer", fontFamily: FONT_BODY,
+              fontSize: 13, fontWeight: aan ? 600 : 500, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              background: aan ? (o.w === -1 ? C.warnBg : C.successBg) : "transparent",
+              border: `1px solid ${aan ? (o.w === -1 ? C.brick : C.sage) : C.ceramicDark}`,
+              color: aan ? (o.w === -1 ? C.brick : C.sage) : C.ink,
+            }}
+          >
+            <span aria-hidden="true">{o.emoji}</span>{o.tekst}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, inventory = [], extraKliekjes = [], onOpenKliekjes = null, onOpen, onVerrasMe, onNaarWeekmenu, onKliekjeVraag, onFoto = null, onOordeel = null }) {
   const basis = {
     display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left",
     borderRadius: 12, padding: "12px 14px", marginBottom: 12, cursor: "pointer",
@@ -4669,7 +5022,16 @@ function VanavondStrook({ entry, recipe, readiness, cookNaam, alGekookt, invento
             dus die gaat voor; het fotoduwtje wacht tot die beantwoord is en
             verdwijnt zodra er een foto staat. Wie hem negeert, krijgt hem de
             volgende keer dat dit gerecht op tafel staat gewoon opnieuw. */}
-        {!kliekjeNogVragen && onFoto && !recipe.photoUrl && !recipe.photoPath && (
+        {/* Tweede vraag (v102): hoe was het? Alleen zolang dit gerecht nog
+            geen oordeel heeft; "Prima" telt ook als antwoord, zodat hij niet
+            elke keer terugkomt. */}
+        {!kliekjeNogVragen && onOordeel && (recipe.oordeel === null || recipe.oordeel === undefined) && (
+          <div style={{ marginTop: 13, paddingTop: 12, borderTop: `1px solid ${C.ceramicDark}` }}>
+            <div style={{ fontSize: 13, color: C.ink, marginBottom: 8 }}>Hoe was het?</div>
+            <OordeelKnoppen waarde={null} onKies={(w) => onOordeel(recipe.id, w)} />
+          </div>
+        )}
+        {!kliekjeNogVragen && !(onOordeel && (recipe.oordeel === null || recipe.oordeel === undefined)) && onFoto && !recipe.photoUrl && !recipe.photoPath && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 13, paddingTop: 12, borderTop: `1px solid ${C.ceramicDark}` }}>
             <span style={{ fontSize: 13, color: C.ink }}>Een foto van hoe het werd?</span>
             <button onClick={onFoto} style={{ background: "none", border: "none", padding: "6px 0", cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: C.blue }}>
@@ -6178,8 +6540,11 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   // Kiest iets wat je met je voorraad kunt maken; is niets compleet, dan wat er
   // het dichtst bij zit — met vermelding van wat er nog moet komen.
   const verrasMeVanavond = () => {
-    if (!recipes.length) return;
-    const gescoord = recipes
+    // "Niet meer" (v102) doet hier niet mee: verrast worden met iets dat je
+    // niet lekker vond is geen verrassing.
+    const kunnen = recipes.filter((r) => r.oordeel !== -1);
+    if (!kunnen.length) return;
+    const gescoord = kunnen
       .map((r) => ({ r, mist: recipeReadiness(r, inventory).missing.length }))
       .sort((a, b) => a.mist - b.mist);
     const minste = gescoord[0].mist;
@@ -6208,6 +6573,24 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
       setSaveError({ key: "favoriet", tekst: "De ster is niet opgeslagen.", opnieuw: () => toggleFavorite(id) });
     });
     else persist("recipes", next, setRecipes);
+  };
+
+  // Lekker (1), prima (0) of niet meer (-1). null haalt het oordeel weer weg.
+  // Het weekvoorstel stelt "niet meer" nooit voor en laat "lekker" zwaarder
+  // wegen (v102). Eén patch, alleen deze twee kolommen.
+  const zetOordeel = (id, waarde) => {
+    const vorige = recipes;
+    const op = waarde === null ? null : new Date().toISOString();
+    setRecipes(recipes.map((r) => (r.id === id ? { ...r, oordeel: waarde, oordeelOp: op } : r)));
+    const naam = (recipes.find((r) => r.id === id) || {}).name || "Dit gerecht";
+    if (waarde === -1) showToast(`${naam} wordt niet meer voorgesteld. Terugdraaien kan in het recept.`);
+    else if (waarde === 1) showToast(`${naam}: lekker! Komt vaker terug in het weekvoorstel.`);
+    if (hasDataAPI) window.dataAPI.recipes.patch(id, { oordeel: waarde, oordeelOp: op }).catch((e) => {
+      console.error("Oordeel opslaan mislukt:", e);
+      setRecipes(vorige);
+      setSaveError({ key: "oordeel", tekst: "Je oordeel over het gerecht is niet opgeslagen.", opnieuw: () => zetOordeel(id, waarde) });
+    });
+    else persist("recipes", recipes.map((r) => (r.id === id ? { ...r, oordeel: waarde, oordeelOp: op } : r)), setRecipes);
   };
 
   // Delen gaat in twee stappen zodra er een eigen foto bij zit. Een foto die je
@@ -7182,6 +7565,16 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
   };
 
   const kliekjesOp = (dagSleutel) => kliekjesVanAvond({ dagSleutel, weekmenu, extras, inventory, recipes });
+  // Ontdooien (v102). "Ligt eruit" onthoudt dit toestel; de rest van het
+  // huishouden ziet de herinnering nog, en ook in hun agenda.
+  const [ontdooid, setOntdooid] = useState(() => leesOntdooid());
+  const ontdooiLijst = ontdooiHerinneringen({ weekmenu, extras, inventory, recipes })
+    .filter((h) => !ontdooid[h.sleutel]);
+  const markeerOntdooid = (sleutel) => {
+    const next = { ...ontdooid, [sleutel]: true };
+    setOntdooid(next);
+    schrijfOntdooid(next);
+  };
   const openAvondKliekjes = (dagSleutel) => {
     if (!kliekjesOp(dagSleutel).length) { showToast("Van deze avond ligt niets meer in je voorraad."); return; }
     setAvondKliekjesDag(dagSleutel);
@@ -7464,6 +7857,77 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     }]);
   };
 
+  // ---- Nakijken (v101) ----
+  // Een regel met "nakijken" is wel geboekt, maar de app twijfelde: nieuw
+  // product aangemaakt, alleen een vermoeden, of niet om te rekenen. Tik je
+  // erop, dan zeg jij wat het is. De voorraad blijft daarbij altijd staan.
+
+  // "Klopt": alleen het label eraf.
+  const keurBoekingGoed = (regel) => {
+    persist("shoppingList", shoppingList.map((s) => (s.id === regel.id ? { ...s, bookedReview: false } : s)), setShoppingList);
+    showToast(`${regel.name} klopt. Hij gaat bij "Klaar met winkelen" van de lijst.`);
+  };
+
+  // Haalt de eerdere boeking van deze regel weg, als die bij een ander
+  // product stond dan het doel. Een product dat afvinken zelf had aangemaakt
+  // (zelfde naam als de regel, minimum en maximum op nul) en daardoor leeg
+  // raakt, verdwijnt.
+  const zonderOudeBoeking = (regel, doel) => {
+    let next = inventory.map((i) => ({ ...i }));
+    const oud = regel.bookedItemId ? inventory.find((i) => i.id === regel.bookedItemId) : null;
+    if (!oud || oud.id === doel.id) return { next, weg: null };
+    const rest = round2(Math.max(0, Number(oud.current || 0) - Number(regel.bookedAmount || 0)));
+    const netAangemaakt = norm(oud.name) === norm(regel.name) && rest <= 0
+      && Number(oud.min || 0) === 0 && Number(oud.max || 0) === 0 && !oud.sourceRecipeId;
+    if (netAangemaakt) return { next: next.filter((i) => i.id !== oud.id), weg: oud.name };
+    if (regel.bookedAmount != null) next = next.map((i) => (i.id === oud.id ? { ...i, current: rest } : i));
+    return { next, weg: null };
+  };
+
+  // "Hoort bij een ander product": de geboekte hoeveelheid verhuist. Een
+  // product dat de app net voor deze regel had aangemaakt en nu leeg is,
+  // verdwijnt weer. De naam van de regel wordt een bijnaam van het gekozen
+  // product, zodat afvinken hem de volgende keer meteen goed boekt.
+  const verplaatsBoeking = (regel, doel, hoeveelheid = regel.amount, eenheid = regel.unit) => {
+    const oud = regel.bookedItemId ? inventory.find((i) => i.id === regel.bookedItemId) : null;
+    if (oud && oud.id === doel.id) { keurBoekingGoed(regel); return; }
+    const erbij = naarVoorraadEenheid(hoeveelheid, eenheid, doel);
+    if (erbij === null) {
+      showToast(`${hoeveelheid} ${eenheid} is niet om te rekenen naar ${doel.unit}. Vul hieronder in hoeveel ${doel.unit} het is.`);
+      return false;
+    }
+    let { next, weg } = zonderOudeBoeking(regel, doel);
+    const bijnamen = Array.isArray(doel.aliases) ? doel.aliases : [];
+    const metBijnaam = norm(regel.name) === norm(doel.name) || bijnamen.some((a) => norm(a) === norm(regel.name))
+      ? bijnamen : [...bijnamen, regel.name];
+    next = next.map((i) => (i.id === doel.id ? { ...i, current: addToStock(i, erbij), aliases: metBijnaam } : i));
+    persist("inventory", next, setInventory);
+    persist("shoppingList", shoppingList.map((s) => (s.id === regel.id ? {
+      ...s, amount: hoeveelheid, unit: eenheid,
+      bookedAmount: erbij, bookedUnit: doel.unit, bookedItemId: doel.id, bookedReview: false,
+    } : s)), setShoppingList);
+    showToast(`${erbij} ${doel.unit} bij ${doel.name} gezet${weg ? `, en het lege "${weg}" weggehaald` : ""}. Volgende keer boekt ${regel.name} hier meteen.`);
+    return true;
+  };
+
+  // Niet om te rekenen (stuks tegenover gram): jij zegt hoeveel het is in de
+  // eenheid van het product.
+  const boekInVoorraadEenheid = (regel, item, hoeveelheid) => {
+    const erbij = round2(Number(hoeveelheid) || 0);
+    if (!(erbij > 0)) return;
+    const vorige = regel.bookedAmount != null && regel.bookedItemId === item.id ? Number(regel.bookedAmount) : 0;
+    const { next, weg } = zonderOudeBoeking(regel, item);
+    const bijnamen = Array.isArray(item.aliases) ? item.aliases : [];
+    const metBijnaam = norm(regel.name) === norm(item.name) || bijnamen.some((a) => norm(a) === norm(regel.name))
+      ? bijnamen : [...bijnamen, regel.name];
+    persist("inventory", next.map((i) => (i.id === item.id
+      ? { ...i, current: round2(Math.max(0, Number(i.current || 0) - vorige) + erbij), aliases: metBijnaam } : i)), setInventory);
+    persist("shoppingList", shoppingList.map((s) => (s.id === regel.id ? {
+      ...s, bookedAmount: erbij, bookedUnit: item.unit, bookedItemId: item.id, bookedReview: false,
+    } : s)), setShoppingList);
+    showToast(`${erbij} ${item.unit} bij ${item.name} gezet${weg ? `, en het lege "${weg}" weggehaald` : ""}.`);
+  };
+
   const addManualItem = (item) => {
     persist("shoppingList", [...shoppingList, { ...item, id: uid(), auto: false, checked: false }], setShoppingList);
   };
@@ -7519,21 +7983,25 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     persist("shoppingList", shoppingList.map((s) => (s.id === id ? { ...s, amount: nieuw } : s)), setShoppingList);
   };
 
-  const removeShoppingItem = (id) => {
+  // Weghalen van de lijst. Bij een afgevinkte, geboekte regel zijn er twee
+  // dingen die je kunt bedoelen, en die verschillen precies in wat er met je
+  // voorraad gebeurt. Daarom vraagt de lijst het eerst (v102):
+  //   "lijst"       — gekocht, alleen de regel weg; de voorraad blijft.
+  //   "nietGekocht" — toch niet gekocht; de boeking gaat terug, en een
+  //                   product dat het afvinken zelf had aangemaakt verdwijnt.
+  // Eerder draaide het kruisje de boeking altijd stil terug.
+  const removeShoppingItem = (id, hoe = "nietGekocht") => {
     const regel = shoppingList.find((s) => s.id === id);
-    // Een afgevinkte regel weghalen zonder de boeking terug te draaien zou de
-    // voorraad opgehoogd laten met iets waarvan geen spoor meer is.
-    if (regel && regel.checked && regel.bookedAmount != null && regel.bookedItemId) {
-      const idx = inventory.findIndex((i) => i.id === regel.bookedItemId);
-      if (idx > -1) {
-        const nextInventory = inventory.map((i) => ({ ...i }));
-        nextInventory[idx] = {
-          ...nextInventory[idx],
-          current: round2(Math.max(0, Number(nextInventory[idx].current || 0) - Number(regel.bookedAmount))),
-        };
-        persist("inventory", nextInventory, setInventory);
-        showToast(`${regel.name} van de lijst gehaald en de ${regel.bookedAmount} ${regel.bookedUnit} weer van je voorraad af.`);
+    if (regel && regel.checked && hoe === "nietGekocht" && regel.bookedItemId) {
+      const { next, weg } = zonderOudeBoeking(regel, { id: null });
+      if (regel.bookedAmount != null || weg) {
+        persist("inventory", next, setInventory);
+        showToast(weg
+          ? `${regel.name} van de lijst gehaald en het lege product weer uit je voorraad.`
+          : `${regel.name} van de lijst gehaald en de ${regel.bookedAmount} ${regel.bookedUnit} weer van je voorraad af.`);
       }
+    } else if (regel && regel.checked && hoe === "lijst") {
+      showToast(`${regel.name} van de lijst gehaald. Je voorraad blijft zoals hij is.`);
     }
     persist("shoppingList", shoppingList.filter((s) => s.id !== id), setShoppingList);
   };
@@ -7550,7 +8018,7 @@ Geef een kort, praktisch, gerust antwoord in het Nederlands (max ~80 woorden). G
     persist("shoppingList", shoppingList.filter((s) => !s.checked || s.bookedReview), setShoppingList);
 
     if (naTeKijken.length) {
-      showToast(`${klaar.length} van de lijst gehaald. ${naTeKijken.length} regel${naTeKijken.length > 1 ? "s vragen" : " vraagt"} nog even aandacht — die ${naTeKijken.length > 1 ? "blijven" : "blijft"} staan.`);
+      showToast(`${klaar.length} van de lijst gehaald. ${naTeKijken.length} regel${naTeKijken.length > 1 ? "s vragen" : " vraagt"} nog even aandacht. Tik op "nakijken" om te zeggen wat klopt.`);
     } else {
       showToast(`${klaar.length} artikel${klaar.length > 1 ? "en" : ""} van de lijst gehaald. Je voorraad was al bijgewerkt tijdens het afvinken.`);
     }
@@ -7942,7 +8410,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
   const [weekvoorstel, setWeekvoorstel] = useState(null); // { dagen, vast, voorstel, uitgesloten }
 
   const voorstelContext = () => ({
-    cookLog, weekmenu, recipes, inventory, preferences,
+    cookLog, weekmenu, recipes, inventory, preferences, consumptionLog,
     personen: (cooks || []).length || 1,
     vandaag: dateKey(new Date()),
   });
@@ -8443,6 +8911,9 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
 
       {/* Content */}
       <div style={{ padding: 14 }}>
+        {(tab === "weekmenu" || (tab === "kookboek" && !openRecipe)) && (
+          <OntdooiStrook herinneringen={ontdooiLijst} onGedaan={markeerOntdooid} />
+        )}
         {tab === "kookboek" && !openRecipe && !cookingSessions.length && (
           <VanavondStrook
             entry={vanavondEntry}
@@ -8455,6 +8926,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             onOpenKliekjes={() => openAvondKliekjes(dateKey(new Date()))}
             onKliekjeVraag={() => setKliekjeVraagDag(dateKey(new Date()))}
             onFoto={vanavondRecept && recipes.some((r) => r.id === vanavondRecept.id) ? () => setFotoVoorRecept(vanavondRecept.id) : null}
+            onOordeel={vanavondRecept && recipes.some((r) => r.id === vanavondRecept.id) ? zetOordeel : null}
             onOpen={(id) => {
               const lid = (vanavondEntry || {}).leftoverItemId || null;
               // Een kliekjesavond met meer dan één kliekje: het blad.
@@ -8507,7 +8979,8 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             onEdit={() => setEditingRecipe(openRecipe)}
             onDelete={() => deleteRecipe(openRecipe.id)}
             onFoto={() => setFotoVoorRecept(openRecipe.id)}
-            onCook={(scale, overrides) => cookRecipe(openRecipe, scale, overrides, cookDayContext)}
+            onCook={(scale, overrides, metVervangers) => cookRecipe(metVervangers || openRecipe, scale, overrides, cookDayContext)}
+            onOordeel={zetOordeel}
             dagAlGekooktOp={cookDayContext ? (leesDag(weekmenu, cookDayContext) || {}).cookedAt || null : null}
             onUndoCook={cookDayContext ? () => undoCook(cookDayContext) : null}
             autoStartKoken={autoStartKoken}
@@ -8529,7 +9002,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             showToast={showToast}
             dislikeWarnings={getRecipeDislikeWarnings(openRecipe)}
             doublePortionDefault={doublePortionDefault}
-            onAddMissingToShopping={(scale) => addMissingToShopping(openRecipe, scale)}
+            onAddMissingToShopping={(scale, metVervangers) => addMissingToShopping(metVervangers || openRecipe, scale)}
             onStartCooking={(personen) => startCookingSession(openRecipe, personen)}
             onKoppel={(naam) => setKoppelVoor({ recipeId: openRecipe.id, ingredientNaam: naam })}
             cookLog={cookLog}
@@ -8580,6 +9053,9 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
             onAddManual={addManualItem}
             onChangeAmount={changeShoppingAmount}
             onHerzie={herzieGeboekt}
+            onKeurGoed={keurBoekingGoed}
+            onVerplaats={verplaatsBoeking}
+            onBoekIn={boekInVoorraadEenheid}
             onSetAmount={setShoppingAmount}
             onProcess={processChecked}
           />
@@ -8587,6 +9063,7 @@ CONTROLEER JEZELF VOORDAT JE ANTWOORDT. Loop je ingrediëntenlijst na en vraag j
 
         {tab === "weekmenu" && (
           <WeekmenuView
+            consumptionLog={consumptionLog}
             extras={extras}
             personsPerPortion={preferences.personsPerPortion || 1}
             onSetPersonsPerPortion={(v) => updatePreferences({ personsPerPortion: v })}
@@ -9764,7 +10241,7 @@ function KliekjeVraag({ gekooktOp, toonBakjesTip, nummertBakjes = false, bakjesV
   );
 }
 
-function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onPlanOpDag = null, onGeenKliekje = null, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook, onKliekjeVraag, autoStartKoken = false, onAutoStartGedaan, onFoto = null }) {
+function RecipeDetail({ recipe, isMine = true, onOordeel = null, onBack, onToggleFav, onToggleCommunity, onEdit, onDelete, onCook, onDuplicate, onAddLeftover, onAddFreezerPortion, onAskSousChef, isPremiumOn, inventory, showToast, dislikeWarnings, doublePortionDefault, onAddMissingToShopping, onStartCooking, onKoppel, leftoverItem, onEatLeftover, cookLog = [], toonBakjesTip, onBakjesTipGezien, nummertBakjes = false, bakjesVoor = null, onNummerenAan = null, onPlanOpDag = null, onGeenKliekje = null, onRecalculateNutrition, nutritionBusy, dagAlGekooktOp = null, onUndoCook, onKliekjeVraag, autoStartKoken = false, onAutoStartGedaan, onFoto = null }) {
   const [confirmCook, setConfirmCook] = useState(false);
   const [usedAmounts, setUsedAmounts] = useState({}); // werkelijk gebruikte hoeveelheden bij tekort
   const [eatPortions, setEatPortions] = useState(1);
@@ -9912,7 +10389,30 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
   // Voorraaditems waarvan je minder in huis hebt dan het recept vraagt.
   // Hiermee vragen we achteraf wat je werkelijk gebruikt hebt, in plaats van
   // de voorraad stilletjes naar nul af te ronden.
-  const shortfallItems = (recipe.ingredients || []).map((ing) => {
+  // Vervangers (v102). Per ontbrekend ingrediënt kijken of er iets anders in
+  // huis is dat ervoor kan dienen. Pas als je het aantikt telt het mee: in de
+  // maakbaarheid en bij het afboeken. Alleen voor deze keer koken.
+  const [vervangen, setVervangen] = useState([]); // namen van ingrediënten
+  // Een ander recept geopend: dan gelden de keuzes van het vorige niet meer.
+  useEffect(() => { setVervangen([]); }, [recipe.id]);
+  const vervangKeuzes = (recipe.ingredients || []).map((ing) => {
+    if (isPantryBasic(ing.name)) return null;
+    const eigen = findInventoryMatch(inventory || [], ing);
+    const cmp = eigen ? stockVsNeed(eigen, ing, scale) : null;
+    if (eigen && (!cmp || cmp.have >= cmp.need)) return null;
+    const v = zoekVervanger(ing, inventory || [], scale);
+    return v ? { ...v, origineel: ing } : null;
+  }).filter(Boolean);
+  const gekozenVervangers = vervangKeuzes.filter((k) => vervangen.includes(k.origineel.name));
+  // Het recept zoals het straks wordt afgeboekt.
+  const receptKoken = gekozenVervangers.length
+    ? { ...recipe, ingredients: (recipe.ingredients || []).map((ing) => {
+        const k = gekozenVervangers.find((x) => x.origineel === ing);
+        return k ? k.ing : ing;
+      }) }
+    : recipe;
+
+  const shortfallItems = (receptKoken.ingredients || []).map((ing) => {
     const item = findInventoryMatch(inventory || [], ing);
     if (!item) return null;
     const cmp = stockVsNeed(item, ing, scale);
@@ -9957,14 +10457,15 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
   }, [autoStartKoken]);
 
   const finishCook = (overrides) => {
-    onCook(wantDoublePortion ? scale * 2 : scale, overrides || {});
+    onCook(wantDoublePortion ? scale * 2 : scale, overrides || {}, gekozenVervangers.length ? receptKoken : null);
+    setVervangen([]);
     if (wantDoublePortion) { onAddFreezerPortion(recipe); setConfirmCook(false); }
     else setConfirmCook("leftover");
   };
 
   const scaledIngredients = recipe.ingredients.map((ing) => ({ ...ing, scaledAmount: round2(ing.amount * scale) }));
 
-  const readiness = recipeReadiness(recipe, inventory, scale);
+  const readiness = recipeReadiness(receptKoken, inventory, scale);
 
   // Open je dit recept omdat er een kliekje van in de vriezer ligt, dan hoef
   // je niets te halen. De maakbaarheid blijft wel gewoon berekend: verderop
@@ -10104,6 +10605,52 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
         </div>
       )}
 
+      {/* Oordeel (v102). Pas zichtbaar als het gerecht gegeten is of al een
+          oordeel heeft: over iets dat je nooit at valt niets te zeggen. */}
+      {isMine && onOordeel && (recipe.oordeel != null || (cookLog || []).some((e) => e.recipeId === recipe.id)) && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ ...TYPE.label, color: C.inkSoft, marginBottom: 6 }}>
+            {recipe.oordeel === -1 ? "Wordt niet meer voorgesteld" : "Hoe vonden jullie het?"}
+          </div>
+          <OordeelKnoppen waarde={recipe.oordeel == null ? null : recipe.oordeel} onKies={(w) => onOordeel(recipe.id, w)} />
+        </div>
+      )}
+
+      {isMine && toonMaakbaarheid && vervangKeuzes.length > 0 && (
+        <div style={{ background: C.successBg, borderRadius: 12, padding: "10px 12px", marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.ink, marginBottom: 6 }}>Wel in huis, in plaats van:</div>
+          {vervangKeuzes.map((k) => {
+            const aan = vervangen.includes(k.origineel.name);
+            return (
+              <div key={k.origineel.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.ink, lineHeight: 1.35 }}>
+                  {aan ? <Check size={13} color={C.sage} style={{ verticalAlign: -2, marginRight: 4 }} /> : null}
+                  <strong>{k.item.name}</strong> voor {k.origineel.name.toLowerCase()}
+                  <span style={{ display: "block", fontSize: 11.5, color: C.inkSoft }}>
+                    {netteHoeveelheid(round2(k.ing.amount * scale), k.ing.unit)} {k.ing.unit}{k.uitleg ? ` · ${k.uitleg}` : ""}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  aria-pressed={aan}
+                  onClick={() => setVervangen((v) => (aan ? v.filter((n) => n !== k.origineel.name) : [...v, k.origineel.name]))}
+                  style={{
+                    flexShrink: 0, minHeight: 40, padding: "0 12px", borderRadius: 10, cursor: "pointer", fontFamily: FONT_BODY,
+                    fontSize: 12.5, fontWeight: 600, background: aan ? "transparent" : C.cardBg,
+                    border: `1px solid ${aan ? C.ceramicDark : C.sage}`, color: aan ? C.inkSoft : C.sage,
+                  }}
+                >
+                  {aan ? "Toch niet" : "Gebruiken"}
+                </button>
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 4 }}>
+            Geldt alleen voor deze keer koken. Bij "Ik heb dit gekookt" gaat het vervangende product van je voorraad af.
+          </div>
+        </div>
+      )}
+
       {toonMaakbaarheid && readiness.missing.length > 0 && (
         <div style={{ background: C.warnBg, border: `1px solid ${C.mustardDeep}`, borderRadius: 12, padding: "10px 12px", marginBottom: 14 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: C.ink, marginBottom: 4 }}>
@@ -10138,7 +10685,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
           </div>
           {onAddMissingToShopping && (
             <button
-              onClick={() => onAddMissingToShopping(scale)}
+              onClick={() => onAddMissingToShopping(scale, gekozenVervangers.length ? receptKoken : null)}
               style={{
                 width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                 background: C.mustard, color: leesbareInkt(C.mustard), border: "none", borderRadius: 12,
@@ -10460,7 +11007,7 @@ function RecipeDetail({ recipe, isMine = true, onBack, onToggleFav, onToggleComm
           )}
           <div style={{ display: "flex", gap: 8 }}>
             {readiness.missing.length > 0 && onAddMissingToShopping && (
-              <PrimaryButton onClick={() => { onAddMissingToShopping(scale); setConfirmCook(false); }}>
+              <PrimaryButton onClick={() => { onAddMissingToShopping(scale, gekozenVervangers.length ? receptKoken : null); setConfirmCook(false); }}>
                 <ShoppingCart size={15} /> Op de lijst
               </PrimaryButton>
             )}
@@ -10815,7 +11362,7 @@ function RecipeForm({ initial, inventoryNames, inventoryItems = [], onImport, on
 /*  Voorraad                                                         */
 /* ---------------------------------------------------------------- */
 
-function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras = [], personsPerPortion = 1, onSetPersonsPerPortion = null, onOpenAvondKliekjes = null, onAddExtra, onRemoveExtra, periodDays, periods, periodIndex, onPeriodChange, onPickDay, onPickCook, onPickAttendees, onSetDoublePortion, onClearDay, onGenerate, onAIGenerate, onPatternGenerate, onDuplicate, onApplyTemplate, onShuffle, onOpenRecipe, onExportCalendar, onQuickPlan, onKliekjeVraag, onNietGekookt }) {
+function WeekmenuView({ weekmenu, recipes, cooks, inventory, consumptionLog = [], isPremiumOn, extras = [], personsPerPortion = 1, onSetPersonsPerPortion = null, onOpenAvondKliekjes = null, onAddExtra, onRemoveExtra, periodDays, periods, periodIndex, onPeriodChange, onPickDay, onPickCook, onPickAttendees, onSetDoublePortion, onClearDay, onGenerate, onAIGenerate, onPatternGenerate, onDuplicate, onApplyTemplate, onShuffle, onOpenRecipe, onExportCalendar, onQuickPlan, onKliekjeVraag, onNietGekookt }) {
   const findRecipe = (id) => recipes.find((r) => r.id === id);
   const dayEntry = (day) => leesDag(weekmenu, day);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -10827,10 +11374,10 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
   const plannedRecipeIds = periodDays.map((d) => dayEntry(d.key)?.recipeId).filter(Boolean);
   const expiringWithRecipes = useMemo(() => {
     if (!hasEmptyDay || !inventory) return [];
-    return getExpirySuggestions(inventory, recipes)
+    return getExpirySuggestions(inventory, recipes, consumptionLog)
       .map((s) => ({ ...s, recipes: s.recipes.filter((r) => !plannedRecipeIds.includes(r.id)) }))
       .filter((s) => s.recipes.length > 0);
-  }, [inventory, recipes, hasEmptyDay, plannedRecipeIds]);
+  }, [inventory, recipes, consumptionLog, hasEmptyDay, plannedRecipeIds]);
 
   return (
     <div>
@@ -10878,11 +11425,10 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
             <CalendarClock size={15} color={C.mustardDeep} />
             <span style={{ fontSize: 13, fontWeight: 700, color: C.mustardDeep }}>Ruim dit op vóórdat het te laat is</span>
           </div>
-          {expiringWithRecipes.map(({ item, daysLeft, recipes: matches }) => (
+          {expiringWithRecipes.map((e) => { const { item, recipes: matches } = e; return (
             <div key={item.id} style={{ marginBottom: 8 }}>
               <div style={{ fontSize: 13, color: C.ink, marginBottom: 4 }}>
-                <strong>{item.name}</strong>{" "}
-                {daysLeft <= 0 ? "is bijna over de datum" : `is over ${daysLeft} dag${daysLeft > 1 ? "en" : ""} over de datum`} — zullen we dat verwerken?
+                <strong>{item.name}</strong> {eerstOpTekst(e)} — zullen we dat verwerken?
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {matches.slice(0, 2).map((r) => (
@@ -10896,7 +11442,7 @@ function WeekmenuView({ weekmenu, recipes, cooks, inventory, isPremiumOn, extras
                 ))}
               </div>
             </div>
-          ))}
+          ); })}
         </div>
       )}
 
@@ -13252,7 +13798,10 @@ function voorstelBasis({ cookLog, weekmenu, recipes, vandaag }) {
   const per = new Map();
   (recipes || []).forEach((r) => {
     if (!r || !r.id) return;
-    per.set(r.id, { recept: r, punten: 0, keer: 0, dagen: [], laatst: null, favoriet: !!(r.favorite && r.favoritedAt) });
+    // "Niet meer" (v102): nooit voorstellen, ook niet als het vaak gegeten is.
+    if (r.oordeel === -1) return;
+    per.set(r.id, { recept: r, punten: 0, keer: 0, dagen: [], laatst: null,
+      favoriet: !!(r.favorite && r.favoritedAt), lekker: r.oordeel === 1 });
   });
   historie.forEach((m) => {
     const p = per.get(m.recipeId);
@@ -13263,7 +13812,8 @@ function voorstelBasis({ cookLog, weekmenu, recipes, vandaag }) {
     p.dagen.push(m.dag);
     if (!p.laatst || m.dag > p.laatst) p.laatst = m.dag;
   });
-  per.forEach((p) => { if (p.favoriet) p.punten += 1; });
+  // Een ster sinds v98 en "lekker" sinds v102 tellen elk één punt extra.
+  per.forEach((p) => { if (p.favoriet) p.punten += 1; if (p.lekker) p.punten += 1; });
   return [...per.values()].filter((p) => p.punten > 0);
 }
 
@@ -13284,7 +13834,7 @@ function trek(kandidaten, rnd) {
 // Kiest voor één dag. `rondom` zijn de keuzes die al vaststaan (andere dagen
 // van het voorstel en al geplande avonden), als { dag, recipeId, leftoverItemId }.
 function kiesVoorDag({ dag, basis, rondom = [], uitgesloten = new Set(), snel = false, dagsoort = "alles",
-  kliekjes = [], personen = 1, personenPerPortie = 1, vandaag, rnd = Math.random }) {
+  kliekjes = [], personen = 1, personenPerPortie = 1, vandaag, rnd = Math.random, opmakers = new Map() }) {
   const weekdag = parseDateKey(dag).getDay();
   const dagnaam = DAG_LANG[weekdag];
 
@@ -13307,12 +13857,14 @@ function kiesVoorDag({ dag, basis, rondom = [], uitgesloten = new Set(), snel = 
       return {
         dag, soort: "kliekje", recipeId: kliekje.recipe.id, leftoverItemId: kliekje.item.id, gerechtSoort: gerechtSoort(kliekje.recipe),
         reden: `kliekje · werkdag · ${kliekje.item.current} ${Number(kliekje.item.current) === 1 ? "portie" : "porties"}`
-          + (b.length ? ` · bakje ${bakjesTekst(b)}` : ""),
+          + (b.length ? ` · bakje ${bakjesTekst(b)}` : "")
+          + (kliekjeTeLang(kliekje.item) ? ` · ligt er al ${leeftijdTekst(kliekjeLeeftijdDagen(kliekje.item))}` : ""),
       };
     }
   }
 
   const gekozen = rondom.filter((x) => x.recipeId);
+  const alOpgemaakt = new Set(gekozen.flatMap((x) => (opmakers.get(x.recipeId) || []).map((e) => e.item.id)));
   const kandidaten = basis.filter((p) => {
     const id = p.recept.id;
     if (uitgesloten.has(id)) return false;
@@ -13328,9 +13880,17 @@ function kiesVoorDag({ dag, basis, rondom = [], uitgesloten = new Set(), snel = 
     return true;
   }).map((p) => {
     const w = weekdagFactor(p, weekdag);
+    // Maakt dit gerecht iets op dat binnenkort bederft, en valt deze dag nog
+    // binnen die tijd? Dan anderhalf keer zo zwaar (v102). Bewust geen punt
+    // erbij: een gerecht dat jullie nooit eten wordt er niet ineens een
+    // kandidaat door, alleen wat er al tussen staat schuift naar voren.
+    // Wat een ander gerecht in deze week al opmaakt, telt niet nog eens: een
+    // halve paprika gaat maar één keer op.
+    const opmaak = (opmakers.get(p.recept.id) || []).filter((e) => dag <= e.uiterste && !alOpgemaakt.has(e.item.id));
+    const opmaakFactor = opmaak.length ? 1.5 : 1;
     // Kwadraat: wat twee keer gegeten is, komt vier keer zo vaak terug als iets
     // dat één keer op het menu stond. "Vaker gekookt telt zwaarder."
-    return { p, w, gewicht: Math.pow(p.punten * w.factor, 2) };
+    return { p, w, opmaak, gewicht: Math.pow(p.punten * w.factor * opmaakFactor, 2) };
   });
 
   const snelle = snel ? kandidaten.filter((k) => Number(k.p.recept.cookTime) > 0 && Number(k.p.recept.cookTime) <= 30) : [];
@@ -13342,14 +13902,30 @@ function kiesVoorDag({ dag, basis, rondom = [], uitgesloten = new Set(), snel = 
   if (p.keer) delen.push(`${p.keer}× in 10 weken`);
   if (keuze.w.keer) delen.push(`${keuze.w.keer}× op een ${dagnaam}`);
   if (p.favoriet) delen.push("favoriet");
+  if (p.lekker) delen.push("lekker");
+  if (keuze.opmaak && keuze.opmaak.length) delen.push(`maakt je ${keuze.opmaak.map((e) => e.item.name.toLowerCase()).join(" en ")} op`);
   return { dag, soort: "recept", recipeId: p.recept.id, leftoverItemId: null, gerechtSoort: gerechtSoort(p.recept), reden: delen.join(" · ") };
 }
 
 // Een hele week. `dagen`: de lege dagen die gevuld mogen worden.
 // `vast`: wat er al op andere dagen staat (telt mee voor variatie).
-function stelWeekVoor({ dagen = [], vast = [], cookLog, weekmenu, recipes, inventory, preferences = {}, personen = 1, vandaag, rnd = Math.random, uitgesloten = {} }) {
+// Per recept: welke bijna-bedorven producten het opmaakt (v102).
+function opmakersPerRecept(recipes = [], inventory = [], consumptionLog = []) {
+  const map = new Map();
+  eerstOpLijst(inventory, consumptionLog)
+    .filter((e) => !e.item.sourceRecipeId)
+    .forEach((e) => {
+      receptenDieOpmaken(e.item, recipes, inventory).forEach((r) => {
+        map.set(r.id, [...(map.get(r.id) || []), e]);
+      });
+    });
+  return map;
+}
+
+function stelWeekVoor({ dagen = [], vast = [], cookLog, weekmenu, recipes, inventory, consumptionLog = [], preferences = {}, personen = 1, vandaag, rnd = Math.random, uitgesloten = {} }) {
   const basis = voorstelBasis({ cookLog, weekmenu, recipes, vandaag });
   const kliekjes = kliekjesInVoorraad(inventory, recipes);
+  const opmakers = opmakersPerRecept(recipes, inventory, consumptionLog);
   const stijlen = Array.isArray(preferences.weekdayStyles) && preferences.weekdayStyles.length === 7 ? preferences.weekdayStyles : null;
   const soorten = Array.isArray(preferences.weekdaySoorten) && preferences.weekdaySoorten.length === 7 ? preferences.weekdaySoorten : null;
   const metSoort = (x) => ({ ...x, gerechtSoort: x.gerechtSoort !== undefined ? x.gerechtSoort : gerechtSoort((recipes || []).find((r) => r.id === x.recipeId)) });
@@ -13360,7 +13936,7 @@ function stelWeekVoor({ dagen = [], vast = [], cookLog, weekmenu, recipes, inven
     const keuze = kiesVoorDag({
       dag, basis, rondom, uitgesloten: uitgesloten[dag] || new Set(),
       snel: !!(stijlen && stijlen[wd] === "snel"), dagsoort: soorten ? soorten[wd] : "alles",
-      kliekjes, personen, personenPerPortie: preferences.personsPerPortion || 1, vandaag, rnd,
+      kliekjes, personen, personenPerPortie: preferences.personsPerPortion || 1, vandaag, rnd, opmakers,
     });
     if (keuze) { voorstel.push(keuze); rondom.push(keuze); }
     else voorstel.push({ dag, soort: "leeg", recipeId: null, leftoverItemId: null, reden: "niets passends gevonden" });
@@ -13370,9 +13946,10 @@ function stelWeekVoor({ dagen = [], vast = [], cookLog, weekmenu, recipes, inven
 
 // Eén dag opnieuw, de rest blijft staan. Het weggeklikte gerecht (en alles
 // wat eerder op die dag is weggeklikt) komt in dit voorstel niet meer terug.
-function stelDagOpnieuwVoor({ dag, voorstel = [], vast = [], uitgesloten = new Set(), cookLog, weekmenu, recipes, inventory, preferences = {}, personen = 1, vandaag, rnd = Math.random }) {
+function stelDagOpnieuwVoor({ dag, voorstel = [], vast = [], uitgesloten = new Set(), cookLog, weekmenu, recipes, inventory, consumptionLog = [], preferences = {}, personen = 1, vandaag, rnd = Math.random }) {
   const basis = voorstelBasis({ cookLog, weekmenu, recipes, vandaag });
   const kliekjes = kliekjesInVoorraad(inventory, recipes);
+  const opmakers = opmakersPerRecept(recipes, inventory, consumptionLog);
   const wd = parseDateKey(dag).getDay();
   const stijlen = Array.isArray(preferences.weekdayStyles) && preferences.weekdayStyles.length === 7 ? preferences.weekdayStyles : null;
   const soorten = Array.isArray(preferences.weekdaySoorten) && preferences.weekdaySoorten.length === 7 ? preferences.weekdaySoorten : null;
@@ -13381,7 +13958,7 @@ function stelDagOpnieuwVoor({ dag, voorstel = [], vast = [], uitgesloten = new S
   return kiesVoorDag({
     dag, basis, rondom, uitgesloten,
     snel: !!(stijlen && stijlen[wd] === "snel"), dagsoort: soorten ? soorten[wd] : "alles",
-    kliekjes, personen, personenPerPortie: preferences.personsPerPortion || 1, vandaag, rnd,
+    kliekjes, personen, personenPerPortie: preferences.personsPerPortion || 1, vandaag, rnd, opmakers,
   }) || { dag, soort: "leeg", recipeId: null, leftoverItemId: null, reden: "niets anders gevonden" };
 }
 
@@ -13550,21 +14127,94 @@ function getDepletionForecast(inventory, consumptionLog) {
   return results.sort((a, b) => a.daysLeft - b.daysLeft).slice(0, 5);
 }
 
-function getExpirySuggestions(inventory, recipes) {
-  return inventory
-    .filter((item) => item.expiryDate)
-    .map((item) => ({ item, daysLeft: daysUntil(item.expiryDate) }))
-    .filter(({ daysLeft }) => daysLeft !== null && daysLeft <= 3)
-    .map(({ item, daysLeft }) => {
-      // Een restje is direct gekoppeld aan het recept waar het vandaan komt — geen
-      // ingrediënt-matching nodig (en die zou ook nooit iets vinden, want "Restje X" is geen ingrediënt).
-      const sourceRecipe = item.sourceRecipeId ? recipes.find((r) => r.id === item.sourceRecipeId) : null;
-      const matchedRecipes = sourceRecipe
-        ? [sourceRecipe]
-        : recipes.filter((r) => r.ingredients.some((ing) => namesMatch(ing.name, item.name) && ing.unit === item.unit));
-      return { item, daysLeft, recipes: matchedRecipes };
-    })
-    .sort((a, b) => a.daysLeft - b.daysLeft);
+// ---- Eerst op (v102) ----
+//
+// Wat moet er binnenkort op? Twee bronnen:
+//   1. Een houdbaarheidsdatum binnen 5 dagen. Maar die vult bijna niemand in:
+//      bij de invoering stond hij bij 2 van de 183 producten.
+//   2. Aangebroken vers product: iets dat snel bederft, waar onlangs bij het
+//      koken van is gebruikt en waar nog wat van over is. De halve paprika
+//      van vrijdag. Hoe lang dat nog goed is, is een vuistregel per soort
+//      product, gerekend vanaf het laatste gebruik.
+// Een kliekje telt alleen mee met een datum (zoals voorheen); voor de rest
+// heeft een kliekje zijn eigen regels.
+const HOUDBAAR_AANGEBROKEN = [
+  { dagen: 2, woorden: /gehakt|kipfilet|kippendij|kippenpo|kippenbo|\bkip\b|\bvis\b|zalm|kabeljauw|garnal|spekjes|spekblok|spekreep|hamreep|hamblok|hamlap|riblap|sukade|biefstuk|varkens|runder|lamsvlees|\bverse worst/ },
+  { dagen: 3, woorden: /spinazie|\bsla\b|rucola|taug|champignon|paddenstoel|basilicum|peterselie|koriander|bieslook|dille|\bmunt\b|kookroom|slagroom|\broom\b|zure room|cr[eè]me fra[iî]che|mascarpone|ricotta|mozzarella|burrata/ },
+  { dagen: 4, woorden: /paprika|courgette|aubergine|komkommer|tomaat|tomaten|broccoli|bloemkool|\bprei\b|bosui|lente-?ui|paksoi|sperzieb|avocado|pompoen|feta|halloumi|roomkaas|kwark|yoghurt|verse melk|passata|kokosmelk|verse pesto/ },
+];
+const MAAT_EENHEDEN = new Set(["eetlepel", "theelepel", "snufje"]);
+
+function houdbaarAangebroken(item) {
+  const n = norm(item && item.name);
+  if (!n || /houdbaar|poeder|gedroogd|gemalen|blik|pot\b/.test(n)) return null;
+  const regel = HOUDBAAR_AANGEBROKEN.find((r) => r.woorden.test(n));
+  return regel ? regel.dagen : null;
+}
+
+function eerstOpLijst(inventory = [], consumptionLog = [], nu = new Date()) {
+  const vandaag = startOfDay(nu);
+  const dagTot = (d) => Math.round((startOfDay(d) - vandaag) / 86400000);
+  const uit = [];
+  (inventory || []).forEach((item) => {
+    if (!item || !(Number(item.current) > 0)) return;
+    const metDatum = item.expiryDate ? daysUntil(item.expiryDate) : null;
+    if (metDatum !== null && metDatum <= 5) {
+      uit.push({ item, dagen: metDatum, uiterste: item.expiryDate, soort: "datum" });
+      return;
+    }
+    if (item.sourceRecipeId || /^vriezer\s*:/i.test(item.name || "")) return;
+    if (normalizeCategory(item.category) === "Diepvries") return;
+    if (metDatum !== null && metDatum > 14) return; // ingevroren of lang houdbaar
+    if (MAAT_EENHEDEN.has((item.unit || "").toLowerCase())) return;
+    const houdbaar = houdbaarAangebroken(item);
+    if (!houdbaar) return;
+    // Hele stuks zijn niet aangebroken: vijf puntpaprika's gaan een week mee.
+    const stuks = (item.unit || "").toLowerCase() === "stuks";
+    const cur = Number(item.current);
+    if (stuks && Math.abs(cur - Math.round(cur)) < 0.01) return;
+    // Een veelvoud van een bekende verpakking is ook niet aangebroken.
+    const pakken = (item.packSizes || []).map(Number).filter((m) => m > 0);
+    if (!stuks && pakken.some((m) => Math.abs(cur / m - Math.round(cur / m)) < 0.01)) return;
+    const laatst = (consumptionLog || [])
+      .filter((e) => e && norm(e.name) === norm(item.name))
+      .map((e) => new Date(e.date || e.loggedAt).getTime())
+      .filter(Number.isFinite)
+      .sort((x, y) => y - x)[0];
+    if (!laatst) return;
+    const uiterste = new Date(laatst + houdbaar * 86400000);
+    const dagen = dagTot(uiterste);
+    if (dagen < 0) return; // dan is het waarschijnlijk al op of weg
+    uit.push({ item, dagen, uiterste: dateKey(uiterste), soort: "aangebroken", sinds: new Date(laatst) });
+  });
+  return uit.sort((a, b) => a.dagen - b.dagen);
+}
+
+function eerstOpTekst(e) {
+  if (e.soort === "datum") {
+    return e.dagen < 0 ? "is al verlopen" : e.dagen === 0 ? "is vandaag over de datum" : `is over ${e.dagen} dag${e.dagen > 1 ? "en" : ""} over de datum`;
+  }
+  const d = e.sinds;
+  const wanneer = d ? `${DAG_KORT[d.getDay()]} ${d.getDate()} ${MAAND_KORT[d.getMonth()]}` : "onlangs";
+  return `is aangebroken (${wanneer}) · nog ${e.dagen === 0 ? "vandaag" : `±${e.dagen} dag${e.dagen > 1 ? "en" : ""}`} goed`;
+}
+
+// Recepten die dit product opmaken. Dezelfde koppeling als bij koken.
+function receptenDieOpmaken(item, recipes = [], inventory = []) {
+  if (item.sourceRecipeId) {
+    const bron = recipes.find((r) => r.id === item.sourceRecipeId);
+    return bron ? [bron] : [];
+  }
+  return recipes.filter((r) => r.oordeel !== -1 && (r.ingredients || []).some((ing) => {
+    const m = findInventoryMatch(inventory, ing);
+    return m && m.id === item.id;
+  }));
+}
+
+function getExpirySuggestions(inventory, recipes, consumptionLog = []) {
+  return eerstOpLijst(inventory, consumptionLog).map((e) => ({
+    ...e, daysLeft: e.dagen, recipes: receptenDieOpmaken(e.item, recipes, inventory),
+  }));
 }
 
 function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiumOn, ernstigeBevindingen = 0, onOpenControle, onEdit, onNew, onDelete, onScan, onOpenRecipe, onOpenShelfPhoto, onOpenListPhoto, kliekjePlanning = null, nummertBakjes = false }) {
@@ -13595,14 +14245,21 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
       const cat = normalizeCategory(i.category);
       (map[cat] || (map[cat] = [])).push(i);
     });
-    // Binnen elke categorie alfabetisch, met Nederlandse sortering (é, ij enz.)
+    // Binnen elke categorie alfabetisch, met Nederlandse sortering (é, ij enz.).
+    // Kliekjes uitgezonderd (v102): die staan bovenaan, de oudste eerst. In de
+    // vriezer is "wat moet er eerst op" de vraag, niet het alfabet.
     Object.keys(map).forEach((c) => {
-      map[c] = [...map[c]].sort((a, b) => (a.name || "").localeCompare(b.name || "", "nl", { sensitivity: "base" }));
+      map[c] = [...map[c]].sort((a, b) => {
+        const ka = !!a.sourceRecipeId, kb = !!b.sourceRecipeId;
+        if (ka !== kb) return ka ? -1 : 1;
+        if (ka && kb) return kliekjeLeeftijdDagen(b) - kliekjeLeeftijdDagen(a);
+        return (a.name || "").localeCompare(b.name || "", "nl", { sensitivity: "base" });
+      });
     });
     return map;
   }, [gefilterd, cats]);
 
-  const expirySuggestions = useMemo(() => getExpirySuggestions(inventory, recipes), [inventory, recipes]);
+  const expirySuggestions = useMemo(() => getExpirySuggestions(inventory, recipes, consumptionLog), [inventory, recipes, consumptionLog]);
   const depletionForecast = useMemo(
     () => (isPremiumOn("predictiveDepletion") ? getDepletionForecast(inventory, consumptionLog) : []),
     [inventory, consumptionLog, isPremiumOn]
@@ -13797,13 +14454,12 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
         <div style={{ background: C.noteBg, border: "none", borderRadius: 12, padding: 12, marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
             <CalendarClock size={15} color={C.mustardDeep} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: C.mustardDeep }}>Bijna over de datum</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.mustardDeep }}>Eerst op</span>
           </div>
-          {expirySuggestions.map(({ item, daysLeft, recipes: matches }) => (
+          {expirySuggestions.map((e) => { const { item, daysLeft, recipes: matches } = e; return (
             <div key={item.id} style={{ marginBottom: 8 }}>
               <div style={{ fontSize: 13, color: C.ink }}>
-                <strong>{item.name}</strong>{" "}
-                {daysLeft < 0 ? "is al verlopen" : daysLeft === 0 ? "is vandaag over de datum" : `is over ${daysLeft} dag${daysLeft > 1 ? "en" : ""} over de datum`}
+                <strong>{item.name}</strong> {eerstOpTekst(e)}
               </div>
               {matches.length > 0 ? (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
@@ -13822,7 +14478,7 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
                 <div style={{ fontSize: 12, color: C.inkSoft, marginTop: 2 }}>Geen recept in je kookboek met dit ingrediënt.</div>
               )}
             </div>
-          ))}
+          ); })}
         </div>
       )}
 
@@ -13885,6 +14541,16 @@ function VoorraadView({ inventory, recipes, categories, consumptionLog, isPremiu
                         )}
                       </span>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {item.sourceRecipeId && Number(item.current) > 0 && (() => {
+                          const lang = kliekjeTeLang(item);
+                          return (
+                            <span title={lang ? "Ligt al lang. Eet dit eerst op." : "Zo lang ligt dit kliekje er al"}>
+                              <Pill tone={lang ? "warn" : "default"}>
+                                <Clock size={10} /> {leeftijdTekst(kliekjeLeeftijdDagen(item))}{lang ? " · eerst op" : ""}
+                              </Pill>
+                            </span>
+                          );
+                        })()}
                         {expDays !== null && expDays <= 5 && (
                           <Pill tone={expDays <= 0 ? "warn" : "auto"}>
                             <CalendarClock size={10} /> {expDays < 0 ? "verlopen" : expDays === 0 ? "vandaag" : `${expDays}d`}
@@ -14191,7 +14857,11 @@ const stepVlak = {
   get background() { return C.cardBg; },
 };
 
-function BoodschappenView({ list, categories, inventory = [], indeling = null, rondes = null, onKiesRonde = null, onToggle, onRemove, onAddManual, onProcess, onChangeAmount, onSetAmount, onHerzie }) {
+function BoodschappenView({ list, categories, inventory = [], indeling = null, rondes = null, onKiesRonde = null, onToggle, onRemove, onAddManual, onProcess, onChangeAmount, onSetAmount, onHerzie, onKeurGoed, onVerplaats, onBoekIn }) {
+  const [nakijkId, setNakijkId] = useState(null);
+  const [wegVraagId, setWegVraagId] = useState(null);
+  const wegVraagRegel = wegVraagId ? list.find((s) => s.id === wegVraagId) : null;
+  const nakijkRegel = nakijkId ? list.find((s) => s.id === nakijkId) : null;
   // De streep: wat moet er deze ronde mee, en wat kan wachten tot de ronde
   // daarna. Zonder tweede winkeldag is indeling leeg en verandert er niets.
   const [alleenNu, setAlleenNu] = useState(false);
@@ -14548,9 +15218,21 @@ function BoodschappenView({ list, categories, inventory = [], indeling = null, r
                     </div>
                     )}
                   </div>
-                  {item.checked && item.bookedReview && <Pill tone="warn">nakijken</Pill>}
+                  {item.checked && item.bookedReview && (
+                    <button
+                      onClick={() => setNakijkId(item.id)}
+                      aria-label={`${item.name} nakijken`}
+                      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", minHeight: 32 }}
+                    >
+                      <Pill tone="warn">nakijken ›</Pill>
+                    </button>
+                  )}
                   {!item.checked && item.auto && <Pill tone="auto">via voorraad</Pill>}
-                  <button onClick={() => onRemove(item.id)} style={{ background: "none", border: "none", cursor: "pointer" }}>
+                  <button
+                    aria-label={`${item.name} van de lijst halen`}
+                    onClick={() => (item.checked && item.bookedItemId ? setWegVraagId(item.id) : onRemove(item.id))}
+                    style={{ background: "none", border: "none", cursor: "pointer", minWidth: 32, minHeight: 32 }}
+                  >
                     <X size={15} color={C.inkSoft} />
                   </button>
                 </div>
@@ -14565,6 +15247,36 @@ function BoodschappenView({ list, categories, inventory = [], indeling = null, r
         <ManualAddForm {...{ newName, setNewName, newAmount, setNewAmount, newUnit, setNewUnit, newCategory, setNewCategory, onCategoryTouched: () => setCategoryTouched(true), submitManual, onCancel: () => setAdding(false) }} />
       ) : (
         <GhostButton onClick={() => setAdding(true)}><Plus size={14} /> Zelf iets toevoegen</GhostButton>
+      )}
+
+      {wegVraagRegel && (
+        <Modal title={`${wegVraagRegel.name} van de lijst`} onClose={() => setWegVraagId(null)}>
+          <p style={{ fontSize: 13, color: C.ink, marginTop: 0, lineHeight: 1.5 }}>
+            {wegVraagRegel.bookedAmount != null
+              ? <>Bij het afvinken is <strong>{wegVraagRegel.bookedAmount} {wegVraagRegel.bookedUnit}</strong> in je voorraad gezet. Wat wil je?</>
+              : <>Deze regel is afgevinkt. Wat wil je?</>}
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <PrimaryButton tone="sage" full onClick={() => { onRemove(wegVraagRegel.id, "lijst"); setWegVraagId(null); }}>
+              <Check size={16} /> Gekocht — alleen van de lijst
+            </PrimaryButton>
+            <GhostButton full onClick={() => { onRemove(wegVraagRegel.id, "nietGekocht"); setWegVraagId(null); }}>
+              Toch niet gekocht — voorraad terug
+            </GhostButton>
+            <GhostButton full onClick={() => setWegVraagId(null)}>Annuleren</GhostButton>
+          </div>
+        </Modal>
+      )}
+      {nakijkRegel && (
+        <NakijkModal
+          regel={nakijkRegel}
+          inventory={inventory}
+          onKlopt={onKeurGoed}
+          onVerplaats={onVerplaats}
+          onBoekIn={onBoekIn}
+          onHerzie={onHerzie}
+          onClose={() => setNakijkId(null)}
+        />
       )}
 
       {checkedCount > 0 && (

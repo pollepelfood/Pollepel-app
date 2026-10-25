@@ -470,6 +470,10 @@
               // Sinds wanneer (v98). Leeg bij een ster van daarvoor: die telt
               // in het weekvoorstel niet zwaarder mee.
               favoritedAt: r.favorited_at || null,
+              // Lekker (1), prima (0) of niet meer (-1), sinds v102. Leeg is
+              // nog niet beoordeeld; dan vraagt de app het na het eten.
+              oordeel: r.oordeel === null || r.oordeel === undefined ? null : Number(r.oordeel),
+              oordeelOp: r.oordeel_op || null,
               community: r.community,
               notes: r.notes || "",
               diets: r.diets || [],
@@ -546,6 +550,8 @@
               // de foto verandert, via een trigger — dan hoeft geen enkele
               // schrijfroute daar zelf aan te denken.
               photoOwnConfirmed: "photo_own_confirmed_at",
+              // Sinds v102. Altijd samen: oordeel en het moment ervan.
+              oordeel: "oordeel", oordeelOp: "oordeel_op",
             };
             const dbFields = {};
             Object.keys(fields).forEach((k) => { if (map[k]) dbFields[map[k]] = fields[k]; });
@@ -1096,6 +1102,8 @@
               id: i.id, name: i.name, category: i.category, unit: i.unit, current: Number(i.current),
               min: Number(i.min), max: Number(i.max), barcode: i.barcode || "", expiryDate: i.expiry_date || "",
               onSale: i.on_sale, sourceRecipeId: i.source_recipe_id,
+              // Sinds v102: hoe lang ligt een kliekje al in de vriezer.
+              createdAt: i.created_at || null,
               containers: i.containers || [],
               aliases: i.aliases || [],
               packSizes: i.pack_sizes || [],
