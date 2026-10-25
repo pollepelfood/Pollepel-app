@@ -361,7 +361,7 @@ function applyTheme(dark) {
     document.body.style.color = tekst;
   }
 }
-const APP_VERSIE = "v102 \xB7 24 oktober 2026";
+const APP_VERSIE = "v103 \xB7 25 oktober 2026";
 const SESSIE = Math.random().toString(36).slice(2, 6);
 const kookverslag = (tekst) => {
   try {
@@ -5349,8 +5349,12 @@ function WelcomeTour({ onFinish }) {
     // (2,16:1 op een kaart) en gebruikt daarom de diepe variant.
     { emoji: "\u{1F4E6}", label: "Voorraad", color: C.sage, ink: C.sage, text: "Je legt vast wat er in huis hoort te zijn." },
     { emoji: "\u{1F5D3}\uFE0F", label: "Weekmenu", color: C.blue, ink: C.blue, text: "Je plant welke avonden je wat eet." },
-    { emoji: "\u{1F6D2}", label: "Boodschappen", color: C.mustard, ink: C.mustardDeep, text: "De lijst vult zichzelf met wat je mist." },
-    { emoji: "\u{1F525}", label: "Koken", color: C.brick, ink: C.brick, text: "Na het koken gaat het van je voorraad af." }
+    { emoji: "\u{1F6D2}", label: "Boodschappen", color: C.mustard, ink: C.mustardDeep, text: "De lijst vult zichzelf met wat je mist. Afvinken in de winkel zet het meteen in je voorraad." },
+    { emoji: "\u{1F525}", label: "Koken", color: C.brick, ink: C.brick, text: "Na het koken gaat het van je voorraad af." },
+    // Sinds v103 in de kringloop: voor veel huishoudens is dit de helft van
+    // hoe ze de app gebruiken, en zonder deze stap snap je de bakjesnummers
+    // en de kliekjes in het weekmenu niet.
+    { emoji: "\u{1F371}", label: "Kliekjes", color: C.blueSoft, ink: C.blueSoft, text: "Wat over is gaat in een genummerd bakje de vriezer in. Op een drukke avond stelt het weekmenu dat bakje voor." }
   ];
   const steps = [
     {
@@ -5419,6 +5423,7 @@ function WelcomeTour({ onFinish }) {
           /* @__PURE__ */ jsx("div", { style: { fontSize: 14, fontWeight: 600, color: C.ink, marginBottom: 4 }, children: "Tik na het eten op \u201CIk heb dit gekookt\u201D" }),
           /* @__PURE__ */ jsx("div", { style: { fontSize: 13, color: C.inkSoft, lineHeight: 1.5 }, children: "Dit sluit de kringloop. Sla je het over, dan loopt je voorraad achter en klopt je lijst niet meer." })
         ] }),
+        /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.ink, margin: "0 0 10px", lineHeight: 1.5 }, children: "De rest vraagt Pollepel je op het moment zelf: of er iets over is, hoe het smaakte, wanneer je een bakje uit de vriezer haalt. Daar hoef je nu niets voor te onthouden." }),
         /* @__PURE__ */ jsx("p", { style: { fontSize: 13, color: C.inkSoft, margin: 0, lineHeight: 1.5 }, children: "Pollepel werkt pas echt als je hem samen gebruikt. Stuur je huisgenoot een uitnodiging via Instellingen \u2014 \xE9\xE9n tik, en jullie delen hetzelfde kookboek, dezelfde voorraad en dezelfde boodschappenlijst." })
       ] })
     }

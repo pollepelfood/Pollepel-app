@@ -345,7 +345,7 @@ function applyTheme(dark) {
 // Versie van deze build. Staat onderaan Instellingen, zodat in één oogopslag
 // duidelijk is of een oplevering daadwerkelijk is aangekomen — in plaats van
 // te moeten raden of de browser nog iets ouds serveert.
-const APP_VERSIE = "v102 · 24 oktober 2026";
+const APP_VERSIE = "v103 · 25 oktober 2026";
 // Kort kenmerk van dit geopende exemplaar van de app. Staat de app op één
 // telefoon twee keer open (beginscherm én Safari), dan zie je dat in het
 // foutlogboek aan twee verschillende kenmerken.
@@ -5131,8 +5131,12 @@ function WelcomeTour({ onFinish }) {
     // (2,16:1 op een kaart) en gebruikt daarom de diepe variant.
     { emoji: "📦", label: "Voorraad", color: C.sage, ink: C.sage, text: "Je legt vast wat er in huis hoort te zijn." },
     { emoji: "🗓️", label: "Weekmenu", color: C.blue, ink: C.blue, text: "Je plant welke avonden je wat eet." },
-    { emoji: "🛒", label: "Boodschappen", color: C.mustard, ink: C.mustardDeep, text: "De lijst vult zichzelf met wat je mist." },
+    { emoji: "🛒", label: "Boodschappen", color: C.mustard, ink: C.mustardDeep, text: "De lijst vult zichzelf met wat je mist. Afvinken in de winkel zet het meteen in je voorraad." },
     { emoji: "🔥", label: "Koken", color: C.brick, ink: C.brick, text: "Na het koken gaat het van je voorraad af." },
+    // Sinds v103 in de kringloop: voor veel huishoudens is dit de helft van
+    // hoe ze de app gebruiken, en zonder deze stap snap je de bakjesnummers
+    // en de kliekjes in het weekmenu niet.
+    { emoji: "🍱", label: "Kliekjes", color: C.blueSoft, ink: C.blueSoft, text: "Wat over is gaat in een genummerd bakje de vriezer in. Op een drukke avond stelt het weekmenu dat bakje voor." },
   ];
 
   const steps = [
@@ -5211,6 +5215,12 @@ function WelcomeTour({ onFinish }) {
               Dit sluit de kringloop. Sla je het over, dan loopt je voorraad achter en klopt je lijst niet meer.
             </div>
           </div>
+          {/* Alles wat er sinds de eerste versie bij kwam (ontdooien, oordeel,
+              vervangers, eerst op) legt zichzelf uit op het moment zelf. Hier
+              alleen de belofte dat dat zo is, geen rondleiding erlangs. */}
+          <p style={{ fontSize: 13, color: C.ink, margin: "0 0 10px", lineHeight: 1.5 }}>
+            De rest vraagt Pollepel je op het moment zelf: of er iets over is, hoe het smaakte, wanneer je een bakje uit de vriezer haalt. Daar hoef je nu niets voor te onthouden.
+          </p>
           <p style={{ fontSize: 13, color: C.inkSoft, margin: 0, lineHeight: 1.5 }}>
             Pollepel werkt pas echt als je hem samen gebruikt. Stuur je huisgenoot een uitnodiging via Instellingen — één tik, en jullie delen hetzelfde kookboek, dezelfde voorraad en dezelfde boodschappenlijst.
           </p>
