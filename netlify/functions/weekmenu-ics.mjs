@@ -153,6 +153,37 @@ export default async (req) => {
     );
   });
 
+  // Ontdooien (v102): ligt er voor een avond een kliekje in de vriezer, dan
+  // de avond ervoor om 20:00 een herinnering met een melding erbij. Of die
+  // melding echt afgaat, bepaalt de agenda-app: sommige negeren meldingen uit
+  // een abonnement. In de agenda staat hij hoe dan ook.
+  const vandaagSleutel = new Date().toISOString().slice(0, 10);
+  dagen.forEach((d) => {
+    const vriezer = (d.kliekjes || []).filter((k) => k && k.vriezer);
+    if (!vriezer.length || d.menu_date < vandaagSleutel) return;
+    const [j, mm, dd] = d.menu_date.split("-").map(Number);
+    const ervoor = new Date(Date.UTC(j, mm - 1, dd - 1));
+    const p = (n) => String(n).padStart(2, "0");
+    const dag = `${ervoor.getUTCFullYear()}${p(ervoor.getUTCMonth() + 1)}${p(ervoor.getUTCDate())}`;
+    const wat = vriezer.map((k) => `${k.naam}${k.bakje != null ? ` (bakje ${k.bakje})` : ""}`).join(" en ");
+    regels.push(
+      "BEGIN:VEVENT",
+      vouw(`UID:ontdooien-${d.menu_date}-${huishouden.id}@pollepel`),
+      `DTSTAMP:${nu}`,
+      `DTSTART;TZID=Europe/Amsterdam:${dag}T200000`,
+      `DTEND;TZID=Europe/Amsterdam:${dag}T201500`,
+      vouw(`SUMMARY:${esc(`🧊 Ontdooien: ${wat}`)}`),
+      vouw(`DESCRIPTION:${esc(`Morgen (${DAG_LANG[new Date(Date.UTC(j, mm - 1, dd)).getUTCDay()]}) eten jullie dit kliekje. Haal het vanavond uit de vriezer en zet het in de koelkast.`)}`),
+      "TRANSP:TRANSPARENT",
+      "BEGIN:VALARM",
+      "ACTION:DISPLAY",
+      vouw(`DESCRIPTION:${esc(`Ontdooien: ${wat}`)}`),
+      "TRIGGER:PT0M",
+      "END:VALARM",
+      "END:VEVENT"
+    );
+  });
+
   // Boodschappendag als hele dag, zodat je hem in je weekoverzicht ziet staan.
   const boodschappendag = feed.shopping_day == null ? 6 : Number(feed.shopping_day);
   const vandaag = new Date();
